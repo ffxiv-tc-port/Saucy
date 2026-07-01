@@ -30,6 +30,7 @@ public static unsafe class AirForceAutomation
 {
     private static DateTime? rewardWindowUntilUtc;
     private static bool wasInDuty;
+    private static readonly System.Collections.Generic.Dictionary<ulong, byte> lastEventState = [];
 
     public static bool ShouldTrackReward
         => rewardWindowUntilUtc != null && DateTime.UtcNow <= rewardWindowUntilUtc.Value;
@@ -59,6 +60,13 @@ public static unsafe class AirForceAutomation
             wasInDuty = true;
             rewardWindowUntilUtc = null;
 
+            LogEventStateChanges();
+
+            // AnimationId() (GameObject.EventState) never varies from 0 in this build — either the
+            // pop-up/ready gating mechanic doesn't exist in this older game version, or the field
+            // just isn't the right one here. Confirmed via live diagnostic (LogEventStateChanges)
+            // showing 0 across every known target at every distance. Dropped the ==1 gate entirely
+            // and just treat all known non-excluded targets as shootable when in view.
             foreach (var x in Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
                 2009678,
                 2009676,
@@ -68,7 +76,7 @@ public static unsafe class AirForceAutomation
                 2015179,
                 2015178,
                 2015183
-            )).Where(x => x.AnimationId() == 1).OrderBy(Player.DistanceTo))
+            )).OrderBy(Player.DistanceTo))
             {
                 if (x.DataId.EqualsAny<uint>(
                     2015183,
@@ -102,6 +110,34 @@ public static unsafe class AirForceAutomation
         }
     }
 
+    /// <summary>
+    /// Diagnostic aid: prints to chat whenever a known target's EventState value changes, with a
+    /// timestamp/name/distance, so you don't have to freeze-frame the Debug panel to catch the
+    /// moment a target visibly becomes shootable — just watch the chat log afterward and compare
+    /// against what you remember seeing.
+    /// </summary>
+    private static void LogEventStateChanges()
+    {
+        if (!EzThrottler.Throttle("Saucy.AirForce.EventStateLog", 100))
+        {
+            return;
+        }
+
+        foreach (var x in Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
+            2009678, 2009676, 2009677, 2009679, 2015180, 2015179, 2015178, 2015183)))
+        {
+            var current = x.AnimationId();
+            if (lastEventState.TryGetValue(x.GameObjectId, out var previous) && previous == current)
+            {
+                continue;
+            }
+
+            lastEventState[x.GameObjectId] = current;
+            Svc.Chat.Print($"[Saucy][AF1診斷] {DateTime.Now:HH:mm:ss.fff} {x.Name} ({x.DataId}) " +
+                            $"EventState {previous}→{current} dist={Player.DistanceTo(x):F1}");
+        }
+    }
+
     public static void DrawDebug()
     {
         ImGuiEx.Text($"Enabled: {C.IsModuleEnabled(ModuleNames.AirForceOne)}");
@@ -122,8 +158,8 @@ public static unsafe class AirForceAutomation
 
         var targets = Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
             2009678, 2009676, 2009677, 2009679, 2015180, 2015179, 2015178, 2015183
-        )).Where(x => x.AnimationId() == 1).OrderBy(Player.DistanceTo).Take(3).ToArray();
-        ImGuiEx.Text($"Shootable targets (anim=1): {targets.Length}");
+        )).Where(x => !x.DataId.EqualsAny<uint>(2015183, 2009679)).OrderBy(Player.DistanceTo).Take(3).ToArray();
+        ImGuiEx.Text($"Shootable targets (excl. avoid-list): {targets.Length}");
         foreach (var t in targets)
         {
             ImGuiEx.Text($"  {t.Name} ({t.DataId}) dist={Player.DistanceTo(t):F1}");
