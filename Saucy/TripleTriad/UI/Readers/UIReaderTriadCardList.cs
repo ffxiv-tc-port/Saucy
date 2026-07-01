@@ -3,6 +3,13 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using System;
 namespace Saucy.TripleTriad.UI;
 
+public enum CardListFilterMode
+{
+    All,
+    OwnedOnly,
+    MissingOnly
+}
+
 internal static class CardListFilterMapping
 {
     public static byte ToCollectionFilter(CardListFilterMode mode) =>

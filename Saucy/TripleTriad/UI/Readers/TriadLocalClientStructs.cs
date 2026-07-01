@@ -1,6 +1,7 @@
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static ECommons.GenericHelpers;
 
@@ -72,4 +73,40 @@ internal struct AddonTripleTriadSelDeck
 internal struct AddonTripleTriadResult
 {
     [FieldOffset(0)] public AtkUnitBase AtkUnitBase;
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 0x1000)] // no idea what size, last entries seems to be around +0xfc0?
+internal unsafe struct AddonTripleTriad
+{
+    internal unsafe struct TripleTriadCard
+    {
+        public AtkComponentBase* CardDropControl;
+        public byte CardRarity;  // 1..5
+        public byte CardType;    // 0: no type, 1: primal, 2: scion, 3: beastman, 4: garland
+        public byte CardOwner;   // 0: empty, 1: blue, 2: red
+        public byte NumSideU;
+        public byte NumSideD;
+        public byte NumSideR;
+        public byte NumSideL;
+        public bool HasCard;
+    }
+
+    [InlineArray(5)]
+    internal struct DeckArray
+    {
+        private TripleTriadCard element0;
+    }
+
+    [InlineArray(9)]
+    internal struct BoardArray
+    {
+        private TripleTriadCard element0;
+    }
+
+    [FieldOffset(0x0)] public AtkUnitBase AtkUnitBase;
+    [FieldOffset(0x238)] public byte TurnState; // 0: waiting, 1: normal move, 2: masked move (order/chaos)
+
+    [FieldOffset(0x240)] public DeckArray BlueDeck; // 2be = end of numbers
+    [FieldOffset(0x588)] public DeckArray RedDeck;
+    [FieldOffset(0x8d0)] public BoardArray Board;
 }
