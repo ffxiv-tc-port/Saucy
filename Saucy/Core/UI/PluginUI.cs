@@ -281,14 +281,15 @@ public unsafe partial class PluginUI : Window
         }
 
         var count = LeapOfFaith.LeapOfFaithRecorder.Points.Count;
-        ImGui.Text($"已記錄點數：{count}");
+        var objCount = LeapOfFaith.LeapOfFaithRecorder.Objects.Count;
+        ImGui.Text($"已記錄玩家座標點數：{count}　附近物件取樣數：{objCount}");
 
         using (ImRaii.Disabled(count == 0))
         {
             if (ImGui.Button("匯出路線 JSON"))
             {
                 var path = LeapOfFaith.LeapOfFaithRecorder.Export();
-                Svc.Chat.Print($"[Saucy] 已匯出 Leap of Faith 路線至 {path}");
+                Svc.Chat.Print($"[Saucy] 已匯出 Leap of Faith 記錄至：\n{path}");
             }
         }
     }
