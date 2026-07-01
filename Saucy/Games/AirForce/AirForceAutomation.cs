@@ -128,5 +128,18 @@ public static unsafe class AirForceAutomation
         {
             ImGuiEx.Text($"  {t.Name} ({t.DataId}) dist={Player.DistanceTo(t):F1}");
         }
+
+        // Diagnostic: AnimationId() reading GameObject.EventState is an unverified guess (never
+        // tested in-game). Lists the RAW value for every known target DataId regardless of the
+        // ==1 filter above, so if auto-shoot never fires, compare this against what you actually
+        // see in-game (a target visibly poppable vs. not) to find the right field/threshold.
+        var allKnown = Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
+            2009678, 2009676, 2009677, 2009679, 2015180, 2015179, 2015178, 2015183
+        )).OrderBy(Player.DistanceTo).Take(8).ToArray();
+        ImGuiEx.Text($"[診斷] 附近已知目標原始 EventState 值 ({allKnown.Length}):");
+        foreach (var t in allKnown)
+        {
+            ImGuiEx.Text($"  {t.Name} ({t.DataId}) EventState={t.AnimationId()} dist={Player.DistanceTo(t):F1}");
+        }
     }
 }
