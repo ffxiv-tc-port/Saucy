@@ -249,6 +249,48 @@ public unsafe partial class PluginUI : Window
                 }
             }
         });
+
+        ImGuiLayout.DrawCollapsingSection("Leap of Faith 路徑記錄", ImGuiTreeNodeFlags.DefaultOpen, DrawLeapOfFaithRecorder);
+    }
+
+    private static void DrawLeapOfFaithRecorder()
+    {
+        ImGui.TextWrapped("手動玩一次 Leap of Faith 期間點選「開始記錄」，完成後點「停止」再「匯出」，" +
+                           "會在外掛設定資料夾產生一份路線 JSON 檔案。");
+
+        var recording = LeapOfFaith.LeapOfFaithRecorder.IsRecording;
+        using (ImRaii.Disabled(recording))
+        {
+            if (ImGui.Button("開始記錄"))
+            {
+                LeapOfFaith.LeapOfFaithRecorder.StartRecording();
+            }
+        }
+        ImGui.SameLine();
+        using (ImRaii.Disabled(!recording))
+        {
+            if (ImGui.Button("停止"))
+            {
+                LeapOfFaith.LeapOfFaithRecorder.StopRecording();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("清除"))
+        {
+            LeapOfFaith.LeapOfFaithRecorder.Clear();
+        }
+
+        var count = LeapOfFaith.LeapOfFaithRecorder.Points.Count;
+        ImGui.Text($"已記錄點數：{count}");
+
+        using (ImRaii.Disabled(count == 0))
+        {
+            if (ImGui.Button("匯出路線 JSON"))
+            {
+                var path = LeapOfFaith.LeapOfFaithRecorder.Export();
+                Svc.Chat.Print($"[Saucy] 已匯出 Leap of Faith 路線至 {path}");
+            }
+        }
     }
 
     private enum NavItem
