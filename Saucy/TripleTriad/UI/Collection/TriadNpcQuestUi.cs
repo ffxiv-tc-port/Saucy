@@ -37,7 +37,7 @@ internal static class TriadNpcQuestUi
         var questName = npcInfo.UnlockQuestName;
         if (string.IsNullOrEmpty(questName))
         {
-            questName = $"Quest #{npcInfo.UnlockQuestId}";
+            questName = $"任務 #{npcInfo.UnlockQuestId}";
         }
 
         var tooltip = BuildTooltip(snapshot, questName);
@@ -54,7 +54,7 @@ internal static class TriadNpcQuestUi
     {
         if (!Questionable.IsInstalled)
         {
-            Svc.Chat.Print("[Saucy] Install Questionable (/qst) to start quests from Saucy.");
+            Svc.Chat.Print("[Saucy] 請安裝 Questionable (/qst) 以便從 Saucy 開始任務。");
             return;
         }
 
@@ -68,7 +68,7 @@ internal static class TriadNpcQuestUi
 
         if (QuestionableTriad.TryStartSingleQuest(npcInfo.UnlockQuestId))
         {
-            Svc.Chat.Print($"[Saucy] Sent \"{questName}\" to Questionable.");
+            Svc.Chat.Print($"[Saucy] 已將「{questName}」傳送至 Questionable。");
             InvalidateCache();
             return;
         }
@@ -79,7 +79,7 @@ internal static class TriadNpcQuestUi
         }
         else
         {
-            Svc.Chat.PrintError($"[Saucy] Questionable could not start \"{questName}\".");
+            Svc.Chat.PrintError($"[Saucy] Questionable 無法開始「{questName}」。");
         }
     }
 
@@ -87,17 +87,17 @@ internal static class TriadNpcQuestUi
     {
         if (!Questionable.IsInstalled)
         {
-            return "Install Questionable (/qst) to start this quest.";
+            return "請安裝 Questionable (/qst) 以開始此任務。";
         }
 
         if (!snapshot.HasAutomationPath)
         {
-            return "Not supported in Questionable yet.";
+            return "Questionable 尚未支援此任務。";
         }
 
         if (snapshot.CanStart)
         {
-            return $"Start \"{questName}\" with Questionable";
+            return $"使用 Questionable 開始「{questName}」";
         }
 
         return snapshot.StatusMessage;
@@ -152,7 +152,7 @@ internal static class TriadNpcQuestUi
         {
             return new()
             {
-                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Quest already accepted."
+                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "任務已接取。"
             };
         }
 
@@ -160,7 +160,7 @@ internal static class TriadNpcQuestUi
         {
             return new()
             {
-                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Quest unavailable in Questionable."
+                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Questionable 中無法使用此任務。"
             };
         }
 
@@ -174,7 +174,7 @@ internal static class TriadNpcQuestUi
 
             return new()
             {
-                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Prerequisites not met yet (check Questionable /qst)."
+                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "尚未達成前置條件（請確認 Questionable /qst）。"
             };
         }
 
