@@ -32,6 +32,45 @@ public class LeapOfFaith : Module
             return;
         }
 
+        DrawObservedPlatformMarkers();
+        DrawCurrentTargetPointer();
+    }
+
+    /// <summary>Marks every platform position inferred from other players standing still, so the
+    /// growing "known route" is directly visible on screen, not just used internally.</summary>
+    private static void DrawObservedPlatformMarkers()
+    {
+        var points = LeapOfFaithPlatformObserver.ObservedPlatforms;
+        if (points.Count == 0)
+        {
+            return;
+        }
+
+        var viewport = ImGui.GetMainViewport();
+        ImGui.SetNextWindowPos(viewport.Pos);
+        ImGui.SetNextWindowSize(viewport.Size);
+        using var overlay = Window(
+            "LeapOfFaithPlatformMarkers",
+            ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoTitleBar |
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoInputs |
+            ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoBringToFrontOnFocus);
+        if (!overlay.Success)
+        {
+            return;
+        }
+
+        var drawList = ImGui.GetWindowDrawList();
+        foreach (var point in points)
+        {
+            if (Svc.GameGui.WorldToScreen(point, out var screen))
+            {
+                drawList.AddCircleFilled(screen, 4f, EzColor.Blue);
+            }
+        }
+    }
+
+    private static void DrawCurrentTargetPointer()
+    {
         if (LeapOfFaithAutomation.CurrentTargetPosition is not { } target)
         {
             return;
@@ -61,6 +100,8 @@ public class LeapOfFaith : Module
         using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0.8f));
         ImGui.SetCursorPosX(4f * ImGuiHelpers.GlobalScale);
         var distance = Vector3.Distance(Player.Position, target);
-        ImGui.Text((LeapOfFaithAutomation.CurrentTargetIsFinish ? "終點" : "仙人掌盃") + $" {distance:F1}m");
+        var label = LeapOfFaithAutomation.CurrentTargetIsFinish ? "終點" :
+            LeapOfFaithAutomation.CurrentTargetIsCactuar ? "仙人掌盃" : "推測平台";
+        ImGui.Text($"{label} {distance:F1}m");
     }
 }

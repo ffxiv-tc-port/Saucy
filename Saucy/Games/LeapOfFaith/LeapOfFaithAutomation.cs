@@ -34,12 +34,20 @@ internal static unsafe class LeapOfFaithAutomation
 
     public static Vector3? CurrentTargetPosition { get; private set; }
     public static bool CurrentTargetIsFinish { get; private set; }
+    public static bool CurrentTargetIsCactuar { get; private set; }
+    public static global::Saucy.Framework.Module.GateType LastObservedGateType { get; private set; } =
+        global::Saucy.Framework.Module.GateType.None;
 
     private static Vector3? startPosition;
     private static bool wasInGate;
 
     public static void OnUpdate()
     {
+        if (GateDirector.InSaucer && GateDirector.IsPlayerOnStage())
+        {
+            LastObservedGateType = GateDirector.GetCurrentGate();
+        }
+
         var inGate = GateDirector.IsInGate(global::Saucy.Framework.Module.GateType.LeapOfFaith);
         if (inGate && !wasInGate)
         {
@@ -117,16 +125,19 @@ internal static unsafe class LeapOfFaithAutomation
         {
             CurrentTargetPosition = finish.Position;
             CurrentTargetIsFinish = true;
+            CurrentTargetIsCactuar = false;
         }
         else if (nearestCactuar != null)
         {
             CurrentTargetPosition = nearestCactuar.Position;
             CurrentTargetIsFinish = false;
+            CurrentTargetIsCactuar = true;
         }
         else
         {
             CurrentTargetPosition = FindPlatformFallbackTarget(playerPos);
             CurrentTargetIsFinish = false;
+            CurrentTargetIsCactuar = false;
         }
     }
 

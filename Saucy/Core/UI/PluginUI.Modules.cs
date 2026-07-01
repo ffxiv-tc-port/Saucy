@@ -111,6 +111,12 @@ public unsafe partial class PluginUI
                 }
             }
         }
+
+        ImGui.Dummy(new(0, 4));
+        var expectedGateType = global::Saucy.Framework.Module.GateType.LeapOfFaith;
+        SaucyTheme.TextMuted($"偵測到的 GateType：{LeapOfFaith.LeapOfFaithAutomation.LastObservedGateType}" +
+                              $"（本模組認定的 Leap of Faith 值：{expectedGateType}）");
+        SaucyTheme.TextMuted($"已記錄平台點數：{LeapOfFaith.LeapOfFaithPlatformObserver.ObservedPlatforms.Count}");
     }
 
     private static BannerInfo BuildBannerInfo()
