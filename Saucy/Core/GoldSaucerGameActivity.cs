@@ -12,9 +12,7 @@ internal static class GoldSaucerGameActivity
 {
     public static bool IsAnyGamePlaying()
     {
-        if (IsCuffSessionActive() ||
-            IsLimbSessionActive() ||
-            IsTriadSessionActive() ||
+        if (IsTriadSessionActive() ||
             IsMiniCactpotSessionActive() ||
             IsJumboCactpotSessionActive() ||
             IsAirForceSessionActive() ||
@@ -25,18 +23,6 @@ internal static class GoldSaucerGameActivity
 
         return false;
     }
-
-    private static bool IsArcadeMachineSessionActive(GoldSaucerArcadeMachine machine) =>
-        GoldSaucerArcadeMachineHelper.IsEnabled(machine) &&
-        (ArcadeMachineSession.IsInteractPending(machine) ||
-         Svc.Condition[ConditionFlag.OccupiedInQuestEvent] ||
-         GoldSaucerRewardHelper.IsVisible());
-
-    private static bool IsCuffSessionActive() =>
-        IsArcadeMachineSessionActive(GoldSaucerArcadeMachine.Cuff);
-
-    private static bool IsLimbSessionActive() =>
-        IsArcadeMachineSessionActive(GoldSaucerArcadeMachine.Limb);
 
     private static bool IsTriadSessionActive() =>
         TriadRunSession.ModuleEnabled &&
@@ -57,13 +43,6 @@ internal static class GoldSaucerGameActivity
 
     private static bool IsGateAutoMovementActive()
     {
-        if (GateDirector.IsInGate(Module.GateType.SliceIsRight) &&
-            C.IsModuleEnabled(ModuleNames.SliceIsRight) &&
-            C.GoldSaucerGates.SliceIsRightAutoMovement)
-        {
-            return true;
-        }
-
         if (GateDirector.IsInGate(Module.GateType.AnyWayTheWindBlows) &&
             C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows) &&
             C.GoldSaucerGates.WindBlowsAutoMovement &&

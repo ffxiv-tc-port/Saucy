@@ -1,7 +1,6 @@
 using Dalamud.Configuration;
 using ECommons.Configuration;
 using Newtonsoft.Json;
-using Saucy.OutOnALimb;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -45,12 +44,6 @@ public class Configuration : IPluginConfiguration
     public string SelectedSound { get; set; } = "Moogle";
     public bool OnlyUnobtainedCards { get; set; } = false;
     public bool OpenAutomatically { get; set; } = false;
-
-    public LimbConfig LimbConfig { get; set; } = new();
-
-    public GoldSaucerArcadeRunSettings CuffArcadeRun { get; set; } = new();
-
-    public GoldSaucerArcadeRunSettings LimbArcadeRun { get; set; } = new();
 
     public bool SaucyThemeEnabled { get; set; } = true;
 
@@ -128,7 +121,5 @@ public class Configuration : IPluginConfiguration
 [Serializable]
 public class GoldSaucerGateSettings
 {
-    public bool SliceIsRightAutoMovement { get; set; }
-
     public bool WindBlowsAutoMovement { get; set; }
 }

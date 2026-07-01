@@ -5,7 +5,6 @@ using ECommons.Automation;
 using ECommons.GameHelpers;
 using ECommons.UIHelpers.AddonMasterImplementations;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using Saucy.CuffACur;
 using Saucy.Framework;
 using Saucy.IPC;
 using System;
@@ -45,7 +44,7 @@ internal static unsafe class AutoRetainerPause
 
     public static bool HasBellInRange() => FindNearbySummoningBell() != null;
 
-    public static bool BlocksArcadeSessions(GoldSaucerArcadeMachine machine) => IsBlocking;
+    public static bool BlocksArcadeSessions() => IsBlocking;
 
     public static void Tick()
     {
@@ -266,12 +265,11 @@ internal static unsafe class AutoRetainerPause
         closingUi = false;
     }
 
-    private static bool IsArcadeAutomationActive() =>
-        CuffACurAutomation.IsEnabled ||
-        GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb);
+    // The arcade minigames that previously drove this pause (Cuff-a-Cur, Out on a Limb) have
+    // been removed, so there is no longer any arcade automation for this to gate against.
+    private static bool IsArcadeAutomationActive() => false;
 
-    private static bool IsBlockingActiveGameplay() =>
-        CuffACurAutomation.IsInActiveMinigame || P.LimbManager.IsInActiveMinigame;
+    private static bool IsBlockingActiveGameplay() => false;
 
     private static IGameObject? FindNearbySummoningBell()
     {

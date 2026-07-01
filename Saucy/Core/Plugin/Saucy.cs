@@ -4,10 +4,8 @@ using ECommons.Configuration;
 using ECommons.SimpleGui;
 using NAudio.Wave;
 using PunishLib;
-using Saucy.CuffACur;
 using Saucy.Framework;
 using Saucy.IPC;
-using Saucy.OutOnALimb;
 using System;
 using System.Collections.Specialized;
 using Module = ECommons.Module;
@@ -36,7 +34,6 @@ public sealed partial class Saucy : IDalamudPlugin
     private WaveOutEvent? _currentWaveOut;
     private TriadCollectionHost? _triadCollectionHost;
 
-    public LimbManager LimbManager = null!;
     public Saucy(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this, Module.All);
@@ -47,17 +44,9 @@ public sealed partial class Saucy : IDalamudPlugin
         TriadRunSession.ModuleEnabled = false;
         TriadCardFarmSession.DeactivateSession(clearProgress: true);
         TriadRunSession.ResetRunModeForPluginLoad();
-        C.SetModuleEnabled(ModuleNames.OutOnALimb, false);
-        C.SetModuleEnabled(ModuleNames.CuffACur, false);
         C.Save();
         PrepareTriadSessionForPluginLoad();
         P = this;
-        ArcadeMachineSession.WireCompleteShutdown(
-            GoldSaucerArcadeMachine.Cuff,
-            () => P.DisableArcadeModule(ModuleNames.CuffACur));
-        ArcadeMachineSession.WireCompleteShutdown(
-            GoldSaucerArcadeMachine.Limb,
-            () => P.DisableArcadeModule(ModuleNames.OutOnALimb));
 
         EzConfigGui.Init(_pluginUi);
         Svc.PluginInterface.UiBuilder.OpenMainUi += EzConfigGui.Open;
