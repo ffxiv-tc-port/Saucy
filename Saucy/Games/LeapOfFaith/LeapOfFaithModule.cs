@@ -27,7 +27,7 @@ public class LeapOfFaith : Module
 
     public void Draw()
     {
-        if (!IsInGate(GateType.LeapOfFaith))
+        if (!LeapOfFaithDetection.IsActive)
         {
             return;
         }

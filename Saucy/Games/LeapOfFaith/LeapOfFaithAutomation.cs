@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons;
@@ -10,6 +11,16 @@ using System;
 using System.Linq;
 using System.Numerics;
 namespace Saucy.LeapOfFaith;
+
+internal static class LeapOfFaithDetection
+{
+    // Confirmed via live diagnostic: Leap of Faith does NOT create a GoldSaucerManager
+    // GFateDirector like Wind Blows/Any Way the Wind Blows does — "目前沒有作用中的 GATE 導演"
+    // stayed true throughout an actual run with visible cactuar-collection progress. Instead it
+    // sets ConditionFlag 56 (BoundByDuty56), found by dumping every active ConditionFlag while
+    // mid-run. Distinct from Air Force One's BoundByDuty95.
+    public static bool IsActive => Svc.Condition[ConditionFlag.BoundByDuty56];
+}
 
 /// <summary>
 /// Best-effort auto-movement for Leap of Faith. Platform layout and cactuar-trophy positions are
@@ -48,7 +59,7 @@ internal static unsafe class LeapOfFaithAutomation
             LastObservedGateType = GateDirector.GetCurrentGate();
         }
 
-        var inGate = GateDirector.IsInGate(global::Saucy.Framework.Module.GateType.LeapOfFaith);
+        var inGate = LeapOfFaithDetection.IsActive;
         if (inGate && !wasInGate)
         {
             startPosition = Player.Available ? Player.Position : null;

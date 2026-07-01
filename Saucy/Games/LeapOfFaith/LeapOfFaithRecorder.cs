@@ -99,7 +99,7 @@ internal static class LeapOfFaithRecorder
             }
             lastPosition = pos;
 
-            points.Add(new RecordedPoint(elapsed, pos, Player.Rotation, GateDirector.IsInGate(Module.GateType.LeapOfFaith),
+            points.Add(new RecordedPoint(elapsed, pos, Player.Rotation, LeapOfFaithDetection.IsActive,
                 likelyRespawn, attemptIndex));
         }
 
