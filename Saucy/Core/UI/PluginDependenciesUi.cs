@@ -93,14 +93,14 @@ internal static class PluginDependenciesUi
 
         if (showAddRepo)
         {
-            if (ImGui.Button("Add repository"))
+            if (ImGui.Button("新增儲存庫"))
             {
                 TryAddRepository(entry);
             }
 
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip($"Add {entry.PrimaryRepositoryUrl} to Custom Plugin Repositories.");
+                ImGui.SetTooltip($"將 {entry.PrimaryRepositoryUrl} 加入自訂插件儲存庫。");
             }
 
             firstButton = false;
@@ -113,14 +113,14 @@ internal static class PluginDependenciesUi
                 ImGui.SameLine();
             }
 
-            if (ImGui.Button("Install plugin"))
+            if (ImGui.Button("安裝插件"))
             {
                 TryInstallPlugin(entry);
             }
 
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip($"Install {entry.DisplayName} from its plugin repository.");
+                ImGui.SetTooltip($"從插件儲存庫安裝 {entry.DisplayName}。");
             }
         }
 
@@ -177,18 +177,18 @@ internal static class PluginDependenciesUi
         switch (state)
         {
             case DependencyState.Ready:
-                DrawStatusLine(FontAwesomeIcon.Check, ImGuiColors.HealerGreen, "Installed");
+                DrawStatusLine(FontAwesomeIcon.Check, ImGuiColors.HealerGreen, "已安裝");
                 break;
             case DependencyState.InstalledNotLoaded:
-                DrawStatusLine(FontAwesomeIcon.ExclamationTriangle, ImGuiColors.DalamudYellow, "Installed but not loaded");
+                DrawStatusLine(FontAwesomeIcon.ExclamationTriangle, ImGuiColors.DalamudYellow, "已安裝但未載入");
                 ImGui.SameLine();
-                if (ImGui.Button("Open installer"))
+                if (ImGui.Button("開啟安裝器"))
                 {
                     Svc.PluginInterface.OpenPluginInstallerTo(PluginInstallerOpenKind.InstalledPlugins, string.Empty);
                 }
                 break;
             default:
-                DrawStatusLine(FontAwesomeIcon.Times, ImGuiColors.DalamudRed, "Not installed");
+                DrawStatusLine(FontAwesomeIcon.Times, ImGuiColors.DalamudRed, "未安裝");
                 break;
         }
     }

@@ -21,10 +21,10 @@ public partial class PluginUI
 
     private static void DrawStatsToolbar()
     {
-        ImGui.TextDisabled("Hold Ctrl to reset stats.");
+        ImGui.TextDisabled("按住 Ctrl 以重置統計。");
         ImGui.SameLine();
-        const string lifeLbl = "Reset Lifetime";
-        const string sessLbl = "Reset Session";
+        const string lifeLbl = "重置累計";
+        const string sessLbl = "重置本次";
         var pad = ImGui.GetStyle().FramePadding.X * 2f;
         var lifeW = ImGui.CalcTextSize(lifeLbl).X + pad;
         var sessW = ImGui.CalcTextSize(sessLbl).X + pad;
@@ -54,20 +54,20 @@ public partial class PluginUI
     {
         if (s.GamesPlayedWithSaucy == 0)
         {
-            return "no games played";
+            return "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304";
         }
         var pct = Math.Round(s.GamesWonWithSaucy / (double)s.GamesPlayedWithSaucy * 100, 1);
-        return $"{s.GamesPlayedWithSaucy:N0} games \u00b7 {pct}% win";
+        return $"{s.GamesPlayedWithSaucy:N0} \u5834 \u00b7 \u52dd\u7387 {pct}%";
     }
 
     private static string CuffHeadline(Stats s) =>
-        s.CuffGamesPlayed == 0 ? "no games played" : $"{s.CuffGamesPlayed:N0} games";
+        s.CuffGamesPlayed == 0 ? "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304" : $"{s.CuffGamesPlayed:N0} \u5834";
 
     private static string LimbHeadline(Stats s) =>
-        s.LimbGamesPlayed == 0 ? "no games played" : $"{s.LimbGamesPlayed:N0} games";
+        s.LimbGamesPlayed == 0 ? "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304" : $"{s.LimbGamesPlayed:N0} \u5834";
 
     private static string AirForceHeadline(Stats s) =>
-        s.AirForceGamesPlayed == 0 ? "no games played" : $"{s.AirForceGamesPlayed:N0} games";
+        s.AirForceGamesPlayed == 0 ? "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304" : $"{s.AirForceGamesPlayed:N0} \u5834";
 
     private static void DrawTriadRows(Stats life, Stats sess)
     {
@@ -77,23 +77,23 @@ public partial class PluginUI
             return;
         }
         StatsHeader();
-        StatsRow("Games", life.GamesPlayedWithSaucy, sess.GamesPlayedWithSaucy,
+        StatsRow("對戰場數", life.GamesPlayedWithSaucy, sess.GamesPlayedWithSaucy,
             perHour: SessionCountPerHour(sess.GamesPlayedWithSaucy, StatsSessionClock.GetTriadElapsedHours()));
-        StatsRow("Wins", life.GamesWonWithSaucy, sess.GamesWonWithSaucy);
-        StatsRow("Losses", life.GamesLostWithSaucy, sess.GamesLostWithSaucy);
-        StatsRow("Draws", life.GamesDrawnWithSaucy, sess.GamesDrawnWithSaucy);
-        StatsRow("Cards won", life.CardsDroppedWithSaucy, sess.CardsDroppedWithSaucy);
-        StatsRow("Card resale value", $"{GetDroppedCardValues(life):N0}", $"{GetDroppedCardValues(sess):N0}");
-        StatsRow("MGP won", $"{life.MGPWon:N0}", $"{sess.MGPWon:N0}", true,
+        StatsRow("勝場", life.GamesWonWithSaucy, sess.GamesWonWithSaucy);
+        StatsRow("敗場", life.GamesLostWithSaucy, sess.GamesLostWithSaucy);
+        StatsRow("平手", life.GamesDrawnWithSaucy, sess.GamesDrawnWithSaucy);
+        StatsRow("獲得卡片", life.CardsDroppedWithSaucy, sess.CardsDroppedWithSaucy);
+        StatsRow("卡片轉賣價值", $"{GetDroppedCardValues(life):N0}", $"{GetDroppedCardValues(sess):N0}");
+        StatsRow("獲得 MGP", $"{life.MGPWon:N0}", $"{sess.MGPWon:N0}", true,
             perHour: SessionMgpPerHour(sess.MGPWon, StatsSessionClock.GetTriadElapsedHours()));
 
         (var lifeNpcCount, var lifeNpcName) = TopNpcCell(life);
         (var sessNpcCount, var sessNpcName) = TopNpcCell(sess);
-        StatsRow("Most played NPC", lifeNpcCount, sessNpcCount, tooltipLife: lifeNpcName, tooltipSess: sessNpcName);
+        StatsRow("最常對戰 NPC", lifeNpcCount, sessNpcCount, tooltipLife: lifeNpcName, tooltipSess: sessNpcName);
 
         (var lifeCardCount, var lifeCardName) = TopCardCell(life);
         (var sessCardCount, var sessCardName) = TopCardCell(sess);
-        StatsRow("Most won card", lifeCardCount, sessCardCount, tooltipLife: lifeCardName, tooltipSess: sessCardName);
+        StatsRow("最常獲得卡片", lifeCardCount, sessCardCount, tooltipLife: lifeCardName, tooltipSess: sessCardName);
     }
 
     private static void DrawCuffRows(Stats life, Stats sess)
@@ -104,12 +104,12 @@ public partial class PluginUI
             return;
         }
         StatsHeader();
-        StatsRow("Games", life.CuffGamesPlayed, sess.CuffGamesPlayed,
+        StatsRow("對戰場數", life.CuffGamesPlayed, sess.CuffGamesPlayed,
             perHour: SessionCountPerHour(sess.CuffGamesPlayed, StatsSessionClock.GetCuffElapsedHours()));
         StatsRow("Bruisings", life.CuffBruisings, sess.CuffBruisings);
         StatsRow("Punishings", life.CuffPunishings, sess.CuffPunishings);
         StatsRow("Brutals", life.CuffBrutals, sess.CuffBrutals);
-        StatsRow("MGP won", $"{life.CuffMGP:N0}", $"{sess.CuffMGP:N0}", true,
+        StatsRow("獲得 MGP", $"{life.CuffMGP:N0}", $"{sess.CuffMGP:N0}", true,
             perHour: SessionMgpPerHour(sess.CuffMGP, StatsSessionClock.GetCuffElapsedHours()));
     }
 
@@ -121,9 +121,9 @@ public partial class PluginUI
             return;
         }
         StatsHeader();
-        StatsRow("Games", life.LimbGamesPlayed, sess.LimbGamesPlayed,
+        StatsRow("對戰場數", life.LimbGamesPlayed, sess.LimbGamesPlayed,
             perHour: SessionCountPerHour(sess.LimbGamesPlayed, StatsSessionClock.GetLimbElapsedHours()));
-        StatsRow("MGP won", $"{life.LimbMGP:N0}", $"{sess.LimbMGP:N0}", true,
+        StatsRow("獲得 MGP", $"{life.LimbMGP:N0}", $"{sess.LimbMGP:N0}", true,
             perHour: SessionMgpPerHour(sess.LimbMGP, StatsSessionClock.GetLimbElapsedHours()));
     }
 
@@ -135,9 +135,9 @@ public partial class PluginUI
             return;
         }
         StatsHeader();
-        StatsRow("Games", life.AirForceGamesPlayed, sess.AirForceGamesPlayed,
+        StatsRow("對戰場數", life.AirForceGamesPlayed, sess.AirForceGamesPlayed,
             perHour: SessionCountPerHour(sess.AirForceGamesPlayed, StatsSessionClock.GetAirForceElapsedHours()));
-        StatsRow("MGP won", $"{life.AirForceMGP:N0}", $"{sess.AirForceMGP:N0}", true,
+        StatsRow("獲得 MGP", $"{life.AirForceMGP:N0}", $"{sess.AirForceMGP:N0}", true,
             perHour: SessionMgpPerHour(sess.AirForceMGP, StatsSessionClock.GetAirForceElapsedHours()));
     }
 
@@ -163,22 +163,22 @@ public partial class PluginUI
 
     private static void StatsHeader()
     {
-        ImGui.TableSetupColumn("Metric", ImGuiTableColumnFlags.WidthStretch, 0.30f);
-        ImGui.TableSetupColumn("Lifetime", ImGuiTableColumnFlags.WidthStretch, 0.25f);
-        ImGui.TableSetupColumn("Session", ImGuiTableColumnFlags.WidthStretch, 0.25f);
-        ImGui.TableSetupColumn("Per Hour", ImGuiTableColumnFlags.WidthStretch, 0.20f);
+        ImGui.TableSetupColumn("項目", ImGuiTableColumnFlags.WidthStretch, 0.30f);
+        ImGui.TableSetupColumn("累計", ImGuiTableColumnFlags.WidthStretch, 0.25f);
+        ImGui.TableSetupColumn("本次", ImGuiTableColumnFlags.WidthStretch, 0.25f);
+        ImGui.TableSetupColumn("每小時", ImGuiTableColumnFlags.WidthStretch, 0.20f);
 
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
-        RightAlignCellText("Lifetime", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("累計", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         ImGui.TableNextColumn();
-        RightAlignCellText("Session", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("本次", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         ImGui.TableNextColumn();
-        RightAlignCellText("Per Hour", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("每小時", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("Session rate since the first counted game of this minigame.");
+            ImGui.SetTooltip("自本小遊戲首次計入紀錄以來的本次場次速率。");
         }
     }
 

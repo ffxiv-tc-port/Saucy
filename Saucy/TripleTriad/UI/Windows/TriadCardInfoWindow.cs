@@ -20,7 +20,7 @@ public class TriadCardInfoWindow : Window, IDisposable
     private TriadCard? selectedCard;
     private GameCardInfo? selectedCardInfo;
 
-    public TriadCardInfoWindow(UIReaderTriadCardList uiReaderCardList, TriadCardSearchWindow cardSearchWindow) : base("Card Info")
+    public TriadCardInfoWindow(UIReaderTriadCardList uiReaderCardList, TriadCardSearchWindow cardSearchWindow) : base("卡片資訊")
     {
         this.uiReaderCardList = uiReaderCardList;
         this.cardSearchWindow = cardSearchWindow;
@@ -152,7 +152,7 @@ public class TriadCardInfoWindow : Window, IDisposable
                 ImGui.AlignTextToFramePadding();
             }
 
-            ImGui.Text("Reward from:");
+            ImGui.Text("獎勵來源：");
 
             if (selectedCardInfo != null && rewardNpc != null && rewardNpcInfo != null && rewardNpcInfo.Location != null)
             {
@@ -171,14 +171,14 @@ public class TriadCardInfoWindow : Window, IDisposable
                 }
                 else
                 {
-                    TriadNpcMapUi.DrawMapLocationRow(rewardNpcInfo.Location, "Show on map", rewardNpc);
+                    TriadNpcMapUi.DrawMapLocationRow(rewardNpcInfo.Location, "在地圖上顯示", rewardNpc);
                 }
 
                 ImGui.TextColored(colorGray, rewardNpcRules);
             }
             else
             {
-                ImGui.TextColored(colorGray, "Not available");
+                ImGui.TextColored(colorGray, "無可用資料");
             }
         }
     }
@@ -194,7 +194,7 @@ public class TriadCardInfoWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-            ImGui.SetTooltip("Show in NPC tab");
+            ImGui.SetTooltip("在 NPC 分頁中顯示");
         }
     }
 
