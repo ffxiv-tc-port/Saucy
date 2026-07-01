@@ -3,6 +3,7 @@ using Dalamud.Interface.Utility.Raii;
 using ECommons.ImGuiMethods;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Saucy.AirForce;
+using Saucy.LeapOfFaith;
 using Saucy.OtherGames;
 namespace Saucy;
 
@@ -65,6 +66,53 @@ public unsafe partial class PluginUI
         ImGui.TextWrapped("啟用後將自動執行，為你自動遊玩 Air Force One 射擊乘坐小遊戲。");
     }
 
+    private static void DrawLeapOfFaithPanel()
+    {
+        DrawPanelHeader("Leap of Faith", "登高跳跳樂");
+        var enabled = C.IsModuleEnabled(ModuleNames.LeapOfFaith);
+        if (ImGui.Checkbox("啟用##LeapOfFaith", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.LeapOfFaith, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("開啟後會在畫面上標出目前偵測到的終點或仙人掌盃位置與距離。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var autoMove = C.GoldSaucerGates.LeapOfFaithAutoMovement;
+            if (ImGui.Checkbox("自動移動＋跳躍（實驗性）##LeapOfFaithAuto", ref autoMove))
+            {
+                C.GoldSaucerGates.LeapOfFaithAutoMovement = autoMove;
+                C.Save();
+            }
+
+            if (autoMove)
+            {
+                SaucyTheme.TextMuted("沒有跳台碰撞偵測，只會朝目標方向移動並定時跳躍，可能會摔落，請留意。");
+
+                var invert = C.GoldSaucerGates.LeapOfFaithInvertTurn;
+                if (ImGui.Checkbox("反轉轉向##LeapOfFaithInvert", ref invert))
+                {
+                    C.GoldSaucerGates.LeapOfFaithInvertTurn = invert;
+                    C.Save();
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("如果自動移動時角色一直轉錯方向，勾選這個試試看。");
+                }
+
+                var jumpInterval = C.GoldSaucerGates.LeapOfFaithJumpIntervalSeconds;
+                if (ImGui.SliderFloat("跳躍間隔（秒）##LeapOfFaithJumpInterval", ref jumpInterval, 0.6f, 3f, "%.1f"))
+                {
+                    C.GoldSaucerGates.LeapOfFaithJumpIntervalSeconds = jumpInterval;
+                    C.Save();
+                }
+            }
+        }
+    }
+
     private static BannerInfo BuildBannerInfo()
     {
         var im = InventoryManager.Instance();
@@ -82,6 +130,10 @@ public unsafe partial class PluginUI
         else if (C.IsModuleEnabled(ModuleNames.AirForceOne))
         {
             status = "Air Force One";
+        }
+        else if (C.IsModuleEnabled(ModuleNames.LeapOfFaith))
+        {
+            status = "Leap of Faith";
         }
         else
         {

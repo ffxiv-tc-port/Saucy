@@ -22,6 +22,7 @@ public unsafe partial class PluginUI : Window
     private static readonly string[] SidebarLabels =
     [
         "Wind Blows",
+        "Leap of Faith",
         "Triple Triad",
         "統計",
         "關於",
@@ -143,6 +144,7 @@ public unsafe partial class PluginUI : Window
         DrawSidebarHeader("GATES");
         NavSelectable("Wind Blows", NavItem.AnyWayTheWindBlows);
         NavSelectable("Air Force One", NavItem.AirForceOne);
+        NavSelectable("Leap of Faith", NavItem.LeapOfFaith);
 
         ImGui.Dummy(new(0, 6));
         DrawSidebarHeader("OTHER GAMES");
@@ -191,6 +193,7 @@ public unsafe partial class PluginUI : Window
             case NavItem.TripleTriad: DrawTriadPanel(); break;
             case NavItem.AnyWayTheWindBlows: DrawWindBlowsPanel(); break;
             case NavItem.AirForceOne: DrawAirForcePanel(); break;
+            case NavItem.LeapOfFaith: DrawLeapOfFaithPanel(); break;
             case NavItem.Stats: DrawStatsTab(); break;
             case NavItem.About: AboutTab.Draw("Saucy"); break;
             case NavItem.Debug: DrawDebugTab(); break;
@@ -302,6 +305,7 @@ public unsafe partial class PluginUI : Window
         TripleTriad,
         AnyWayTheWindBlows,
         AirForceOne,
+        LeapOfFaith,
         Stats,
         About,
         Debug

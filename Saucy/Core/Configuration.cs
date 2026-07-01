@@ -122,4 +122,7 @@ public class Configuration : IPluginConfiguration
 public class GoldSaucerGateSettings
 {
     public bool WindBlowsAutoMovement { get; set; }
+    public bool LeapOfFaithAutoMovement { get; set; }
+    public bool LeapOfFaithInvertTurn { get; set; }
+    public float LeapOfFaithJumpIntervalSeconds { get; set; } = 1.3f;
 }
