@@ -1,22 +1,21 @@
 using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 namespace Saucy.AirForce;
 
 internal static unsafe class RideShootingAim
 {
-    public static bool TrySetScreenAim(Vector2 screen)
-    {
-        var agent = AgentRideShooting.TryGet();
-        var handler = agent != null ? agent->Handler : null;
-        if (handler == null)
-        {
-            return false;
-        }
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetCursorPos(int x, int y);
 
-        handler->AimScreenX = screen.X;
-        handler->AimScreenY = screen.Y;
-        return true;
-    }
+    /// <summary>
+    /// Aiming in this minigame follows the real OS mouse cursor, not the internal
+    /// Handler.AimScreenX/Y struct field (confirmed: that field reads live, plausible values but
+    /// writing it has no effect on where shots land — user confirmed aim tracks actual mouse
+    /// movement). Move the real cursor instead of writing game memory.
+    /// </summary>
+    public static bool TrySetScreenAim(Vector2 screen) =>
+        SetCursorPos((int)screen.X, (int)screen.Y);
 
     public static bool VerifyLayoutParity(out string detail)
     {
