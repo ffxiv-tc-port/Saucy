@@ -148,6 +148,16 @@ public static unsafe class AirForceAutomation
                          rideAddon->AtkUnitBase.IsReady();
         ImGuiEx.Text($"RideShooting addon ready: {addonReady}");
 
+        // Raw addresses for manual memory scanning (e.g. Cheat Engine) — the AimScreenX/Y offset
+        // (0xC70/0xC74) is an unverified guess reading garbage in this build. Use these as base
+        // pointers to scan for the real offset instead of the whole module.
+        var agent = AgentRideShooting.TryGet();
+        ImGuiEx.Text($"AgentRideShooting address: 0x{(nint)agent:X}");
+        if (agent != null)
+        {
+            ImGuiEx.Text($"Handler pointer (at +0x30): 0x{(nint)agent->Handler:X}");
+        }
+
         var parityOk = RideShootingAim.VerifyLayoutParity(out var parityDetail);
         ImGuiEx.Text($"Legacy vs typed layout: {(parityOk ? "OK" : "MISMATCH")} — {parityDetail}");
 
