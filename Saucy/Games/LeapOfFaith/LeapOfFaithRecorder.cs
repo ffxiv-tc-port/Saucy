@@ -131,18 +131,22 @@ internal static class LeapOfFaithRecorder
         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
         var routePath = Path.Combine(dir, $"LeapOfFaithRoute_{stamp}.json");
-        File.WriteAllText(routePath, JsonSerializer.Serialize(points, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(routePath, JsonSerializer.Serialize(points, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
 
         var objectsPath = Path.Combine(dir, $"LeapOfFaithObjects_{stamp}.json");
         // Dedupe by DataId/Kind/Name for a readable summary; full per-sample distances stay in the raw list.
         var distinctSummary = objects
             .GroupBy(o => (o.DataId, o.Kind, o.Name))
-            .Select(g => new { g.Key.DataId, g.Key.Kind, g.Key.Name, Samples = g.Count(), FirstSeen = g.Min(o => o.ElapsedSeconds) })
+            .Select(g => new
+            {
+                g.Key.DataId, g.Key.Kind, g.Key.Name, Samples = g.Count(), FirstSeen = g.Min(o => o.ElapsedSeconds),
+                FirstPosition = g.OrderBy(o => o.ElapsedSeconds).First().Position
+            })
             .OrderBy(o => o.Kind).ThenBy(o => o.DataId)
             .ToList();
         File.WriteAllText(objectsPath, JsonSerializer.Serialize(
             new { Summary = distinctSummary, Raw = objects },
-            new JsonSerializerOptions { WriteIndented = true }));
+            new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
 
         return $"{routePath}\n{objectsPath}";
     }
