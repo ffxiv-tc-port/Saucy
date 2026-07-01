@@ -158,7 +158,7 @@ public partial class PluginUI
             return ("\u2014", null);
         }
         var top = s.CardsWon.OrderByDescending(x => x.Value).First();
-        return ($"{top.Value:N0}", TriadCardDB.Get().FindById((int)top.Key)!.Name);
+        return ($"{top.Value:N0}", TriadCardDB.Get().FindById((int)top.Key)?.Name);
     }
 
     private static void StatsHeader()
@@ -264,7 +264,11 @@ public partial class PluginUI
         var output = 0;
         foreach (var card in stat.CardsWon)
         {
-            output += GameCardDB.Get().FindById((int)card.Key)!.SaleValue * stat.CardsWon[card.Key];
+            var info = GameCardDB.Get().FindById((int)card.Key);
+            if (info != null)
+            {
+                output += info.SaleValue * stat.CardsWon[card.Key];
+            }
         }
         return output;
     }

@@ -23,8 +23,6 @@ public unsafe partial class PluginUI : Window
     [
         "Wind Blows",
         "Triple Triad",
-        "Mini-Cactpot",
-        "Jumbo Cactpot",
         "Stats",
         "About",
         "Debug",
@@ -149,8 +147,6 @@ public unsafe partial class PluginUI : Window
         ImGui.Dummy(new(0, 6));
         DrawSidebarHeader("OTHER GAMES");
         NavSelectable("Triple Triad", NavItem.TripleTriad);
-        NavSelectable("Mini-Cactpot", NavItem.MiniCactpot);
-        NavSelectable("Jumbo Cactpot", NavItem.JumboCactpot);
 
         ImGui.Dummy(new(0, 6));
         ImGui.Separator();
@@ -195,8 +191,6 @@ public unsafe partial class PluginUI : Window
             case NavItem.TripleTriad: DrawTriadPanel(); break;
             case NavItem.AnyWayTheWindBlows: DrawWindBlowsPanel(); break;
             case NavItem.AirForceOne: DrawAirForcePanel(); break;
-            case NavItem.MiniCactpot: DrawMiniCactpotPanel(); break;
-            case NavItem.JumboCactpot: DrawJumboCactpotPanel(); break;
             case NavItem.Stats: DrawStatsTab(); break;
             case NavItem.About: AboutTab.Draw("Saucy"); break;
             case NavItem.Debug: DrawDebugTab(); break;
@@ -262,8 +256,6 @@ public unsafe partial class PluginUI : Window
         TripleTriad,
         AnyWayTheWindBlows,
         AirForceOne,
-        MiniCactpot,
-        JumboCactpot,
         Stats,
         About,
         Debug

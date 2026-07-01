@@ -1,8 +1,8 @@
 {
   "Author": "Taurenkey, Kagekazu",
   "Name": "Saucy",
-  "Punchline": "When working for MGP is too much effort.",
-  "Description": "Automates certain Gold Saucer mini-games.",
+  "Punchline": "當賺取 MGP 太費工夫的時候。",
+  "Description": "自動化部分黃金水都小遊戲。",
   "InternalName": "Saucy",
   "IconUrl": "https://s3.puni.sh/media/plugin/7/icon-bl3wub19h2u.png",
   "RepoUrl": "https://github.com/PunishXIV/Saucy",

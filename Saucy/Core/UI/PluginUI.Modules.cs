@@ -65,56 +65,6 @@ public unsafe partial class PluginUI
         ImGui.TextWrapped("Runs automatically when enabled. Plays the Air Force One ride-shooting minigame for you.");
     }
 
-    private static void DrawMiniCactpotPanel()
-    {
-        DrawPanelHeader("Mini-Cactpot", "daily 3\u00d73 scratcher");
-        var enabled = C.IsModuleEnabled(ModuleNames.MiniCactpot);
-        if (ImGui.Checkbox("Enable##Mini", ref enabled))
-        {
-            C.SetModuleEnabled(ModuleNames.MiniCactpot, enabled);
-            C.Save();
-            if (ModuleManager.GetModule<MiniCactpot.MiniCactpot>() is { } miniCactpot)
-            {
-                if (enabled && !miniCactpot.IsEnabled)
-                {
-                    miniCactpot.EnableInternal();
-                }
-                else if (!enabled && miniCactpot.IsEnabled)
-                {
-                    miniCactpot.DisableInternal();
-                }
-            }
-        }
-
-        ImGui.TextWrapped("Plays Mini Cactpot automatically when you open the daily scratcher at the Gold Saucer.");
-    }
-
-    private static void DrawJumboCactpotPanel()
-    {
-        DrawPanelHeader("Jumbo Cactpot", "weekly 4-digit raffle");
-        var enabled = C.IsModuleEnabled(ModuleNames.JumboCactpot);
-        if (ImGui.Checkbox("Enable##Jumbo", ref enabled))
-        {
-            C.SetModuleEnabled(ModuleNames.JumboCactpot, enabled);
-            C.Save();
-            if (ModuleManager.GetModule<JumboCactpot.JumboCactpot>() is { } jumboCactpot)
-            {
-                if (enabled && !jumboCactpot.IsEnabled)
-                {
-                    jumboCactpot.EnableInternal();
-                }
-                else if (!enabled && jumboCactpot.IsEnabled)
-                {
-                    jumboCactpot.DisableInternal();
-                }
-            }
-        }
-
-        ImGui.TextWrapped(
-            "Collect prizes at the Cactpot cashier yourself. Saucy then paths you to the Jumbo " +
-            "broker and handles ticket purchase dialogue, randomizing, and confirms.");
-    }
-
     private static BannerInfo BuildBannerInfo()
     {
         var im = InventoryManager.Instance();
@@ -132,14 +82,6 @@ public unsafe partial class PluginUI
         else if (C.IsModuleEnabled(ModuleNames.AirForceOne))
         {
             status = "Air Force One";
-        }
-        else if (C.IsModuleEnabled(ModuleNames.MiniCactpot))
-        {
-            status = "Mini-Cactpot";
-        }
-        else if (C.IsModuleEnabled(ModuleNames.JumboCactpot))
-        {
-            status = "Jumbo Cactpot";
         }
         else
         {

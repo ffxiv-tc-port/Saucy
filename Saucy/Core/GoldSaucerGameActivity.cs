@@ -1,9 +1,7 @@
 using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Saucy.AirForce;
-using Saucy.Cactpot;
 using Saucy.Framework;
-using Saucy.JumboCactpot;
 using Saucy.OtherGames;
 
 namespace Saucy;
@@ -13,8 +11,6 @@ internal static class GoldSaucerGameActivity
     public static bool IsAnyGamePlaying()
     {
         if (IsTriadSessionActive() ||
-            IsMiniCactpotSessionActive() ||
-            IsJumboCactpotSessionActive() ||
             IsAirForceSessionActive() ||
             IsGateAutoMovementActive())
         {
@@ -30,12 +26,6 @@ internal static class GoldSaucerGameActivity
          uiReaderGame.IsVisible ||
          TriadMapNavigation.IsNavigationActive ||
          TriadCardFarmSession.SessionActive);
-
-    private static bool IsMiniCactpotSessionActive() =>
-        C.IsModuleEnabled(ModuleNames.MiniCactpot) && CactpotSessionActivity.IsMiniActive;
-
-    private static bool IsJumboCactpotSessionActive() =>
-        C.IsModuleEnabled(ModuleNames.JumboCactpot) && CactpotSessionActivity.IsJumboActive;
 
     private static bool IsAirForceSessionActive() =>
         C.IsModuleEnabled(ModuleNames.AirForceOne) &&
