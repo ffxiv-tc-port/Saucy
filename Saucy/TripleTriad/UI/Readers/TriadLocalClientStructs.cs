@@ -110,3 +110,22 @@ internal unsafe struct AddonTripleTriad
     [FieldOffset(0x588)] public DeckArray RedDeck;
     [FieldOffset(0x8d0)] public BoardArray Board;
 }
+
+/// <summary>
+/// Old FFXIVClientStructs' AddonGSInfoCardList is missing the detail-pane stat fields
+/// (CardIconId, NumSideU/L/D/R, CardRarity, CardType) that newer versions expose. Those fields
+/// only feed secondary verification/fallback heuristics in TriadCardListSelectionReader and
+/// UIReaderTriadCardList (name/display-label/description-text/grid based detection remain
+/// fully intact), so report neutral "unknown" values here instead of guessing an unverifiable
+/// memory offset that could misbehave or crash against the live client.
+/// </summary>
+internal static unsafe class AddonGSInfoCardListExtensions
+{
+    public static int CardIconId(AddonGSInfoCardList* addon) => 0;
+    public static byte NumSideU(AddonGSInfoCardList* addon) => 0;
+    public static byte NumSideL(AddonGSInfoCardList* addon) => 0;
+    public static byte NumSideD(AddonGSInfoCardList* addon) => 0;
+    public static byte NumSideR(AddonGSInfoCardList* addon) => 0;
+    public static byte CardRarity(AddonGSInfoCardList* addon) => 0;
+    public static byte CardType(AddonGSInfoCardList* addon) => 0;
+}

@@ -107,7 +107,7 @@ internal static unsafe class TriadCardListSelectionReader
 
         if (displayCardId > 0)
         {
-            var fromIcon = TriadCardDB.Get().TryGetCardIdFromIconId(addon->CardIconId);
+            var fromIcon = TriadCardDB.Get().TryGetCardIdFromIconId(AddonGSInfoCardListExtensions.CardIconId(addon));
             if (fromIcon >= 0 && fromIcon != displayCardId)
             {
                 return true;
@@ -120,7 +120,7 @@ internal static unsafe class TriadCardListSelectionReader
             }
         }
 
-        if (TriadCardDB.Get().TryGetCardIdFromIconId(addon->CardIconId) < 0 &&
+        if (TriadCardDB.Get().TryGetCardIdFromIconId(AddonGSInfoCardListExtensions.CardIconId(addon)) < 0 &&
             (string.IsNullOrWhiteSpace(name) || IsMaskedCardName(name)))
         {
             return true;
@@ -143,14 +143,14 @@ internal static unsafe class TriadCardListSelectionReader
 
         if (displayCardId > 0)
         {
-            var fromIcon = TriadCardDB.Get().TryGetCardIdFromIconId(addon->CardIconId);
+            var fromIcon = TriadCardDB.Get().TryGetCardIdFromIconId(AddonGSInfoCardListExtensions.CardIconId(addon));
             if (fromIcon < 0 || fromIcon == displayCardId)
             {
                 return displayCardId;
             }
         }
 
-        var iconCardId = TriadCardDB.Get().TryGetCardIdFromIconId(addon->CardIconId);
+        var iconCardId = TriadCardDB.Get().TryGetCardIdFromIconId(AddonGSInfoCardListExtensions.CardIconId(addon));
         if (iconCardId >= 0)
         {
             return iconCardId;
@@ -392,21 +392,21 @@ internal static unsafe class TriadCardListSelectionReader
 
     private static int TryReadCardIdFromStats(AddonGSInfoCardList* addon)
     {
-        if (addon->NumSideU == 0 &&
-            addon->NumSideL == 0 &&
-            addon->NumSideD == 0 &&
-            addon->NumSideR == 0)
+        if (AddonGSInfoCardListExtensions.NumSideU(addon) == 0 &&
+            AddonGSInfoCardListExtensions.NumSideL(addon) == 0 &&
+            AddonGSInfoCardListExtensions.NumSideD(addon) == 0 &&
+            AddonGSInfoCardListExtensions.NumSideR(addon) == 0)
         {
             return -1;
         }
 
         var card = TriadCardDB.Get().Find(
-            addon->NumSideU,
-            addon->NumSideL,
-            addon->NumSideD,
-            addon->NumSideR,
-            (ETriadCardType)addon->CardType,
-            (ETriadCardRarity)addon->CardRarity);
+            AddonGSInfoCardListExtensions.NumSideU(addon),
+            AddonGSInfoCardListExtensions.NumSideL(addon),
+            AddonGSInfoCardListExtensions.NumSideD(addon),
+            AddonGSInfoCardListExtensions.NumSideR(addon),
+            (ETriadCardType)AddonGSInfoCardListExtensions.CardType(addon),
+            (ETriadCardRarity)AddonGSInfoCardListExtensions.CardRarity(addon));
         return card?.Id ?? -1;
     }
 

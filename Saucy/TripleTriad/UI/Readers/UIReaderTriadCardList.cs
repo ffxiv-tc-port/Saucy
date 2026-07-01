@@ -3,20 +3,15 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using System;
 namespace Saucy.TripleTriad.UI;
 
-public enum CardListFilterMode
-{
-    All,
-    OwnedOnly,
-    MissingOnly
-}
-
 internal static class CardListFilterMapping
 {
-    public static byte ToCollectionFilter(CardListFilterMode mode) =>
+    // Old FFXIVClientStructs' AgentGoldSaucer has no CardListFilterMode field; the addon
+    // itself (AddonGSInfoCardList.FilterMode) tracks the same "which cards are shown" state.
+    public static byte ToCollectionFilter(GSInfoCardListFilterMode mode) =>
         mode switch
         {
-            CardListFilterMode.OwnedOnly => (byte)GameCardCollectionFilter.OnlyOwned,
-            CardListFilterMode.MissingOnly => (byte)GameCardCollectionFilter.OnlyMissing,
+            GSInfoCardListFilterMode.DisplayOwnedCards => (byte)GameCardCollectionFilter.OnlyOwned,
+            GSInfoCardListFilterMode.DisplayUnownedCards => (byte)GameCardCollectionFilter.OnlyMissing,
             var _ => (byte)GameCardCollectionFilter.All
         };
 }
@@ -99,13 +94,12 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
         var newPageIndex = (byte)addon->SelectedPage;
         var newCardIndex = (byte)addon->SelectedCardIndex;
-        var newFilterMode = CardListFilterMapping.ToCollectionFilter(CardListFilterMode.All);
+        var newFilterMode = CardListFilterMapping.ToCollectionFilter(addon->FilterMode);
 
         AgentGoldSaucer* agent = null;
         if (cachedAddonAgentPtr != nint.Zero)
         {
             agent = (AgentGoldSaucer*)cachedAddonAgentPtr;
-            newFilterMode = CardListFilterMapping.ToCollectionFilter(agent->CardListFilterMode);
         }
 
         var displayCardId = TriadCardListSelectionReader.TryParseCardIdFromDisplayLabel(addon);
@@ -150,22 +144,22 @@ public unsafe class UIReaderTriadCardList : IUIReader
                                cachedState.cardIndex != newCardIndex ||
                                cachedState.filterMode != newFilterMode ||
                                cachedState.selectionMasked != newSelectionMasked ||
-                               cachedState.iconId != addon->CardIconId ||
-                               cachedState.numU != addon->NumSideU ||
-                               cachedState.numL != addon->NumSideL ||
-                               cachedState.numD != addon->NumSideD ||
-                               cachedState.numR != addon->NumSideR ||
-                               cachedState.rarity != addon->CardRarity ||
-                               cachedState.type != (byte)addon->CardType ||
+                               cachedState.iconId != AddonGSInfoCardListExtensions.CardIconId(addon) ||
+                               cachedState.numU != AddonGSInfoCardListExtensions.NumSideU(addon) ||
+                               cachedState.numL != AddonGSInfoCardListExtensions.NumSideL(addon) ||
+                               cachedState.numD != AddonGSInfoCardListExtensions.NumSideD(addon) ||
+                               cachedState.numR != AddonGSInfoCardListExtensions.NumSideR(addon) ||
+                               cachedState.rarity != AddonGSInfoCardListExtensions.CardRarity(addon) ||
+                               cachedState.type != (byte)AddonGSInfoCardListExtensions.CardType(addon) ||
                                cachedState.selectedCardId != selectedCardId;
 
-        cachedState.numU = addon->NumSideU;
-        cachedState.numL = addon->NumSideL;
-        cachedState.numD = addon->NumSideD;
-        cachedState.numR = addon->NumSideR;
-        cachedState.rarity = addon->CardRarity;
-        cachedState.type = (byte)addon->CardType;
-        cachedState.iconId = addon->CardIconId;
+        cachedState.numU = AddonGSInfoCardListExtensions.NumSideU(addon);
+        cachedState.numL = AddonGSInfoCardListExtensions.NumSideL(addon);
+        cachedState.numD = AddonGSInfoCardListExtensions.NumSideD(addon);
+        cachedState.numR = AddonGSInfoCardListExtensions.NumSideR(addon);
+        cachedState.rarity = AddonGSInfoCardListExtensions.CardRarity(addon);
+        cachedState.type = (byte)AddonGSInfoCardListExtensions.CardType(addon);
+        cachedState.iconId = AddonGSInfoCardListExtensions.CardIconId(addon);
         cachedState.pageIndex = newPageIndex;
         cachedState.cardIndex = newCardIndex;
         cachedState.filterMode = newFilterMode;
@@ -237,7 +231,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
         var addon = (AddonGSInfoCardList*)addonPtr;
         var agent = (AgentGoldSaucer*)cachedAddonAgentPtr;
-        var filterMode = CardListFilterMapping.ToCollectionFilter(agent->CardListFilterMode);
+        var filterMode = CardListFilterMapping.ToCollectionFilter(addon->FilterMode);
         var displayCardId = TriadCardListSelectionReader.TryParseCardIdFromDisplayLabel(addon);
         pendingNavSourceCardId = TriadCardListSelectionReader.ReadSelectedCardId(addon, filterMode, agent, displayCardId);
 
@@ -322,7 +316,8 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
         if (addon->SelectedPage != pendingNavPage)
         {
-            addon->RequestedPage = pendingNavPage;
+            // Old FFXIVClientStructs has no separate RequestedPage hint field; the tab
+            // controller call below is what actually drives the page change.
             addon->TabController.SetTabIndexAndCallBack(pendingNavPage);
             addon->AtkUnitBase.Update(0);
             return;
@@ -366,7 +361,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
             return true;
         }
 
-        if (TriadCardListSelectionReader.IconMatchesCard(addon->CardIconId, pendingNavCardId))
+        if (TriadCardListSelectionReader.IconMatchesCard(AddonGSInfoCardListExtensions.CardIconId(addon), pendingNavCardId))
         {
             return AddonStatsMatchCard(addon, pendingNavCardId);
         }
@@ -376,7 +371,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     private static bool AddonStatsMatchCard(AddonGSInfoCardList* addon, int cardId)
     {
-        var hasSideStats = addon->NumSideU != 0 || addon->NumSideL != 0 || addon->NumSideD != 0 || addon->NumSideR != 0;
+        var hasSideStats = AddonGSInfoCardListExtensions.NumSideU(addon) != 0 || AddonGSInfoCardListExtensions.NumSideL(addon) != 0 || AddonGSInfoCardListExtensions.NumSideD(addon) != 0 || AddonGSInfoCardListExtensions.NumSideR(addon) != 0;
         if (!hasSideStats)
         {
             return true;
@@ -388,10 +383,10 @@ public unsafe class UIReaderTriadCardList : IUIReader
             return true;
         }
 
-        return addon->NumSideU == expectedCard.Sides[0] &&
-               addon->NumSideL == expectedCard.Sides[1] &&
-               addon->NumSideD == expectedCard.Sides[2] &&
-               addon->NumSideR == expectedCard.Sides[3];
+        return AddonGSInfoCardListExtensions.NumSideU(addon) == expectedCard.Sides[0] &&
+               AddonGSInfoCardListExtensions.NumSideL(addon) == expectedCard.Sides[1] &&
+               AddonGSInfoCardListExtensions.NumSideD(addon) == expectedCard.Sides[2] &&
+               AddonGSInfoCardListExtensions.NumSideR(addon) == expectedCard.Sides[3];
     }
 
     private static nint ResolveAddonPtr()
