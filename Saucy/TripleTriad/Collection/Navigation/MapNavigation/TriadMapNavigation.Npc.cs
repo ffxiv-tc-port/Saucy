@@ -432,7 +432,7 @@ internal static unsafe partial class TriadMapNavigation
 
         foreach (var obj in Svc.Objects)
         {
-            if (obj.BaseId != baseId)
+            if (obj.DataId != baseId)
             {
                 continue;
             }

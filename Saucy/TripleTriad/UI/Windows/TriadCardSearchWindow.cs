@@ -46,10 +46,10 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         this.uiReaderCardList = uiReaderCardList;
         this.statsWindow = statsWindow;
 
-        var searchFilterCardPtr = ImGuiNative.ImGuiTextFilter(null);
+        var searchFilterCardPtr = ImGuiNative.ImGuiTextFilter_ImGuiTextFilter(null);
         searchFilterCard = new(searchFilterCardPtr);
 
-        var searchFilterNpcPtr = ImGuiNative.ImGuiTextFilter(null);
+        var searchFilterNpcPtr = ImGuiNative.ImGuiTextFilter_ImGuiTextFilter(null);
         searchFilterNpc = new(searchFilterNpcPtr);
 
         uiReaderCardList.OnVisibilityChanged += _ => UpdateWindowData();
@@ -84,8 +84,8 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
     public void Dispose()
     {
-        ImGuiNative.Destroy(searchFilterCard.Handle);
-        ImGuiNative.Destroy(searchFilterNpc.Handle);
+        searchFilterCard.Destroy();
+        searchFilterNpc.Destroy();
     }
 
     internal void SyncVisibility() => UpdateWindowData();

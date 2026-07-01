@@ -11,8 +11,7 @@ internal static class ImGuiLayout
 {
     public static void DrawCollapsingSection(string title, ImGuiTreeNodeFlags flags, Action body)
     {
-        using var header = ImRaii.Header(title, flags);
-        if (!header)
+        if (!ImGui.CollapsingHeader(title, flags))
         {
             return;
         }

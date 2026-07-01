@@ -8,7 +8,7 @@ public static class TriadMemoryReads
 {
     private const uint QuestRowIdOffset = 65536;
     public static bool IsAvailable
-        => Svc.ClientState.IsLoggedIn && Svc.Objects.LocalPlayer != null;
+        => Svc.ClientState.IsLoggedIn && Svc.ClientState.LocalPlayer != null;
 
     public static unsafe bool TryIsCardOwned(int cardId)
     {

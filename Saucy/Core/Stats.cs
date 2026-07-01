@@ -43,7 +43,7 @@ public static class StatsBonusHelper
     public static int ApplyMgpBonus(int numMgp)
     {
         double multiplier = 1;
-        var localPlayer = Svc.Objects.LocalPlayer;
+        var localPlayer = Svc.ClientState.LocalPlayer;
         if (localPlayer == null)
         {
             return numMgp;
