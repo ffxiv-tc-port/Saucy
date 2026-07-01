@@ -253,7 +253,42 @@ public unsafe partial class PluginUI : Window
             }
         });
 
+        ImGuiLayout.DrawCollapsingSection("Triple Triad 棋盤記憶體", ImGuiTreeNodeFlags.DefaultOpen, DrawTriadBoardMemoryDebug);
+
         ImGuiLayout.DrawCollapsingSection("Leap of Faith 路徑記錄", ImGuiTreeNodeFlags.DefaultOpen, DrawLeapOfFaithRecorder);
+    }
+
+    /// <summary>
+    /// Raw addresses for the TripleTriad addon and the offsets AddonTripleTriad currently assumes
+    /// for TurnState/BlueDeck/RedDeck/Board — these were reconstructed without any old-client
+    /// reference and may not match this TW build's actual memory layout. Exposed here so they can
+    /// be cross-checked with external memory scanning against a known on-screen board state.
+    /// </summary>
+    private static unsafe void DrawTriadBoardMemoryDebug()
+    {
+        if (!TriadLocalClientStructs.TryGetBoard(out var addon, requireVisible: false))
+        {
+            ImGui.TextDisabled("找不到 TripleTriad addon。");
+            return;
+        }
+
+        var baseAddr = (nint)addon;
+        ImGui.Text($"Addon 基底位址：0x{baseAddr:X}");
+        ImGui.Text($"IsVisible：{addon->AtkUnitBase.IsVisible}");
+        ImGui.Text($"TurnState (+0x238)：{addon->TurnState}");
+        ImGui.Text($"BlueDeck 起始位址 (+0x240)：0x{baseAddr + 0x240:X}");
+        ImGui.Text($"RedDeck 起始位址 (+0x588)：0x{baseAddr + 0x588:X}");
+        ImGui.Text($"Board 起始位址 (+0x8d0)：0x{baseAddr + 0x8d0:X}");
+
+        ImGui.Dummy(new(0, 4));
+        ImGui.TextWrapped("目前讀到的 9 格棋盤（若下方全部顯示「空」，代表位移量對不上，需要用記憶體掃描重新比對）：");
+        for (var i = 0; i < 9; i++)
+        {
+            var card = addon->Board[i];
+            ImGui.Text(card.HasCard
+                ? $"  格 {i}: owner={card.CardOwner} U{card.NumSideU} L{card.NumSideL} D{card.NumSideD} R{card.NumSideR} rarity={card.CardRarity} type={card.CardType}"
+                : $"  格 {i}: 空");
+        }
     }
 
     private static void DrawLeapOfFaithRecorder()
