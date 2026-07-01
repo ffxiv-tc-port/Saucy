@@ -294,7 +294,7 @@ public unsafe partial class PluginUI : Window
         ImGui.Text($"TurnState (+0x238)：{addon->TurnState}");
         ImGui.Text($"BlueDeck 起始位址 (+0x240)：0x{baseAddr + 0x240:X}");
         ImGui.Text($"RedDeck 起始位址 (+0x588)：0x{baseAddr + 0x588:X}");
-        ImGui.Text($"Board 起始位址 (+0xAA0)：0x{baseAddr + 0xAA0:X}");
+        ImGui.Text($"Board 起始位址 (+0x8d0)：0x{baseAddr + 0x8d0:X}");
 
         ImGui.Dummy(new(0, 4));
         ImGui.TextWrapped("目前讀到的 9 格棋盤（若下方全部顯示「空」，代表位移量對不上，需要用記憶體掃描重新比對）：");
