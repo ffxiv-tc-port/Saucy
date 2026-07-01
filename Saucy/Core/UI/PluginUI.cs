@@ -282,7 +282,10 @@ public unsafe partial class PluginUI : Window
 
         var count = LeapOfFaith.LeapOfFaithRecorder.Points.Count;
         var objCount = LeapOfFaith.LeapOfFaithRecorder.Objects.Count;
-        ImGui.Text($"已記錄玩家座標點數：{count}　附近物件取樣數：{objCount}");
+        var attempts = LeapOfFaith.LeapOfFaithRecorder.Points.Count > 0
+            ? LeapOfFaith.LeapOfFaithRecorder.Points[^1].AttemptIndex + 1
+            : 0;
+        ImGui.Text($"已記錄玩家座標點數：{count}　附近物件取樣數：{objCount}　偵測到的嘗試次數：{attempts}");
 
         using (ImRaii.Disabled(count == 0))
         {

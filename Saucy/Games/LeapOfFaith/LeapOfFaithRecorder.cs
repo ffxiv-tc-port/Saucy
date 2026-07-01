@@ -24,7 +24,13 @@ internal static class LeapOfFaithRecorder
     private const int ObjectSampleIntervalMs = 500;
     private const float ObjectScanRadius = 60f;
 
-    public readonly record struct RecordedPoint(float ElapsedSeconds, Vector3 Position, float Rotation, bool InGate);
+    // A teleport-sized jump between consecutive 150ms samples (normal movement/falling can't
+    // cover this far) means the player fell off and got returned to a checkpoint/start — treat
+    // that as the boundary between attempts.
+    private const float RespawnJumpDistance = 15f;
+
+    public readonly record struct RecordedPoint(
+        float ElapsedSeconds, Vector3 Position, float Rotation, bool InGate, bool LikelyRespawn, int AttemptIndex);
 
     public readonly record struct RecordedObject(
         float ElapsedSeconds, uint DataId, ObjectKind Kind, string Name, Vector3 Position, float DistanceToPlayer);
@@ -38,6 +44,8 @@ internal static class LeapOfFaithRecorder
     private static readonly List<RecordedPoint> points = [];
     private static readonly List<RecordedObject> objects = [];
     private static DateTime recordingStartUtc;
+    private static Vector3? lastPosition;
+    private static int attemptIndex;
 
     public static void StartRecording()
     {
@@ -48,6 +56,8 @@ internal static class LeapOfFaithRecorder
 
         points.Clear();
         objects.Clear();
+        lastPosition = null;
+        attemptIndex = 0;
         recordingStartUtc = DateTime.UtcNow;
         IsRecording = true;
         Svc.Framework.Update += OnFrameworkUpdate;
@@ -81,7 +91,16 @@ internal static class LeapOfFaithRecorder
 
         if (EzThrottler.Throttle("Saucy.LeapOfFaith.RecordPlayer", PlayerSampleIntervalMs))
         {
-            points.Add(new RecordedPoint(elapsed, Player.Position, Player.Rotation, GateDirector.IsInGate(Module.GateType.LeapOfFaith)));
+            var pos = Player.Position;
+            var likelyRespawn = lastPosition.HasValue && Vector3.Distance(pos, lastPosition.Value) > RespawnJumpDistance;
+            if (likelyRespawn)
+            {
+                attemptIndex++;
+            }
+            lastPosition = pos;
+
+            points.Add(new RecordedPoint(elapsed, pos, Player.Rotation, GateDirector.IsInGate(Module.GateType.LeapOfFaith),
+                likelyRespawn, attemptIndex));
         }
 
         if (EzThrottler.Throttle("Saucy.LeapOfFaith.RecordObjects", ObjectSampleIntervalMs))
