@@ -2,13 +2,32 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
         <Authors>Puni.sh</Authors>
-        <Version>2.1.1.11</Version>
+        <VersionPrefix>2.1.1</VersionPrefix>
+        <BuildNumberFile>$(MSBuildProjectDirectory)\BuildNumber.txt</BuildNumberFile>
     </PropertyGroup>
 
     <PropertyGroup>
         <TargetFramework>net9.0-windows</TargetFramework>
         <LangVersion>preview</LangVersion>
     </PropertyGroup>
+
+    <!-- Bumps a persisted build counter on every build and folds it into the assembly version's
+         4th component, so each local build gets a distinct, easily-identifiable version number
+         (shown in-game via TitleBarVersion.cs). -->
+    <Target Name="BumpBuildNumber" BeforeTargets="BeforeCompile;CoreCompile;GenerateAssemblyInfo">
+        <ReadLinesFromFile File="$(BuildNumberFile)" Condition="Exists('$(BuildNumberFile)')">
+            <Output TaskParameter="Lines" ItemName="_BuildNumberLine"/>
+        </ReadLinesFromFile>
+        <PropertyGroup>
+            <_PreviousBuildNumber Condition="'@(_BuildNumberLine)' != ''">@(_BuildNumberLine)</_PreviousBuildNumber>
+            <_PreviousBuildNumber Condition="'$(_PreviousBuildNumber)' == ''">0</_PreviousBuildNumber>
+            <BuildNumber>$([MSBuild]::Add($(_PreviousBuildNumber), 1))</BuildNumber>
+            <Version>$(VersionPrefix).$(BuildNumber)</Version>
+            <AssemblyVersion>$(Version)</AssemblyVersion>
+            <FileVersion>$(Version)</FileVersion>
+        </PropertyGroup>
+        <WriteLinesToFile File="$(BuildNumberFile)" Lines="$(BuildNumber)" Overwrite="true"/>
+    </Target>
 
     <!-- Apply .editorconfig code-style (IDE*) and analyzers on Debug builds and when CI=true. -->
     <PropertyGroup Condition="'$(Configuration)' == 'Debug' Or '$(CI)' == 'true'">
