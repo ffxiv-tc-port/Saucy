@@ -10,21 +10,21 @@ public unsafe partial class PluginUI
 {
     private static void DrawWindBlowsPanel()
     {
-        DrawPanelHeader("Any Way the Wind Blows", "statistical safe spot");
+        DrawPanelHeader("Any Way the Wind Blows", "統計安全點");
         var enabled = C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows);
-        if (ImGui.Checkbox("Enable##Wind", ref enabled))
+        if (ImGui.Checkbox("啟用##Wind", ref enabled))
         {
             C.SetModuleEnabled(ModuleNames.AnyWayTheWindBlows, enabled);
             C.Save();
         }
 
-        ImGui.TextWrapped("Shows the statistical safe spot during the GATE.");
+        ImGui.TextWrapped("在 GATE 期間顯示統計上的安全站位點。");
 
         if (enabled)
         {
             using var indent = ImRaii.PushIndent();
             var autoMove = C.GoldSaucerGates.WindBlowsAutoMovement;
-            if (ImGui.Checkbox("Automatic movement (vnavmesh)##WindAuto", ref autoMove))
+            if (ImGui.Checkbox("自動移動（vnavmesh）##WindAuto", ref autoMove))
             {
                 C.GoldSaucerGates.WindBlowsAutoMovement = autoMove;
                 C.Save();
@@ -32,26 +32,26 @@ public unsafe partial class PluginUI
 
             if (autoMove)
             {
-                SaucyTheme.TextMuted("Pathfinds you onto the safe spot while you are off it.");
+                SaucyTheme.TextMuted("當你不在安全點上時，會自動導航你移動到安全點。");
             }
         }
 
         ImGui.Dummy(new(0, 4));
-        SaucyTheme.DrawCard("Dependencies", "Optional integrations", GoldSaucerGateDependenciesUi.DrawWindBlows);
+        SaucyTheme.DrawCard("相依項目", "選用整合功能", GoldSaucerGateDependenciesUi.DrawWindBlows);
     }
 
     private static void DrawAirForcePanel()
     {
-        DrawPanelHeader("Air Force One", "ride shooting minigame");
+        DrawPanelHeader("Air Force One", "射擊乘坐小遊戲");
         ImGuiEx.EzTabBar("###AirForce",
-            ("Main", DrawAirForceMain, null, false),
-            ("Debug", AirForceAutomation.DrawDebug, null, false));
+            ("主要", DrawAirForceMain, null, false),
+            ("除錯", AirForceAutomation.DrawDebug, null, false));
     }
 
     private static void DrawAirForceMain()
     {
         var enabled = C.IsModuleEnabled(ModuleNames.AirForceOne);
-        if (ImGui.Checkbox("Enable##AirForce", ref enabled))
+        if (ImGui.Checkbox("啟用##AirForce", ref enabled))
         {
             C.SetModuleEnabled(ModuleNames.AirForceOne, enabled);
             if (!enabled)
@@ -62,7 +62,7 @@ public unsafe partial class PluginUI
             C.Save();
         }
 
-        ImGui.TextWrapped("Runs automatically when enabled. Plays the Air Force One ride-shooting minigame for you.");
+        ImGui.TextWrapped("啟用後將自動執行，為你自動遊玩 Air Force One 射擊乘坐小遊戲。");
     }
 
     private static BannerInfo BuildBannerInfo()
@@ -85,7 +85,7 @@ public unsafe partial class PluginUI
         }
         else
         {
-            status = "Idle";
+            status = "閒置";
         }
 
         var sessionDelta = C.SessionStats.MGPWon + C.SessionStats.CuffMGP + C.SessionStats.LimbMGP +

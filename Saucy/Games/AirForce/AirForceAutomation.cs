@@ -3,7 +3,6 @@ using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons;
 using ECommons.Automation;
-using ECommons.CSExtensions;
 using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
 using ECommons.Throttlers;
@@ -19,6 +18,12 @@ internal static unsafe class EventObjExtensions
     // underlying FFXIVClientStructs GameObject's EventState directly instead.
     public static byte AnimationId(this IGameObject obj) =>
         obj.Address == nint.Zero ? (byte)0 : ((GameObject*)obj.Address)->EventState;
+
+    // Local shim for ECommons.CSExtensions.EqualsAny — that namespace only exists
+    // in ECommons versions that also reference Dalamud.Game.NativeWrapper.AtkUnitBasePtr,
+    // a type missing from this TW client's older Dalamud build.
+    public static bool EqualsAny<T>(this T value, params T[] candidates) where T : struct =>
+        Array.IndexOf(candidates, value) >= 0;
 }
 
 public static unsafe class AirForceAutomation

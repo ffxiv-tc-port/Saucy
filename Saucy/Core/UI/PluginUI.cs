@@ -23,10 +23,10 @@ public unsafe partial class PluginUI : Window
     [
         "Wind Blows",
         "Triple Triad",
-        "Stats",
-        "About",
-        "Debug",
-        "Saucy theme",
+        "統計",
+        "關於",
+        "除錯",
+        "Saucy 主題",
         "GATES",
         "OTHER GAMES"
     ];
@@ -47,7 +47,7 @@ public unsafe partial class PluginUI : Window
 
         TitleBarButtons.Add(new()
         {
-            ShowTooltip = () => ImGui.SetTooltip("♥ Ko-fi (to support my gacha addiction)"),
+            ShowTooltip = () => ImGui.SetTooltip("♥ Ko-fi（支持我的轉蛋成癮症）"),
             Icon = FontAwesomeIcon.Heart,
             IconOffset = new(1, 1),
             Click = _ => ShellStart(KagekazuKofiUrl)
@@ -100,7 +100,7 @@ public unsafe partial class PluginUI : Window
         var showDelta = info.SessionDelta > 0
                         && Environment.TickCount64 - _lastMgpIncreaseMs < DeltaVisibleMs;
         var delta = showDelta ? $"  +{info.SessionDelta:N0}" : "";
-        var status = info.ModuleStatus == "Idle" ? "Idle" : $"Enabled: {info.ModuleStatus}";
+        var status = info.ModuleStatus == "閒置" ? "閒置" : $"已啟用：{info.ModuleStatus}";
         WindowName = $"Saucy  \u2022  {status}  \u2022  MGP {info.Mgp:N0}{delta}###Saucy";
     }
 
@@ -150,9 +150,9 @@ public unsafe partial class PluginUI : Window
 
         ImGui.Dummy(new(0, 6));
         ImGui.Separator();
-        NavSelectable("Stats", NavItem.Stats);
-        NavSelectable("About", NavItem.About);
-        NavSelectable("Debug", NavItem.Debug);
+        NavSelectable("統計", NavItem.Stats);
+        NavSelectable("關於", NavItem.About);
+        NavSelectable("除錯", NavItem.Debug);
 
         var style = ImGui.GetStyle();
         var checkboxH = ImGui.GetFrameHeight();
@@ -166,12 +166,12 @@ public unsafe partial class PluginUI : Window
 
         ImGui.Separator();
         var on = C.SaucyThemeEnabled;
-        if (ImGui.Checkbox("Saucy theme", ref on))
+        if (ImGui.Checkbox("Saucy 主題", ref on))
         {
             C.SaucyThemeEnabled = on;
             C.Save();
         }
-        ImGui.TextDisabled("Designed by Wah");
+        ImGui.TextDisabled("設計者：Wah");
     }
 
     private void NavSelectable(string label, NavItem item)
@@ -201,8 +201,8 @@ public unsafe partial class PluginUI : Window
     {
         DrawPanelHeader("Triple Triad");
         ImGuiEx.EzTabBar("###Triad",
-            ("Main", TriadSettingsUi.Draw, null, false),
-            ("Cache", TriadCacheSettingsUi.Draw, null, false));
+            ("主要", TriadSettingsUi.Draw, null, false),
+            ("快取", TriadCacheSettingsUi.Draw, null, false));
     }
 
     private static void DrawPanelHeader(string title, string? subtitle = null) =>
@@ -210,7 +210,7 @@ public unsafe partial class PluginUI : Window
 
     private void DrawDebugTab()
     {
-        ImGuiLayout.DrawCollapsingSection("Gold Saucer gate", ImGuiTreeNodeFlags.DefaultOpen, () =>
+        ImGuiLayout.DrawCollapsingSection("黃金水都 GATE", ImGuiTreeNodeFlags.DefaultOpen, () =>
         {
             if (GoldSaucerManager.Instance() != null && GoldSaucerManager.Instance()->CurrentGFateDirector != null)
             {
@@ -221,11 +221,11 @@ public unsafe partial class PluginUI : Window
             }
             else
             {
-                ImGui.TextDisabled("No active gate director.");
+                ImGui.TextDisabled("目前沒有作用中的 GATE 導演。");
             }
         });
 
-        ImGuiLayout.DrawCollapsingSection("Triple Triad NPC menu", ImGuiTreeNodeFlags.DefaultOpen, () =>
+        ImGuiLayout.DrawCollapsingSection("Triple Triad NPC 選單", ImGuiTreeNodeFlags.DefaultOpen, () =>
         {
             ImGui.Text($"Navigation active: {TriadMapNavigation.IsNavigationActive}");
             ImGui.Text($"Awaiting triad start: {TriadMapNavigation.IsAwaitingTriadStartDialog()}");
@@ -234,7 +234,7 @@ public unsafe partial class PluginUI : Window
             SelectStringHelper.CollectTriadMenuDebugLines(menuLines);
             if (menuLines.Count == 0)
             {
-                ImGui.TextDisabled("No select string menu open.");
+                ImGui.TextDisabled("目前沒有開啟選項選單。");
             }
             else
             {

@@ -16,9 +16,9 @@
       },
       "ECommons": {
         "type": "Direct",
-        "requested": "[3.0.1.28, )",
-        "resolved": "3.0.1.28",
-        "contentHash": "gB5dRSHJfG20iPFRK25sQq76LuuSHnU3JuWieQhSU8Ckuh+P9V+N2rLN+X5VswgydSUjFAFEBmIsDSO+Gf8jtw=="
+        "requested": "[3.0.0.8, )",
+        "resolved": "3.0.0.8",
+        "contentHash": "wvB3MTBTYQh8a7gAf5pLVS1wqyvihn4Q0RpHAgf/i+vMPVMMi/X2fegWE6JEY13syR4kl8WlGCkQmemxCZhe6Q=="
       },
       "NAudio": {
         "type": "Direct",
@@ -91,7 +91,7 @@
       "punishlib": {
         "type": "Project",
         "dependencies": {
-          "ECommons": "[3.0.1.28, )"
+          "ECommons": "[3.0.0.8, )"
         }
       }
     }
