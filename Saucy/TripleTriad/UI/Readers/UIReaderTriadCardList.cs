@@ -399,9 +399,9 @@ public unsafe class UIReaderTriadCardList : IUIReader
         for (var i = 0; i < 8; i++)
         {
             var handle = Svc.GameGui.GetAddonByName("GSInfoCardList", i);
-            if (handle.Address != nint.Zero)
+            if (handle != nint.Zero)
             {
-                return handle.Address;
+                return handle;
             }
         }
 
@@ -410,7 +410,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     public static nint LoadFailsafeAgent()
     {
-        var uiModule = (UIModule*)Svc.GameGui.GetUIModule().Address;
+        var uiModule = (UIModule*)Svc.GameGui.GetUIModule();
         if (uiModule != null)
         {
             var agentModule = uiModule->GetAgentModule();

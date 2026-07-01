@@ -27,12 +27,12 @@ internal static unsafe class TriadResultRewardReader
         }
 
         var ifacePtr = Svc.GameGui.FindAgentInterface((nint)resultAddon);
-        if (ifacePtr.Address == nint.Zero)
+        if (ifacePtr == nint.Zero)
         {
             return 0;
         }
 
-        return ((AgentTripleTriad*)ifacePtr.Address)->RewardItemId;
+        return ((AgentTripleTriad*)ifacePtr)->RewardItemId;
     }
 
     private static uint TryReadRewardItemIdFromUi(AddonTripleTriadResult* resultAddon)

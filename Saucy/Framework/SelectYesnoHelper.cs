@@ -269,7 +269,7 @@ public static unsafe class SelectYesnoHelper
         };
 
     public static bool IsTriadAddon(AtkUnitBase* addon) =>
-        AgentHelper.IsAddonOwnedBy(addon, AgentId.TripleTriad);
+        AgentHelper.IsAddonOwnedBy(addon, AgentId.TrippleTriad);
 
     private static bool IsModuleManagedYesno(AddonSelectYesno* yesno)
     {

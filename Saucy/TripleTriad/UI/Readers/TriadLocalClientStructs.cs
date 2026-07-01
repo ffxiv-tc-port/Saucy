@@ -59,7 +59,7 @@ internal unsafe struct AgentTripleTriad
             return null;
         }
 
-        return (AgentTripleTriad*)module->GetAgentByInternalId(AgentId.TripleTriad);
+        return (AgentTripleTriad*)module->GetAgentByInternalId(AgentId.TrippleTriad);
     }
 }
 
