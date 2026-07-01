@@ -117,7 +117,7 @@ public static unsafe class ObjectHelper
 
         foreach (var obj in Svc.Objects)
         {
-            if (obj.BaseId != baseId)
+            if (obj.DataId != baseId)
             {
                 continue;
             }
@@ -251,7 +251,7 @@ public static unsafe class ObjectHelper
 
     public static float GetHorizontalEdgeDistance(IGameObject target)
     {
-        var localPlayer = Svc.Objects.LocalPlayer;
+        var localPlayer = Svc.ClientState.LocalPlayer;
         if (localPlayer is null || target.GameObjectId == localPlayer.GameObjectId)
         {
             return 0f;
@@ -282,6 +282,6 @@ public static unsafe class ObjectHelper
         HashSet<uint> baseIds,
         Func<IGameObject, bool>? matcher) =>
         IsRememberedObject(scope, obj) ||
-        baseIds.Contains(obj.BaseId) ||
+        baseIds.Contains(obj.DataId) ||
         (matcher?.Invoke(obj) ?? false);
 }

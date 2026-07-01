@@ -23,7 +23,9 @@ internal static unsafe class TravelMountHelper
     public static bool IsFlyingUnlocked()
     {
         var uiState = UIState.Instance();
-        return uiState != null && uiState->PlayerState.CanFly;
+        // Old FFXIVClientStructs has no PlayerState.CanFly convenience property; flying in a
+        // zone is unlocked once its aether current zone (and thus zone-wide flight) is complete.
+        return uiState != null && uiState->PlayerState.IsAetherCurrentZoneComplete(Svc.ClientState.TerritoryType);
     }
 
     public static bool IsMountUnlocked(uint mountId) =>

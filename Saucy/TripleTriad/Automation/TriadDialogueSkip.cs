@@ -218,9 +218,7 @@ internal static unsafe class TriadDialogueSkip
         TriadNpcGate.IsInDialogueFlow() ||
         (TriadRunSession.ModuleEnabled && TriadTargetNpc.FromWorldTarget() != null);
 
-    private static bool IsGoldSaucerMinigameOccupied() =>
-        Svc.Condition[ConditionFlag.OccupiedInQuestEvent] &&
-        GoldSaucerArcadeMachineHelper.AnyEnabled();
+    private static bool IsGoldSaucerMinigameOccupied() => false;
 
     private static bool IsTriadSessionUiVisible() =>
         uiReaderPrep.HasMatchRequestUI ||

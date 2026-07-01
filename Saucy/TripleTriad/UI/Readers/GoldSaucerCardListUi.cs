@@ -16,7 +16,8 @@ internal static unsafe class GoldSaucerCardListUi
 
         if (pageIndex >= 0 && pageIndex != addon->SelectedPage)
         {
-            addon->RequestedPage = pageIndex;
+            // Old FFXIVClientStructs has no separate RequestedPage hint field; the tab
+            // controller call below is what actually drives the page change.
             addon->TabController.SetTabIndexAndCallBack(pageIndex);
             atkUnit->Update(0);
         }

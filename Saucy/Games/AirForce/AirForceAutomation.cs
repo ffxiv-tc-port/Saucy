@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
 using ECommons;
 using ECommons.Automation;
 using ECommons.CSExtensions;
@@ -7,9 +8,18 @@ using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
 using ECommons.Throttlers;
 using ECommons.WindowsFormsReflector;
+using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using System;
 using System.Linq;
 namespace Saucy.AirForce;
+
+internal static unsafe class EventObjExtensions
+{
+    // Old Dalamud's IEventObj has no AnimationId wrapper property; read the
+    // underlying FFXIVClientStructs GameObject's EventState directly instead.
+    public static byte AnimationId(this IGameObject obj) =>
+        obj.Address == nint.Zero ? (byte)0 : ((GameObject*)obj.Address)->EventState;
+}
 
 public static unsafe class AirForceAutomation
 {
@@ -44,7 +54,7 @@ public static unsafe class AirForceAutomation
             wasInDuty = true;
             rewardWindowUntilUtc = null;
 
-            foreach (var x in Svc.Objects.OfType<IEventObj>().Where(x => x.BaseId.EqualsAny<uint>(
+            foreach (var x in Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
                 2009678,
                 2009676,
                 2009677,
@@ -53,9 +63,9 @@ public static unsafe class AirForceAutomation
                 2015179,
                 2015178,
                 2015183
-            )).Where(x => x.AnimationId == 1).OrderBy(Player.DistanceTo))
+            )).Where(x => x.AnimationId() == 1).OrderBy(Player.DistanceTo))
             {
-                if (x.BaseId.EqualsAny<uint>(
+                if (x.DataId.EqualsAny<uint>(
                     2015183,
                     2009679
                 ))
@@ -105,13 +115,13 @@ public static unsafe class AirForceAutomation
             ImGuiEx.Text($"Current aim: ({aim.X:F1}, {aim.Y:F1})");
         }
 
-        var targets = Svc.Objects.OfType<IEventObj>().Where(x => x.BaseId.EqualsAny<uint>(
+        var targets = Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
             2009678, 2009676, 2009677, 2009679, 2015180, 2015179, 2015178, 2015183
-        )).Where(x => x.AnimationId == 1).OrderBy(Player.DistanceTo).Take(3).ToArray();
+        )).Where(x => x.AnimationId() == 1).OrderBy(Player.DistanceTo).Take(3).ToArray();
         ImGuiEx.Text($"Shootable targets (anim=1): {targets.Length}");
         foreach (var t in targets)
         {
-            ImGuiEx.Text($"  {t.Name} ({t.BaseId}) dist={Player.DistanceTo(t):F1}");
+            ImGuiEx.Text($"  {t.Name} ({t.DataId}) dist={Player.DistanceTo(t):F1}");
         }
     }
 }

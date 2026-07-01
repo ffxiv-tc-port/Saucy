@@ -7,46 +7,24 @@ namespace Saucy.Framework.UI;
 public class UIReaderGamesResults : IUIReader
 {
     private UIStateAirForceResults airForceResults = new();
-    private UIStateCuffResults cuffResults = new();
-    private UIStateLimbResults limbResults = new();
 
     private bool needsNotify;
     public Action<UIStateAirForceResults>? OnAirForceUpdated;
-    public Action<UIStateCuffResults>? OnCuffUpdated;
-    public Action<UIStateLimbResults>? OnLimbUpdated;
 
     public bool HasResultsUI { get; private set; }
 
     public string GetAddonName() => "GoldSaucerReward";
 
-    public void OnAddonLost()
-    {
-        foreach (var machine in GoldSaucerArcadeMachineHelper.All)
-        {
-            ArcadeMachineSession.OnRewardScreenClosed(machine);
-        }
-
-        SetIsResultsUI(false);
-    }
+    public void OnAddonLost() => SetIsResultsUI(false);
 
     public void OnAddonShown(nint addonPtr)
     {
         needsNotify = true;
-        if (GoldSaucerArcadeMachineHelper.AnyEnabled() || AirForceAutomation.ShouldTrackReward)
+        if (AirForceAutomation.ShouldTrackReward)
         {
             SetIsResultsUI(true);
         }
 
-        foreach (var machine in GoldSaucerArcadeMachineHelper.All)
-        {
-            if (GoldSaucerArcadeMachineHelper.IsEnabled(machine))
-            {
-                ArcadeMachineSession.OnRewardScreenOpened(machine);
-            }
-        }
-
-        cuffResults = new();
-        limbResults = new();
         airForceResults = new();
     }
 
@@ -58,7 +36,7 @@ public class UIReaderGamesResults : IUIReader
             return;
         }
 
-        if (!GoldSaucerArcadeMachineHelper.AnyEnabled() && !AirForceAutomation.ShouldTrackReward)
+        if (!AirForceAutomation.ShouldTrackReward)
         {
             needsNotify = false;
             return;
@@ -67,36 +45,6 @@ public class UIReaderGamesResults : IUIReader
         UpdateCachedState(baseNode);
 
         var notified = false;
-
-        if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Cuff))
-        {
-            if (cuffResults.numMGP >= 0)
-            {
-                notified = true;
-                OnCuffUpdated?.Invoke(cuffResults);
-            }
-            else if (TryParseRewardMgpFallback(baseNode, out var cuffFallbackMgp))
-            {
-                cuffResults.numMGP = cuffFallbackMgp;
-                notified = true;
-                OnCuffUpdated?.Invoke(cuffResults);
-            }
-        }
-
-        if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb))
-        {
-            if (limbResults.numMGP >= 0)
-            {
-                notified = true;
-                OnLimbUpdated?.Invoke(limbResults);
-            }
-            else if (TryParseRewardMgpFallback(baseNode, out var fallbackMgp))
-            {
-                limbResults.numMGP = fallbackMgp;
-                notified = true;
-                OnLimbUpdated?.Invoke(limbResults);
-            }
-        }
 
         if (AirForceAutomation.ShouldTrackReward)
         {
@@ -113,36 +61,10 @@ public class UIReaderGamesResults : IUIReader
         }
     }
 
-    public void SetIsResultsUI(bool value)
-    {
-        HasResultsUI = value;
-        if (value)
-        {
-            return;
-        }
-
-        foreach (var machine in GoldSaucerArcadeMachineHelper.All)
-        {
-            ArcadeMachineSession.OnRewardScreenClosed(machine);
-            if (GoldSaucerArcadeMachineHelper.IsEnabled(machine))
-            {
-                ArcadeMachineSession.ClearInteractPending(machine);
-            }
-        }
-    }
+    public void SetIsResultsUI(bool value) => HasResultsUI = value;
 
     private unsafe void UpdateCachedState(AtkUnitBase* baseNode)
     {
-        if (!GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Cuff))
-        {
-            cuffResults.numMGP = -1;
-        }
-
-        if (!GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb))
-        {
-            limbResults.numMGP = -1;
-        }
-
         if (!AirForceAutomation.ShouldTrackReward)
         {
             airForceResults.numMGP = -1;
@@ -150,48 +72,12 @@ public class UIReaderGamesResults : IUIReader
 
         if (!TryGetRewardMgpTextNode(baseNode, out var number))
         {
-            if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Cuff))
-            {
-                cuffResults.numMGP = -1;
-            }
-
-            if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb))
-            {
-                limbResults.numMGP = -1;
-            }
-
             if (AirForceAutomation.ShouldTrackReward)
             {
                 airForceResults.numMGP = -1;
             }
 
             return;
-        }
-
-        if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Cuff))
-        {
-            if (!int.TryParse(number->NodeText.ToString(), out cuffResults.numMGP))
-            {
-                cuffResults.numMGP = -1;
-            }
-
-            switch (cuffResults.numMGP)
-            {
-                case 10:
-                    cuffResults.isBruising = true; break;
-                case 15:
-                    cuffResults.isPunishing = true; break;
-                case 25:
-                    cuffResults.isBrutal = true; break;
-            }
-        }
-
-        if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb))
-        {
-            if (!int.TryParse(number->NodeText.ToString().Where(char.IsDigit).ToArray(), out limbResults.numMGP))
-            {
-                limbResults.numMGP = -1;
-            }
         }
 
         if (AirForceAutomation.ShouldTrackReward)
@@ -261,35 +147,5 @@ public class UIReaderGamesResults : IUIReader
 
         textNode = node1->GetAsAtkTextNode();
         return textNode != null;
-    }
-
-    private static unsafe bool TryParseRewardMgpFallback(AtkUnitBase* baseNode, out int mgp) =>
-        GoldSaucerRewardMgpParser.TryParseFromAddon(baseNode, out mgp);
-
-    private static unsafe void TryParseMgpFromNode(AtkResNode* node, ref int bestMgp)
-    {
-        // Kept for TryGetRewardMgpTextNode path; fallback scan lives in GoldSaucerRewardMgpParser.
-        var textNode = node->GetAsAtkTextNode();
-        if (textNode == null)
-        {
-            return;
-        }
-
-        var text = textNode->NodeText.ToString();
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return;
-        }
-
-        var digits = new string([.. text.Where(char.IsDigit)]);
-        if (digits.Length == 0 || !int.TryParse(digits, out var parsed) || parsed <= 0)
-        {
-            return;
-        }
-
-        if (parsed > bestMgp)
-        {
-            bestMgp = parsed;
-        }
     }
 }

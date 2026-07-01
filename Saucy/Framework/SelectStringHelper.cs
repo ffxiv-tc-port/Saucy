@@ -178,7 +178,7 @@ public static unsafe class SelectStringHelper
         menu = null;
         for (var i = 1; i < 100; i++)
         {
-            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectString", i).Address;
+            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectString", i);
             if (addon == null)
             {
                 break;
@@ -440,14 +440,11 @@ public static unsafe class SelectStringHelper
 
     private static bool TryGetListEntryIconId(AtkComponentList* list, int entryIndex, out uint iconId)
     {
+        // Old FFXIVClientStructs' AtkComponentListItemRenderer has no IconId field to read here;
+        // callers already fall back to text-based matching (and a single-entry heuristic), so
+        // simply report "no icon available" instead of guessing an unverifiable memory offset.
         iconId = 0;
-        if (list == null || entryIndex < 0 || entryIndex >= list->GetItemCount())
-        {
-            return false;
-        }
-
-        iconId = list->ItemRendererList[entryIndex].IconId;
-        return true;
+        return false;
     }
 
     private static void AppendMenuListDebug(AtkUnitBase* menu, string addonName, List<string> lines)
@@ -521,7 +518,7 @@ public static unsafe class SelectStringHelper
         menu = null;
         for (var i = 1; i < 100; i++)
         {
-            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName(addonName, i).Address;
+            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName(addonName, i);
             if (addon == null)
             {
                 break;

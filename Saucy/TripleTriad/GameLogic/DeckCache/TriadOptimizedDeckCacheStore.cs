@@ -1,3 +1,4 @@
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 using Newtonsoft.Json;
 using System;
@@ -8,6 +9,34 @@ namespace Saucy.TripleTriad.GameLogic;
 
 internal static class TriadOptimizedDeckCacheStore
 {
+    // Old Dalamud has no IPlayerState service (Svc.PlayerState); read the same data directly
+    // from the FFXIVClientStructs UIState.PlayerState struct and the local player object instead.
+    private static unsafe bool LocalPlayerStateIsLoaded
+    {
+        get
+        {
+            var uiState = UIState.Instance();
+            return uiState != null && uiState->PlayerState.IsLoaded != 0;
+        }
+    }
+
+    private static unsafe ulong LocalPlayerContentId
+    {
+        get
+        {
+            var uiState = UIState.Instance();
+            return uiState != null ? uiState->PlayerState.ContentId : 0;
+        }
+    }
+
+    private static unsafe string LocalPlayerCharacterName
+    {
+        get
+        {
+            var uiState = UIState.Instance();
+            return uiState != null ? uiState->PlayerState.CharacterNameString : string.Empty;
+        }
+    }
     public const int SchemaVersion = 2;
     public const int RebuildAfterNewCardCount = 5;
 
@@ -373,12 +402,12 @@ internal static class TriadOptimizedDeckCacheStore
 
     private static ulong GetLocalContentId()
     {
-        if (!Svc.ClientState.IsLoggedIn || !Svc.PlayerState.IsLoaded)
+        if (!Svc.ClientState.IsLoggedIn || !LocalPlayerStateIsLoaded)
         {
             return 0;
         }
 
-        return Svc.PlayerState.ContentId;
+        return LocalPlayerContentId;
     }
 
     private static void LoadForCharacter(ulong contentId)
@@ -564,14 +593,14 @@ internal static class TriadOptimizedDeckCacheStore
 
     private static void StampCharacterMetadata(TriadOptimizedDeckCacheFile file)
     {
-        if (!Svc.PlayerState.IsLoaded || activeContentId == 0 || Svc.PlayerState.ContentId != activeContentId)
+        if (!LocalPlayerStateIsLoaded || activeContentId == 0 || LocalPlayerContentId != activeContentId)
         {
             return;
         }
 
         file.ContentId = activeContentId;
-        file.CharacterName = Svc.PlayerState.CharacterName;
-        file.HomeWorldRowId = Svc.PlayerState.HomeWorld.RowId;
+        file.CharacterName = LocalPlayerCharacterName;
+        file.HomeWorldRowId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
     }
 
     private static string ResolveCharacterDisplayName(
@@ -587,12 +616,12 @@ internal static class TriadOptimizedDeckCacheStore
                 : $"{file.CharacterName} @ {worldName}";
         }
 
-        if (isCurrentCharacter && Svc.PlayerState.IsLoaded && Svc.PlayerState.ContentId == contentId)
+        if (isCurrentCharacter && LocalPlayerStateIsLoaded && LocalPlayerContentId == contentId)
         {
-            var worldName = Svc.PlayerState.HomeWorld.ValueNullable?.Name.ToString();
+            var worldName = Svc.ClientState.LocalPlayer?.HomeWorld.ValueNullable?.Name.ToString();
             return string.IsNullOrEmpty(worldName)
-                ? Svc.PlayerState.CharacterName
-                : $"{Svc.PlayerState.CharacterName} @ {worldName}";
+                ? LocalPlayerCharacterName
+                : $"{LocalPlayerCharacterName} @ {worldName}";
         }
 
         return $"Character {contentId}";

@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
@@ -33,7 +33,6 @@ internal static class TriadSettingsUi
                 if (enabled)
                 {
                     CommitDraftMatchCount();
-                    GoldSaucerArcadeMachineHelper.DisableConflictingModules();
                     TriadRunSession.BeginAutomationSession();
                     TriadCardFarmSession.SyncDisplay(runTargetNpc);
                     TriadAutomator.RunModule();
@@ -343,7 +342,7 @@ internal static class TriadSettingsUi
             using var subIndent = ImRaii.PushIndent();
             ImGui.Text("How many times:");
             ImGui.SameLine();
-            ImGui.SetNextItemWidth(GoldSaucerRunSettingsUi.CompactCountInputWidth * ImGuiHelpers.GlobalScale);
+            ImGui.SetNextItemWidth(56f * ImGuiHelpers.GlobalScale);
             var count = Math.Max(1, C.TriadMatchCount);
             if (ImGui.InputInt("###TriadMatchCount", ref count) ||
                 ImGui.IsItemDeactivatedAfterEdit())

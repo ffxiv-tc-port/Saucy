@@ -88,9 +88,9 @@ internal static unsafe partial class TriadDeckSelectAutomation
     private static void TryForceHideLastResort(AtkUnitBase* addon)
     {
         var agentHandle = Svc.GameGui.FindAgentInterface((nint)addon);
-        if (agentHandle.Address != nint.Zero)
+        if (agentHandle != nint.Zero)
         {
-            var agent = (AgentInterface*)agentHandle.Address;
+            var agent = (AgentInterface*)agentHandle;
             agent->HideAddon();
             agent->Hide();
             addon->Update(0);
@@ -163,7 +163,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
             var values = stackalloc AtkValue[1];
             values[0] = new()
             {
-                Type = AtkValueType.Int, Int = deckValue
+                Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int, Int = deckValue
             };
             addon->FireCallback((uint)eventId, values, close);
         }
