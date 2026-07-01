@@ -14,8 +14,6 @@ public partial class PluginUI
         (var life, var sess) = (C.Stats, C.SessionStats);
 
         DrawStatsCard("Triple Triad", TriadHeadline(life), () => DrawTriadRows(life, sess));
-        DrawStatsCard("Cuff-a-Cur", CuffHeadline(life), () => DrawCuffRows(life, sess));
-        DrawStatsCard("Out on a Limb", LimbHeadline(life), () => DrawLimbRows(life, sess));
         DrawStatsCard("Air Force One", AirForceHeadline(life), () => DrawAirForceRows(life, sess));
     }
 
@@ -60,12 +58,6 @@ public partial class PluginUI
         return $"{s.GamesPlayedWithSaucy:N0} \u5834 \u00b7 \u52dd\u7387 {pct}%";
     }
 
-    private static string CuffHeadline(Stats s) =>
-        s.CuffGamesPlayed == 0 ? "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304" : $"{s.CuffGamesPlayed:N0} \u5834";
-
-    private static string LimbHeadline(Stats s) =>
-        s.LimbGamesPlayed == 0 ? "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304" : $"{s.LimbGamesPlayed:N0} \u5834";
-
     private static string AirForceHeadline(Stats s) =>
         s.AirForceGamesPlayed == 0 ? "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304" : $"{s.AirForceGamesPlayed:N0} \u5834";
 
@@ -94,37 +86,6 @@ public partial class PluginUI
         (var lifeCardCount, var lifeCardName) = TopCardCell(life);
         (var sessCardCount, var sessCardName) = TopCardCell(sess);
         StatsRow("最常獲得卡片", lifeCardCount, sessCardCount, tooltipLife: lifeCardName, tooltipSess: sessCardName);
-    }
-
-    private static void DrawCuffRows(Stats life, Stats sess)
-    {
-        using var table = ImRaii.Table("##stats_cuff", 4, ImGuiTableFlags.NoBordersInBody | ImGuiTableFlags.SizingStretchProp);
-        if (!table)
-        {
-            return;
-        }
-        StatsHeader();
-        StatsRow("對戰場數", life.CuffGamesPlayed, sess.CuffGamesPlayed,
-            perHour: SessionCountPerHour(sess.CuffGamesPlayed, StatsSessionClock.GetCuffElapsedHours()));
-        StatsRow("Bruisings", life.CuffBruisings, sess.CuffBruisings);
-        StatsRow("Punishings", life.CuffPunishings, sess.CuffPunishings);
-        StatsRow("Brutals", life.CuffBrutals, sess.CuffBrutals);
-        StatsRow("獲得 MGP", $"{life.CuffMGP:N0}", $"{sess.CuffMGP:N0}", true,
-            perHour: SessionMgpPerHour(sess.CuffMGP, StatsSessionClock.GetCuffElapsedHours()));
-    }
-
-    private static void DrawLimbRows(Stats life, Stats sess)
-    {
-        using var table = ImRaii.Table("##stats_limb", 4, ImGuiTableFlags.NoBordersInBody | ImGuiTableFlags.SizingStretchProp);
-        if (!table)
-        {
-            return;
-        }
-        StatsHeader();
-        StatsRow("對戰場數", life.LimbGamesPlayed, sess.LimbGamesPlayed,
-            perHour: SessionCountPerHour(sess.LimbGamesPlayed, StatsSessionClock.GetLimbElapsedHours()));
-        StatsRow("獲得 MGP", $"{life.LimbMGP:N0}", $"{sess.LimbMGP:N0}", true,
-            perHour: SessionMgpPerHour(sess.LimbMGP, StatsSessionClock.GetLimbElapsedHours()));
     }
 
     private static void DrawAirForceRows(Stats life, Stats sess)
