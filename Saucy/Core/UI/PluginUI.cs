@@ -298,12 +298,14 @@ public unsafe partial class PluginUI : Window
 
         ImGui.Dummy(new(0, 4));
         ImGui.TextWrapped("目前讀到的 9 格棋盤（若下方全部顯示「空」，代表位移量對不上，需要用記憶體掃描重新比對）：");
+        ImGui.Text($"sizeof(TripleTriadCard) = 0x{sizeof(AddonTripleTriad.TripleTriadCard):X}");
         for (var i = 0; i < 9; i++)
         {
             var card = addon->Board[i];
+            var cardAddr = (nint)(&addon->Board[i]);
             ImGui.Text(card.HasCard
-                ? $"  格 {i}: owner={card.CardOwner} U{card.NumSideU} L{card.NumSideL} D{card.NumSideD} R{card.NumSideR} rarity={card.CardRarity} type={card.CardType}"
-                : $"  格 {i}: 空");
+                ? $"  格 {i} @0x{cardAddr:X}: owner={card.CardOwner} U{card.NumSideU} L{card.NumSideL} D{card.NumSideD} R{card.NumSideR} rarity={card.CardRarity} type={card.CardType}"
+                : $"  格 {i} @0x{cardAddr:X}: 空");
         }
     }
 
