@@ -124,7 +124,13 @@ internal unsafe struct AddonTripleTriad
 
     [FieldOffset(0x240)] public DeckArray BlueDeck; // 2be = end of numbers
     [FieldOffset(0x588)] public DeckArray RedDeck;
-    [FieldOffset(0x8d0)] public BoardArray Board;
+    // Was 0x8d0 (RedDeck end, by extrapolating the deck spacing pattern) — but the actual live
+    // diff of a real card placement landed at addon-relative offset 0xAA0, which is NOT an
+    // integer multiple of 0xA8 away from 0x8d0 (464/168 = 2.76), proving 0x8d0 is wrong for
+    // Board specifically. Using the empirically-observed offset directly instead. Whether this is
+    // truly board-cell index 0 (vs some other index, if the board isn't stored in simple
+    // row-major order) is NOT separately confirmed — needs live verification.
+    [FieldOffset(0xAA0)] public BoardArray Board;
 }
 
 /// <summary>
