@@ -78,6 +78,7 @@ internal struct AddonTripleTriadResult
 [StructLayout(LayoutKind.Explicit, Size = 0x1000)] // no idea what size, last entries seems to be around +0xfc0?
 internal unsafe struct AddonTripleTriad
 {
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     internal unsafe struct TripleTriadCard
     {
         public AtkComponentBase* CardDropControl;
