@@ -74,19 +74,19 @@ public class AnyWayTheWindBlows : Module
 
                     if (Player.Position.X - Stage.SafeSpot.Position.X > 0.015)
                     {
-                        ImGui.Text("move left");
+                        ImGui.Text("向左移動");
                     }
                     else if (Stage.SafeSpot.Position.X - Player.Position.X > 0.015)
                     {
-                        ImGui.Text("move right");
+                        ImGui.Text("向右移動");
                     }
                     else if (Player.Position.Z < Stage.SafeSpot.Position.Z)
                     {
-                        ImGui.Text("move down");
+                        ImGui.Text("向下移動");
                     }
                     else if (Player.Position.Z > Stage.SafeSpot.Position.Z)
                     {
-                        ImGui.Text("move up");
+                        ImGui.Text("向上移動");
                     }
                 }
             }

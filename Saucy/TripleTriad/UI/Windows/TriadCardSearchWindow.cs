@@ -41,7 +41,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
     private bool showNpcMatchesOnly;
 
-    public TriadCardSearchWindow(UIReaderTriadCardList uiReaderCardList, TriadNpcStatsWindow statsWindow) : base("Card Search")
+    public TriadCardSearchWindow(UIReaderTriadCardList uiReaderCardList, TriadNpcStatsWindow statsWindow) : base("卡片搜尋")
     {
         this.uiReaderCardList = uiReaderCardList;
         this.statsWindow = statsWindow;
@@ -335,7 +335,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         }
 
         deckEditMode = uiReaderCardList.cachedState.isDeckEditMode;
-        WindowName = deckEditMode ? "Deck Cards" : "Card Search";
+        WindowName = deckEditMode ? "卡組卡片" : "卡片搜尋";
         if (deckEditMode)
         {
             activeTab = 0;
@@ -350,7 +350,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
     {
         if (!IsGameDataReady)
         {
-            ImGui.TextDisabled("Loading card data…");
+            ImGui.TextDisabled("正在載入卡片資料…");
             return;
         }
 
@@ -377,7 +377,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
             return;
         }
 
-        if (ImGui.Selectable("Cards", activeTab == 0, ImGuiSelectableFlags.None, ImGui.CalcTextSize("Cards") + new Vector2(12, 0)))
+        if (ImGui.Selectable("卡片", activeTab == 0, ImGuiSelectableFlags.None, ImGui.CalcTextSize("卡片") + new Vector2(12, 0)))
         {
             activeTab = 0;
         }
@@ -480,7 +480,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         if (!deckEditMode)
         {
             ImGui.Spacing();
-            if (ImGui.Checkbox("NPC reward cards only", ref showNpcMatchesOnly))
+            if (ImGui.Checkbox("僅顯示 NPC 獎勵卡片", ref showNpcMatchesOnly))
             {
                 C.TriadCollection.CheckCardNpcMatchOnly = showNpcMatchesOnly;
                 C.Save();
@@ -488,7 +488,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
             if (showNotOwnedCheckbox)
             {
-                if (ImGui.Checkbox("Unowned only", ref showNotOwnedOnly))
+                if (ImGui.Checkbox("僅顯示未擁有", ref showNotOwnedOnly))
                 {
                     if (showNotOwnedOnly)
                     {
@@ -501,7 +501,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
             }
             else if (filterMode is >= 0 and not 0)
             {
-                ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "(Collection filtering is active)");
+                ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "（收藏篩選已啟用）");
             }
         }
     }
@@ -545,14 +545,14 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
         if (!IsGameDataReady)
         {
-            ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "Loading NPC data…");
+            ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "正在載入 NPC 資料…");
             return;
         }
 
         if (listNpcs.Count == 0)
         {
             ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled),
-                GameNpcDB.Get().mapNpcs.Count == 0 ? "No NPC data loaded." : "No NPCs available.");
+                GameNpcDB.Get().mapNpcs.Count == 0 ? "尚未載入 NPC 資料。" : "沒有可用的 NPC。");
             return;
         }
 
@@ -609,11 +609,11 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         if (visibleCount == 0)
         {
             ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled),
-                "No NPCs match the current filters.");
+                "沒有符合目前篩選條件的 NPC。");
         }
 
         ImGui.Spacing();
-        if (ImGui.Checkbox("Hide beaten NPCs", ref hideNpcBeatenOnce))
+        if (ImGui.Checkbox("隱藏已擊敗過的 NPC", ref hideNpcBeatenOnce))
         {
             npcFilterDataStale = true;
             RefreshNpcProgress();
@@ -622,7 +622,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
             C.Save();
         }
 
-        if (ImGui.Checkbox("Hide completed NPCs", ref hideNpcCompleted))
+        if (ImGui.Checkbox("隱藏已完成的 NPC", ref hideNpcCompleted))
         {
             npcFilterDataStale = true;
             RefreshNpcProgress();
@@ -648,7 +648,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
         if (npcInfo.Location != null)
         {
-            TriadNpcMapUi.DrawMapLocationRow(npcInfo.Location, "Show on map", npcData.Item1);
+            TriadNpcMapUi.DrawMapLocationRow(npcInfo.Location, "在地圖上顯示", npcData.Item1);
         }
 
         TriadNpcQuestUi.DrawUnlockQuestIconRow(npcInfo);
@@ -658,11 +658,11 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         var settingsDB = PlayerSettingsDB.Get();
         ImGuiLayout.DrawIconTextRow(FontAwesomeIcon.ChartLine, null, () => statsWindow.SetupAndOpen(npcData.Item1), () =>
         {
-            ImGui.Text("NPC stats" + (hasAvgRewards ? "," : ""));
+            ImGui.Text("NPC 統計" + (hasAvgRewards ? "，" : ""));
             if (hasAvgRewards)
             {
                 ImGui.SameLine();
-                ImGui.Text("MGP per match:");
+                ImGui.Text("每場 MGP：");
                 ImGui.SameLine();
                 ImGui.Text(avgRewardPerMatch.ToString("0.#"));
             }
@@ -671,7 +671,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         TriadCollectionPremadeDeckUi.DrawForNpc(npcData.Item1);
 
         ImGui.Spacing();
-        ImGui.Text($"Unowned rewards: {numNotOwnedRewards}");
+        ImGui.Text($"未擁有的獎勵：{numNotOwnedRewards}");
         if (listNpcReward.Count > 0)
         {
             using (var rewardList = ImRaii.ListBox("##cardReward", GetListBoxSize(4.5f)))
@@ -711,7 +711,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         }
         else
         {
-            ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "Not available");
+            ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "無可用資料");
         }
     }
 
