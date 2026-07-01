@@ -226,6 +226,22 @@ public unsafe partial class PluginUI : Window
             {
                 ImGui.TextDisabled("目前沒有作用中的 GATE 導演。");
             }
+
+            ImGui.Dummy(new(0, 4));
+            ImGui.TextWrapped("目前作用中的 ConditionFlag（若 Leap of Faith 沒有 GATE 導演，" +
+                               "這裡應該有其他旗標在跳台期間是 True）：");
+            using var scroll = ImRaii.Child("##ActiveConditionFlags", new(0, 120), true);
+            if (scroll)
+            {
+                foreach (Dalamud.Game.ClientState.Conditions.ConditionFlag flag in
+                         Enum.GetValues<Dalamud.Game.ClientState.Conditions.ConditionFlag>())
+                {
+                    if (Svc.Condition[flag])
+                    {
+                        ImGui.TextUnformatted($"{(int)flag}: {flag}");
+                    }
+                }
+            }
         });
 
         ImGuiLayout.DrawCollapsingSection("Triple Triad NPC 選單", ImGuiTreeNodeFlags.DefaultOpen, () =>
