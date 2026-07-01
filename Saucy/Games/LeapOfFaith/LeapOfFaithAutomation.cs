@@ -39,7 +39,6 @@ internal static unsafe class LeapOfFaithAutomation
     private const uint FinishDataId = 2009601;
     private static readonly uint[] CactuarDataIds = [2009588, 2009589, 2009590];
 
-    private const float ScanRadius = 80f;
     private const float TurnThresholdRadians = 0.14f; // ~8 degrees
     private const int KeyTapIntervalMs = 90;
 
@@ -112,10 +111,6 @@ internal static unsafe class LeapOfFaithAutomation
             }
 
             var dist = Vector3.Distance(obj.Position, playerPos);
-            if (dist > ScanRadius)
-            {
-                continue;
-            }
 
             if (obj.DataId == FinishDataId)
             {

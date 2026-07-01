@@ -18,8 +18,11 @@ namespace Saucy.LeapOfFaith;
 /// </summary>
 internal static class LeapOfFaithPlatformObserver
 {
-    private const float StableYToleranceUnits = 0.05f;
-    private const int StableSampleCount = 4;
+    // Loosened per feedback: only require the last couple of consecutive samples to not be
+    // actively dropping (a real fall drops several units between 250ms samples), rather than
+    // near-total stillness — a player just walking across a platform still counts.
+    private const float FallDropThresholdUnits = 0.3f;
+    private const int StableSampleCount = 2;
     private const int SampleIntervalMs = 250;
     private const float DedupeRadius = 2.5f;
 
@@ -92,11 +95,19 @@ internal static class LeapOfFaithPlatformObserver
                 continue;
             }
 
-            var min = history.Min();
-            var max = history.Max();
-            if (max - min > StableYToleranceUnits)
+            var samples = history.ToArray();
+            var isFalling = false;
+            for (var i = 1; i < samples.Length; i++)
             {
-                continue; // still moving vertically (jumping/falling) — not a reliable platform hint.
+                if (samples[i - 1] - samples[i] > FallDropThresholdUnits)
+                {
+                    isFalling = true;
+                    break;
+                }
+            }
+            if (isFalling)
+            {
+                continue;
             }
 
             RecordIfNew(obj.Position);

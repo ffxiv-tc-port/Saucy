@@ -64,7 +64,7 @@ public class LeapOfFaith : Module
         {
             if (Svc.GameGui.WorldToScreen(point, out var screen))
             {
-                drawList.AddCircleFilled(screen, 4f, EzColor.Blue);
+                drawList.AddCircleFilled(screen, 6f, EzColor.Blue);
             }
         }
     }
@@ -81,8 +81,8 @@ public class LeapOfFaith : Module
             return;
         }
 
-        ImGuiHelpers.SetNextWindowPosRelativeMainViewport(new(pos.X - 15, pos.Y - 15));
-        ImGui.SetNextWindowSize(new Vector2(140, 50) * ImGuiHelpers.GlobalScale);
+        ImGuiHelpers.SetNextWindowPosRelativeMainViewport(new(pos.X - 30, pos.Y - 30));
+        ImGui.SetNextWindowSize(new Vector2(200, 70) * ImGuiHelpers.GlobalScale);
         using var pointerWindow = Window(
             "LeapOfFaithPointer",
             ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoTitleBar |
@@ -93,15 +93,17 @@ public class LeapOfFaith : Module
         }
 
         var color = LeapOfFaithAutomation.CurrentTargetIsFinish ? EzColor.Green : EzColor.Yellow;
-        ImGui.GetWindowDrawList().AddCircleFilled(pos, 6f, color);
+        var drawList = ImGui.GetWindowDrawList();
+        drawList.AddCircleFilled(pos, 16f, color);
+        drawList.AddCircle(pos, 22f, color, 0, 3f);
 
-        ImGui.SetCursorPosY(24f);
-        using var child = ImRaii.Child("LeapOfFaithLabel", new Vector2(130f, 20f) * ImGuiHelpers.GlobalScale);
+        ImGui.SetCursorPosY(48f);
+        using var child = ImRaii.Child("LeapOfFaithLabel", new Vector2(190f, 26f) * ImGuiHelpers.GlobalScale);
         using var bg = ImRaii.PushColor(ImGuiCol.ChildBg, new Vector4(0, 0, 0, 0.8f));
         ImGui.SetCursorPosX(4f * ImGuiHelpers.GlobalScale);
         var distance = Vector3.Distance(Player.Position, target);
         var label = LeapOfFaithAutomation.CurrentTargetIsFinish ? "終點" :
             LeapOfFaithAutomation.CurrentTargetIsCactuar ? "仙人掌盃" : "推測平台";
-        ImGui.Text($"{label} {distance:F1}m");
+        ImGui.TextColored(color, $"{label} {distance:F1}m");
     }
 }
