@@ -249,11 +249,7 @@ public static unsafe class SelectYesnoHelper
     public static bool HasYesnoButtons(AddonSelectYesno* yesno) =>
         yesno != null && (TryResolveYesNoButtons(yesno, out _, out _) || TryResolveYesButton(yesno, out _));
 
-    public static bool IsArcadeDoubleDownYesno(AddonSelectYesno* yesno) =>
-        yesno != null &&
-        IsArcadeYesno(yesno) &&
-        HasVisiblePayoutAmount(yesno) &&
-        IsOutOnALimbDoubleDownContext();
+    public static bool IsArcadeDoubleDownYesno(AddonSelectYesno* yesno) => false;
 
     public static bool IsArcadeAddon(AtkUnitBase* addon) =>
         AgentHelper.IsAddonOwnedBy(addon, AgentId.GoldSaucerMiniGame);
@@ -294,9 +290,6 @@ public static unsafe class SelectYesnoHelper
         HasYesnoButtons(yesno) &&
         !IsBlockedSystemPrompt(yesno) &&
         !IsModuleManagedYesno(yesno);
-
-    private static bool IsOutOnALimbDoubleDownContext() =>
-        TryGetAddonByName<AtkUnitBase>("MiniGameBotanist", out var addon) && IsAddonReady(addon);
 
     private static bool HasVisiblePayoutAmount(AddonSelectYesno* yesno)
     {

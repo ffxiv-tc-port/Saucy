@@ -78,8 +78,6 @@ public sealed partial class Saucy : IDalamudPlugin
         uiReaderMatchResults.OnUpdated += CheckResults;
 
         uiReaderGamesResults = new();
-        uiReaderGamesResults.OnCuffUpdated += CheckCuffResults;
-        uiReaderGamesResults.OnLimbUpdated += CheckLimbResults;
         uiReaderGamesResults.OnAirForceUpdated += CheckAirForceResults;
 
         uiReaderScheduler = new(Svc.GameGui);
@@ -89,7 +87,6 @@ public sealed partial class Saucy : IDalamudPlugin
         uiReaderScheduler.AddObservedAddon(uiReaderMatchResults);
         uiReaderScheduler.AddObservedAddon(uiReaderGamesResults);
 
-        LimbManager = new(C.LimbConfig);
         ModuleManager = new();
         C.EnabledModules.CollectionChanged += OnChange;
 
@@ -114,7 +111,6 @@ public sealed partial class Saucy : IDalamudPlugin
         TriadMapNavigation.CancelActiveNavigation();
         _triadCollectionHost = null;
         lock (_lockObj) { DisposeAudio(); }
-        CuffACurAutomation.FuncHook?.Dispose();
         ModuleManager.Dispose();
         ECommonsMain.Dispose();
         P = null!;

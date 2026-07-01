@@ -21,9 +21,6 @@ public unsafe partial class PluginUI : Window
 
     private static readonly string[] SidebarLabels =
     [
-        "Out on a Limb",
-        "Cuff-a-Cur",
-        "Slice is Right",
         "Wind Blows",
         "Triple Triad",
         "Mini-Cactpot",
@@ -32,7 +29,6 @@ public unsafe partial class PluginUI : Window
         "About",
         "Debug",
         "Saucy theme",
-        "MACHINES",
         "GATES",
         "OTHER GAMES"
     ];
@@ -146,13 +142,7 @@ public unsafe partial class PluginUI : Window
 
     private void DrawSidebar()
     {
-        DrawSidebarHeader("MACHINES");
-        NavSelectable("Out on a Limb", NavItem.OutOnALimb);
-        NavSelectable("Cuff-a-Cur", NavItem.CuffACur);
-
-        ImGui.Dummy(new(0, 6));
         DrawSidebarHeader("GATES");
-        NavSelectable("Slice is Right", NavItem.SliceIsRight);
         NavSelectable("Wind Blows", NavItem.AnyWayTheWindBlows);
         NavSelectable("Air Force One", NavItem.AirForceOne);
 
@@ -203,9 +193,6 @@ public unsafe partial class PluginUI : Window
         switch (_selectedNav)
         {
             case NavItem.TripleTriad: DrawTriadPanel(); break;
-            case NavItem.CuffACur: DrawCuffPanel(); break;
-            case NavItem.OutOnALimb: DrawLimbPanel(); break;
-            case NavItem.SliceIsRight: DrawSliceIsRightPanel(); break;
             case NavItem.AnyWayTheWindBlows: DrawWindBlowsPanel(); break;
             case NavItem.AirForceOne: DrawAirForcePanel(); break;
             case NavItem.MiniCactpot: DrawMiniCactpotPanel(); break;
@@ -273,9 +260,6 @@ public unsafe partial class PluginUI : Window
     private enum NavItem
     {
         TripleTriad,
-        CuffACur,
-        OutOnALimb,
-        SliceIsRight,
         AnyWayTheWindBlows,
         AirForceOne,
         MiniCactpot,

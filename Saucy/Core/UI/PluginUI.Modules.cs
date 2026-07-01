@@ -3,60 +3,11 @@ using Dalamud.Interface.Utility.Raii;
 using ECommons.ImGuiMethods;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Saucy.AirForce;
-using Saucy.CuffACur;
 using Saucy.OtherGames;
 namespace Saucy;
 
 public unsafe partial class PluginUI
 {
-    private void DrawCuffPanel()
-    {
-        DrawPanelHeader("Cuff-a-Cur", "punch the cactuar");
-        ImGuiEx.EzTabBar("###Cuff",
-            ("Main", CuffACurAutomation.DrawSettings, null, false),
-            ("Debug", CuffACurAutomation.DrawDebug, null, false));
-    }
-
-    private void DrawLimbPanel()
-    {
-        DrawPanelHeader("Out on a Limb", "swing the hatchet");
-        ImGuiEx.EzTabBar("###Limb",
-            ("Main", P.LimbManager.DrawSettings, null, false),
-            ("Debug", P.LimbManager.DrawDebug, null, false));
-    }
-
-    private static void DrawSliceIsRightPanel()
-    {
-        DrawPanelHeader("Slice is Right", "dodge the falling slices");
-        var enabled = C.IsModuleEnabled(ModuleNames.SliceIsRight);
-        if (ImGui.Checkbox("Enable##Slice", ref enabled))
-        {
-            C.SetModuleEnabled(ModuleNames.SliceIsRight, enabled);
-            C.Save();
-        }
-
-        ImGui.TextWrapped("Draws slice and AoE markers during the GATE.");
-
-        if (enabled)
-        {
-            using var indent = ImRaii.PushIndent();
-            var autoMove = C.GoldSaucerGates.SliceIsRightAutoMovement;
-            if (ImGui.Checkbox("Automatic movement (Boss Mod VBM AI)##SliceAuto", ref autoMove))
-            {
-                C.GoldSaucerGates.SliceIsRightAutoMovement = autoMove;
-                C.Save();
-            }
-
-            if (autoMove)
-            {
-                SaucyTheme.TextMuted("Activates the VBM AI preset so Boss Mod's Slice is Right module can path you out of hazards.");
-            }
-        }
-
-        ImGui.Dummy(new(0, 4));
-        SaucyTheme.DrawCard("Dependencies", "Optional integrations", GoldSaucerGateDependenciesUi.DrawSliceIsRight);
-    }
-
     private static void DrawWindBlowsPanel()
     {
         DrawPanelHeader("Any Way the Wind Blows", "statistical safe spot");
@@ -173,18 +124,6 @@ public unsafe partial class PluginUI
         if (TriadRunSession.ModuleEnabled)
         {
             status = "Triple Triad";
-        }
-        else if (CuffACurAutomation.IsEnabled)
-        {
-            status = "Cuff-a-Cur";
-        }
-        else if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb))
-        {
-            status = "Out on a Limb";
-        }
-        else if (C.IsModuleEnabled(ModuleNames.SliceIsRight))
-        {
-            status = "Slice is Right";
         }
         else if (C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows))
         {

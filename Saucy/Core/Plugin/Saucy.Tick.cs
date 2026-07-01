@@ -34,8 +34,6 @@ public sealed partial class Saucy
                 TriadRunSession.ApplyDutyFinderDeferIfNeeded();
             }
 
-            AutoRetainerPause.Tick();
-
             if (C.UseSimmedDeck && TriadRun.ShouldBuildOptimizedDeck())
             {
                 TriadRun.SyncDeckOptimizerPauseForVnavmesh();
