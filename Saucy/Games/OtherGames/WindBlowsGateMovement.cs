@@ -85,16 +85,25 @@ internal static class WindBlowsGateMovement
             return cached;
         }
 
+        // vnavmesh's baked navmesh doesn't reliably cover this GATE's platform either (same
+        // issue already confirmed on Leap of Faith's dynamic platforms — a live diagnostic there
+        // showed a 5.6-unit Y mismatch). Requiring a successful floor snap here meant this never
+        // moved at all once vnavmesh had no floor data for the spot ("有顯示安全點標記 但沒有導航"
+        // — the marker draw doesn't depend on vnavmesh, so it kept showing while movement silently
+        // never started). Trust the known-good hardcoded destination directly when snapping fails,
+        // rather than refusing to move.
         var snapped = Vnavmesh.TryGetPointOnFloor(destination, halfExtentXz: FloorSnapHalfExtent);
         if (snapped == null)
         {
-            return null;
+            _snappedDestination = destination;
+            return destination;
         }
 
         var drift = snapped.Value - destination;
         if ((drift.X * drift.X) + (drift.Z * drift.Z) > MaxSnapDrift * MaxSnapDrift)
         {
-            return null;
+            _snappedDestination = destination;
+            return destination;
         }
 
         _snappedDestination = snapped;
@@ -108,13 +117,12 @@ internal static class WindBlowsGateMovement
             return false;
         }
 
+        // Same vnavmesh-coverage caveat as ResolveDestination above — fall back to the player's
+        // own live Y against the known platform floor height instead of requiring a floor query
+        // that may never succeed on this platform.
         var snapped = Vnavmesh.TryGetPointOnFloor(position, halfExtentXz: FloorSnapHalfExtent);
-        if (snapped == null)
-        {
-            return false;
-        }
-
-        return MathF.Abs(snapped.Value.Y - AnyWayTheWindBlows.Stage.PlatformFloorY) <= PlatformYTolerance;
+        var y = snapped?.Y ?? position.Y;
+        return MathF.Abs(y - AnyWayTheWindBlows.Stage.PlatformFloorY) <= PlatformYTolerance;
     }
 
     private static bool IsWithinHorizontalRange(Vector3 position, Vector3 center, float range)

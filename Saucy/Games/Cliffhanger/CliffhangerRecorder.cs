@@ -8,25 +8,21 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text.Json;
-namespace Saucy.LeapOfFaith;
+namespace Saucy.Cliffhanger;
 
 /// <summary>
-/// Records the player's position and nearby GameObjects while manually playing Leap of Faith.
-/// The platform layout and cactuar trophy positions are randomized per run, so a single fixed
-/// route can't be replayed — this instead collects raw samples (player path + nearby object
-/// kind/DataId/name/position) so the actual platforms/trophies can be identified from real data
-/// and detected live at runtime, rather than guessed. Not wired into the automation loop yet —
-/// this is purely a data-collection tool exposed from the Debug tab.
+/// Records the player's position and nearby GameObjects (bombs, chocobo chicks, etc.) while
+/// manually playing Cliffhanger (搶救小鳥大作戰). Unlike Leap of Faith, the route here is fixed
+/// per the user's description, so a single recorded run should be directly replayable — this tool
+/// captures that reference run so the real route/obstacle DataIds can be identified from real data
+/// instead of guessed. Not wired into automation yet — purely a data-collection tool from the
+/// Debug tab, mirroring LeapOfFaithRecorder.
 /// </summary>
-internal static class LeapOfFaithRecorder
+internal static class CliffhangerRecorder
 {
     private const int PlayerSampleIntervalMs = 150;
-    private const int ObjectSampleIntervalMs = 500;
+    private const int ObjectSampleIntervalMs = 300;
     private const float ObjectScanRadius = 60f;
-
-    // A teleport-sized jump between consecutive 150ms samples (normal movement/falling can't
-    // cover this far) means the player fell off and got returned to a checkpoint/start — treat
-    // that as the boundary between attempts.
     private const float RespawnJumpDistance = 15f;
 
     public readonly record struct RecordedPoint(
@@ -82,14 +78,14 @@ internal static class LeapOfFaithRecorder
 
     private static void OnFrameworkUpdate(IFramework _)
     {
-        if (!Player.Available || !LeapOfFaithDetection.IsActive)
+        if (!Player.Available || !GateDirector.IsInGate(Module.GateType.Cliffhanger))
         {
             return;
         }
 
         var elapsed = (float)(DateTime.UtcNow - recordingStartUtc).TotalSeconds;
 
-        if (EzThrottler.Throttle("Saucy.LeapOfFaith.RecordPlayer", PlayerSampleIntervalMs))
+        if (EzThrottler.Throttle("Saucy.Cliffhanger.RecordPlayer", PlayerSampleIntervalMs))
         {
             var pos = Player.Position;
             var likelyRespawn = lastPosition.HasValue && Vector3.Distance(pos, lastPosition.Value) > RespawnJumpDistance;
@@ -99,11 +95,11 @@ internal static class LeapOfFaithRecorder
             }
             lastPosition = pos;
 
-            points.Add(new RecordedPoint(elapsed, pos, Player.Rotation, LeapOfFaithDetection.IsActive,
-                likelyRespawn, attemptIndex));
+            points.Add(new RecordedPoint(elapsed, pos, Player.Rotation,
+                GateDirector.IsInGate(Module.GateType.Cliffhanger), likelyRespawn, attemptIndex));
         }
 
-        if (EzThrottler.Throttle("Saucy.LeapOfFaith.RecordObjects", ObjectSampleIntervalMs))
+        if (EzThrottler.Throttle("Saucy.Cliffhanger.RecordObjects", ObjectSampleIntervalMs))
         {
             var playerPos = Player.Position;
             foreach (var obj in Svc.Objects)
@@ -130,11 +126,10 @@ internal static class LeapOfFaithRecorder
         Directory.CreateDirectory(dir);
         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
-        var routePath = Path.Combine(dir, $"LeapOfFaithRoute_{stamp}.json");
+        var routePath = Path.Combine(dir, $"CliffhangerRoute_{stamp}.json");
         File.WriteAllText(routePath, JsonSerializer.Serialize(points, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
 
-        var objectsPath = Path.Combine(dir, $"LeapOfFaithObjects_{stamp}.json");
-        // Dedupe by DataId/Kind/Name for a readable summary; full per-sample distances stay in the raw list.
+        var objectsPath = Path.Combine(dir, $"CliffhangerObjects_{stamp}.json");
         var distinctSummary = objects
             .GroupBy(o => (o.DataId, o.Kind, o.Name))
             .Select(g => new

@@ -56,14 +56,14 @@ internal static class TriadSettingsUi
         }
 
         var collectionUi = C.CollectionUiEnabled;
-        if (ImGui.Checkbox("黃金水都卡片搜尋面板", ref collectionUi))
+        if (ImGui.Checkbox("金碟遊樂園卡片搜尋面板", ref collectionUi))
         {
             C.CollectionUiEnabled = collectionUi;
             C.Save();
         }
 
         ImGuiComponents.HelpMarker(
-            "在黃金水都卡片介面旁顯示可搜尋的卡片清單，包含編輯卡組（TriadBuddy 風格的 [No.1] 排序）。" +
+            "在金碟遊樂園卡片介面旁顯示可搜尋的卡片清單，包含編輯卡組（TriadBuddy 風格的 [No.1] 排序）。" +
             "同時會在卡片收藏主畫面顯示 NPC 搜尋功能。");
 
         ImGui.Dummy(new(0, 4));

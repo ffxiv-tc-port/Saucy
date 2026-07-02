@@ -2,12 +2,14 @@ using ImGuiNET;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
 using FFXIVClientStructs.FFXIV.Client.Game.GoldSaucer;
 using PunishLib.ImGuiMethods;
 using Saucy.Framework;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using static ECommons.GenericHelpers;
 namespace Saucy;
@@ -21,9 +23,13 @@ public unsafe partial class PluginUI : Window
 
     private static readonly string[] SidebarLabels =
     [
-        "Wind Blows",
-        "Leap of Faith",
-        "Triple Triad",
+        "暴風倖存者",
+        "空軍裝甲駕駛員",
+        "登高跳跳樂大挑戰",
+        "搶救小鳥大作戰",
+        "必中一閃快刀斬魔",
+        "活動解說員排程",
+        "九宮幻卡",
         "統計",
         "關於",
         "除錯",
@@ -66,6 +72,27 @@ public unsafe partial class PluginUI : Window
     public void OpenForDebug()
     {
         _selectedNav = NavItem.Debug;
+        IsOpen = true;
+    }
+
+    public void OpenForGate(Module.GateType gate)
+    {
+        var nav = gate switch
+        {
+            Module.GateType.AnyWayTheWindBlows => NavItem.AnyWayTheWindBlows,
+            Module.GateType.AirForceOne => NavItem.AirForceOne,
+            Module.GateType.LeapOfFaith => NavItem.LeapOfFaith,
+            Module.GateType.Cliffhanger => NavItem.Cliffhanger,
+            Module.GateType.SliceIsRight => NavItem.SliceIsRight,
+            _ => (NavItem?)null
+        };
+
+        if (nav == null)
+        {
+            return;
+        }
+
+        _selectedNav = nav.Value;
         IsOpen = true;
     }
 
@@ -142,13 +169,16 @@ public unsafe partial class PluginUI : Window
     private void DrawSidebar()
     {
         DrawSidebarHeader("GATES");
-        NavSelectable("Wind Blows", NavItem.AnyWayTheWindBlows);
-        NavSelectable("Air Force One", NavItem.AirForceOne);
-        NavSelectable("Leap of Faith", NavItem.LeapOfFaith);
+        NavSelectable("暴風倖存者", NavItem.AnyWayTheWindBlows);
+        NavSelectable("空軍裝甲駕駛員", NavItem.AirForceOne);
+        NavSelectable("登高跳跳樂大挑戰", NavItem.LeapOfFaith);
+        NavSelectable("搶救小鳥大作戰", NavItem.Cliffhanger);
+        NavSelectable("必中一閃快刀斬魔", NavItem.SliceIsRight);
+        NavSelectable("活動解說員排程", NavItem.GateSchedule);
 
         ImGui.Dummy(new(0, 6));
         DrawSidebarHeader("OTHER GAMES");
-        NavSelectable("Triple Triad", NavItem.TripleTriad);
+        NavSelectable("九宮幻卡", NavItem.TripleTriad);
 
         ImGui.Dummy(new(0, 6));
         ImGui.Separator();
@@ -194,6 +224,9 @@ public unsafe partial class PluginUI : Window
             case NavItem.AnyWayTheWindBlows: DrawWindBlowsPanel(); break;
             case NavItem.AirForceOne: DrawAirForcePanel(); break;
             case NavItem.LeapOfFaith: DrawLeapOfFaithPanel(); break;
+            case NavItem.Cliffhanger: DrawCliffhangerPanel(); break;
+            case NavItem.SliceIsRight: DrawSliceIsRightPanel(); break;
+            case NavItem.GateSchedule: DrawGateSchedulePanel(); break;
             case NavItem.Stats: DrawStatsTab(); break;
             case NavItem.About: AboutTab.Draw("Saucy"); break;
             case NavItem.Debug: DrawDebugTab(); break;
@@ -202,7 +235,7 @@ public unsafe partial class PluginUI : Window
 
     private static void DrawTriadPanel()
     {
-        DrawPanelHeader("Triple Triad");
+        DrawPanelHeader("九宮幻卡");
         ImGuiEx.EzTabBar("###Triad",
             ("主要", TriadSettingsUi.Draw, null, false),
             ("快取", TriadCacheSettingsUi.Draw, null, false));
@@ -213,7 +246,7 @@ public unsafe partial class PluginUI : Window
 
     private void DrawDebugTab()
     {
-        ImGuiLayout.DrawCollapsingSection("黃金水都 GATE", ImGuiTreeNodeFlags.DefaultOpen, () =>
+        ImGuiLayout.DrawCollapsingSection("金碟遊樂園 GATE", ImGuiTreeNodeFlags.DefaultOpen, () =>
         {
             if (GoldSaucerManager.Instance() != null && GoldSaucerManager.Instance()->CurrentGFateDirector != null)
             {
@@ -272,6 +305,109 @@ public unsafe partial class PluginUI : Window
         ImGuiLayout.DrawCollapsingSection("Triple Triad 棋盤記憶體", ImGuiTreeNodeFlags.DefaultOpen, DrawTriadBoardMemoryDebug);
 
         ImGuiLayout.DrawCollapsingSection("Leap of Faith 路徑記錄", ImGuiTreeNodeFlags.DefaultOpen, DrawLeapOfFaithRecorder);
+
+        ImGuiLayout.DrawCollapsingSection("搶救小鳥大作戰 路徑記錄", ImGuiTreeNodeFlags.DefaultOpen, DrawCliffhangerRecorder);
+    }
+
+    /// <summary>
+    /// Event Coordinator NPCs ("活動解說員") exist at multiple locations around the Gold Saucer,
+    /// so unlike each GATE's single registration-NPC spot, this is a free-form list the user adds
+    /// to and deletes from directly — never a guessed/hardcoded position.
+    /// </summary>
+    private static void DrawGateSchedulePanel()
+    {
+        DrawPanelHeader("活動解說員排程", "GATE 排程自動化");
+        ImGui.TextWrapped("每小時 :10/:30/:50 自動導航至最近的已記錄「活動解說員」；" +
+                           "每小時 :00/:20/:40 若在已記錄的支援 GATE NPC 附近，自動互動並嘗試參加。");
+
+        var autoOpen = C.GoldSaucerGates.AutoOpenUiOnGateJoin;
+        if (ImGui.Checkbox("加入 GATE 時自動開啟並切換到對應頁面##AutoOpenUiOnGateJoin", ref autoOpen))
+        {
+            C.GoldSaucerGates.AutoOpenUiOnGateJoin = autoOpen;
+            C.Save();
+        }
+
+        ImGui.Dummy(new(0, 4));
+        var coordinatorAuto = C.GoldSaucerGates.EventCoordinatorAutoNavigate;
+        if (ImGui.Checkbox("自動導航至活動解說員（:10/:30/:50）##EventCoordinatorAutoNavigate", ref coordinatorAuto))
+        {
+            C.GoldSaucerGates.EventCoordinatorAutoNavigate = coordinatorAuto;
+            C.Save();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("立即移動至最近的活動解說員##MoveNowNearestCoordinator"))
+        {
+            var playerPos = Player.Available ? Player.Position : default;
+            var nearest = C.GoldSaucerGates.EventCoordinatorSpots
+                .Where(s => s.Recorded)
+                .OrderBy(s => Vector3.Distance(playerPos, new Vector3(s.X, s.Y, s.Z)))
+                .FirstOrDefault();
+            if (nearest != null)
+            {
+                GateScheduleAutomation.TriggerManualCoordinatorMove(nearest);
+            }
+        }
+
+        var autoJoin = C.GoldSaucerGates.AutoJoinNearSupportedNpc;
+        if (ImGui.Checkbox("自動參加支援的 GATE（:00/:20/:40）##AutoJoinNearSupportedNpc", ref autoJoin))
+        {
+            C.GoldSaucerGates.AutoJoinNearSupportedNpc = autoJoin;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("僅在玩家靠近已記錄的空軍裝甲駕駛員/暴風倖存者/必中一閃快刀斬魔 NPC 時才會嘗試互動並確認參加。");
+        }
+
+        ImGui.Dummy(new(0, 4));
+        ImGui.TextWrapped("已記錄的活動解說員位置：");
+
+        if (ImGui.Button("鎖定 NPC 後按此新增##AddEventCoordinatorSpot"))
+        {
+            if (GateNpcNavigation.TryRecordNewListEntry(C.GoldSaucerGates.EventCoordinatorSpots, out var message))
+            {
+                Svc.Chat.Print($"[Saucy] {message}");
+            }
+            else
+            {
+                Svc.Chat.PrintError($"[Saucy] {message}");
+            }
+        }
+
+        var spots = C.GoldSaucerGates.EventCoordinatorSpots;
+        if (spots.Count == 0)
+        {
+            SaucyTheme.TextMuted("尚未記錄任何活動解說員位置。");
+        }
+
+        for (var i = spots.Count - 1; i >= 0; i--)
+        {
+            var spot = spots[i];
+            ImGui.TextUnformatted($"{spot.NpcName}（{spot.X:F1}, {spot.Y:F1}, {spot.Z:F1}）");
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"立即移動##EventCoordinatorSpotMove{i}"))
+            {
+                GateScheduleAutomation.TriggerManualCoordinatorMove(spot);
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"刪除##EventCoordinatorSpot{i}"))
+            {
+                spots.RemoveAt(i);
+                C.Save();
+            }
+        }
+
+        // Each supported GATE's registration-NPC recording/auto-navigate controls, consolidated
+        // here instead of scattered across each GATE's own panel (per user request).
+        ImGui.Dummy(new(0, 8));
+        ImGui.Separator();
+        ImGui.TextWrapped("支援 GATE 的報名 NPC：");
+        DrawGateNpcNavigationControls("空軍裝甲駕駛員", "AirForceNpc", C.GoldSaucerGates.AirForceNpcSpot,
+            () => C.GoldSaucerGates.AirForceNpcAutoNavigate, v => C.GoldSaucerGates.AirForceNpcAutoNavigate = v);
+        DrawGateNpcNavigationControls("暴風倖存者", "WindBlowsNpc", C.GoldSaucerGates.WindBlowsNpcSpot,
+            () => C.GoldSaucerGates.WindBlowsNpcAutoNavigate, v => C.GoldSaucerGates.WindBlowsNpcAutoNavigate = v);
+        DrawGateNpcNavigationControls("必中一閃快刀斬魔", "SliceIsRightNpc", C.GoldSaucerGates.SliceIsRightNpcSpot,
+            () => C.GoldSaucerGates.SliceIsRightNpcAutoNavigate, v => C.GoldSaucerGates.SliceIsRightNpcAutoNavigate = v);
     }
 
     /// <summary>
@@ -353,12 +489,59 @@ public unsafe partial class PluginUI : Window
         }
     }
 
+    private static void DrawCliffhangerRecorder()
+    {
+        ImGui.TextWrapped("手動玩一次 搶救小鳥大作戰 期間點選「開始記錄」，完成後點「停止」再「匯出」，" +
+                           "由於這關路線固定，錄好一次後可作為之後自動化的參考路線。");
+
+        var recording = Cliffhanger.CliffhangerRecorder.IsRecording;
+        using (ImRaii.Disabled(recording))
+        {
+            if (ImGui.Button("開始記錄##Cliffhanger"))
+            {
+                Cliffhanger.CliffhangerRecorder.StartRecording();
+            }
+        }
+        ImGui.SameLine();
+        using (ImRaii.Disabled(!recording))
+        {
+            if (ImGui.Button("停止##Cliffhanger"))
+            {
+                Cliffhanger.CliffhangerRecorder.StopRecording();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("清除##Cliffhanger"))
+        {
+            Cliffhanger.CliffhangerRecorder.Clear();
+        }
+
+        var count = Cliffhanger.CliffhangerRecorder.Points.Count;
+        var objCount = Cliffhanger.CliffhangerRecorder.Objects.Count;
+        var attempts = Cliffhanger.CliffhangerRecorder.Points.Count > 0
+            ? Cliffhanger.CliffhangerRecorder.Points[^1].AttemptIndex + 1
+            : 0;
+        ImGui.Text($"已記錄玩家座標點數：{count}　附近物件取樣數：{objCount}　偵測到的嘗試次數：{attempts}");
+
+        using (ImRaii.Disabled(count == 0))
+        {
+            if (ImGui.Button("匯出路線 JSON##Cliffhanger"))
+            {
+                var path = Cliffhanger.CliffhangerRecorder.Export();
+                Svc.Chat.Print($"[Saucy] 已匯出 搶救小鳥大作戰 記錄至：\n{path}");
+            }
+        }
+    }
+
     private enum NavItem
     {
         TripleTriad,
         AnyWayTheWindBlows,
         AirForceOne,
         LeapOfFaith,
+        Cliffhanger,
+        SliceIsRight,
+        GateSchedule,
         Stats,
         About,
         Debug

@@ -1,9 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
+    <!-- Bumps a persisted build counter on every build and folds it into the assembly version's
+         4th component, so each local build gets a distinct, easily-identifiable version number
+         (shown in-game via TitleBarVersion.cs). Computed here at evaluation time (not inside a
+         Target) because Dalamud.NET.Sdk's own targets also stamp AssemblyVersion/FileVersion (from
+         git) in a target that runs AFTER any target-based override here, silently discarding it —
+         confirmed live: the compiled DLL kept showing 2.1.1.0 no matter what a BumpBuildNumber
+         Target set. Setting these as plain evaluated properties, before Sdk.targets is imported,
+         wins instead of racing it. -->
     <PropertyGroup>
         <Authors>Puni.sh</Authors>
-        <VersionPrefix>2.1.1</VersionPrefix>
         <BuildNumberFile>$(MSBuildProjectDirectory)\BuildNumber.txt</BuildNumberFile>
+        <_PreviousBuildNumber Condition="Exists('$(BuildNumberFile)')">$([System.IO.File]::ReadAllText('$(BuildNumberFile)').Trim())</_PreviousBuildNumber>
+        <_PreviousBuildNumber Condition="'$(_PreviousBuildNumber)' == ''">0</_PreviousBuildNumber>
+        <BuildNumber>$([MSBuild]::Add($(_PreviousBuildNumber), 1))</BuildNumber>
+        <VersionPrefix>2.1.1</VersionPrefix>
+        <Version>$(VersionPrefix).$(BuildNumber)</Version>
+        <AssemblyVersion>$(Version)</AssemblyVersion>
+        <FileVersion>$(Version)</FileVersion>
     </PropertyGroup>
 
     <PropertyGroup>
@@ -11,21 +25,9 @@
         <LangVersion>preview</LangVersion>
     </PropertyGroup>
 
-    <!-- Bumps a persisted build counter on every build and folds it into the assembly version's
-         4th component, so each local build gets a distinct, easily-identifiable version number
-         (shown in-game via TitleBarVersion.cs). -->
-    <Target Name="BumpBuildNumber" BeforeTargets="BeforeCompile;CoreCompile;GenerateAssemblyInfo">
-        <ReadLinesFromFile File="$(BuildNumberFile)" Condition="Exists('$(BuildNumberFile)')">
-            <Output TaskParameter="Lines" ItemName="_BuildNumberLine"/>
-        </ReadLinesFromFile>
-        <PropertyGroup>
-            <_PreviousBuildNumber Condition="'@(_BuildNumberLine)' != ''">@(_BuildNumberLine)</_PreviousBuildNumber>
-            <_PreviousBuildNumber Condition="'$(_PreviousBuildNumber)' == ''">0</_PreviousBuildNumber>
-            <BuildNumber>$([MSBuild]::Add($(_PreviousBuildNumber), 1))</BuildNumber>
-            <Version>$(VersionPrefix).$(BuildNumber)</Version>
-            <AssemblyVersion>$(Version)</AssemblyVersion>
-            <FileVersion>$(Version)</FileVersion>
-        </PropertyGroup>
+    <!-- Persists the incremented counter for next build. Timing doesn't matter here (unlike the
+         version properties above) since this only needs to be on disk before the NEXT invocation. -->
+    <Target Name="PersistBuildNumber" AfterTargets="Build">
         <WriteLinesToFile File="$(BuildNumberFile)" Lines="$(BuildNumber)" Overwrite="true"/>
     </Target>
 

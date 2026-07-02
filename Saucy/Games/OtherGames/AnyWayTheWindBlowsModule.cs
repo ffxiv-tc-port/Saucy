@@ -22,10 +22,13 @@ public class AnyWayTheWindBlows : Module
         Svc.Framework.Update -= OnUpdate;
         Svc.PluginInterface.UiBuilder.Draw -= Draw;
         WindBlowsGateMovement.ReleaseIfOwned();
+        GateNpcNavigation.ReleaseIfOwned(GateType.AnyWayTheWindBlows);
     }
 
     private void OnUpdate(IFramework _)
     {
+        GateNpcNavigation.Tick(GateType.AnyWayTheWindBlows, C.GoldSaucerGates.WindBlowsNpcSpot, C.GoldSaucerGates.WindBlowsNpcAutoNavigate);
+
         if (!IsInGate(GateType.AnyWayTheWindBlows))
         {
             WindBlowsGateMovement.ReleaseIfOwned();

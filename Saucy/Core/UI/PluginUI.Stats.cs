@@ -13,8 +13,8 @@ public partial class PluginUI
 
         (var life, var sess) = (C.Stats, C.SessionStats);
 
-        DrawStatsCard("Triple Triad", TriadHeadline(life), () => DrawTriadRows(life, sess));
-        DrawStatsCard("Air Force One", AirForceHeadline(life), () => DrawAirForceRows(life, sess));
+        DrawStatsCard("九宮幻卡", TriadHeadline(life), () => DrawTriadRows(life, sess));
+        DrawStatsCard("空軍裝甲駕駛員", AirForceHeadline(life), () => DrawAirForceRows(life, sess));
     }
 
     private static void DrawStatsToolbar()
