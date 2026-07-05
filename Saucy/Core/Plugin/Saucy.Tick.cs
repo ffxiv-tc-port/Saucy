@@ -11,7 +11,7 @@ public sealed partial class Saucy
         try
         {
             SubscriptionManager.Subscribe();
-            YesAlready.SyncForGameActivity(GoldSaucerGameActivity.IsAnyGamePlaying());
+            GateNpcNavigation.TickManualInteract();
             UpdateGateAutoOpen();
             GateScheduleAutomation.Tick();
             TriadOptimizedDeckCacheStore.TickCharacter();

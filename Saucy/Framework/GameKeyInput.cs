@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 namespace Saucy.Framework;
 
@@ -64,6 +66,7 @@ internal static class GameKeyInput
     public const int VK_SPACE = 0x20;
 
     private static int? heldKey;
+    private static readonly HashSet<int> heldKeys = [];
 
     /// <summary>Call every tick with the desired held key (or null for none). Handles releasing the
     /// previous key when the direction changes and re-pressing every tick while held.</summary>
@@ -90,7 +93,39 @@ internal static class GameKeyInput
         }
     }
 
-    public static void ReleaseHeldKey() => SetHeldKey(null);
+    /// <summary>Holds multiple keys at once (e.g. W+A together to curve-turn while running,
+    /// matching how FFXIV actually turns while moving) — real hardware keyboards can have several
+    /// keys down simultaneously, which SetHeldKey's single-key model can't express. Diffs against
+    /// whatever's currently held so only the actual changes get sent each tick.</summary>
+    public static void SetHeldKeys(IEnumerable<int> keys)
+    {
+        var newSet = keys as HashSet<int> ?? new HashSet<int>(keys);
+
+        foreach (var key in heldKeys.Where(key => !newSet.Contains(key)).ToArray())
+        {
+            SendKey(key, keyUp: true);
+            heldKeys.Remove(key);
+        }
+
+        foreach (var key in newSet)
+        {
+            SendKey(key, keyUp: false);
+            heldKeys.Add(key);
+        }
+
+        // Keep the single-key model in sync too, since both can be used interchangeably by
+        // different callers and ReleaseHeldKey()/SetHeldKey() need to know not to double-release.
+        heldKey = newSet.Count == 1 ? newSet.First() : null;
+    }
+
+    public static void ReleaseHeldKey()
+    {
+        SetHeldKey(null);
+        if (heldKeys.Count > 0)
+        {
+            SetHeldKeys([]);
+        }
+    }
 
     public static void TapKey(int vk)
     {

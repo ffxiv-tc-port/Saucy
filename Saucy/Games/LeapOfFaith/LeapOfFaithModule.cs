@@ -24,9 +24,17 @@ public class LeapOfFaith : Module
         Svc.Framework.Update -= OnUpdate;
         Svc.PluginInterface.UiBuilder.Draw -= Draw;
         GameKeyInput.ReleaseHeldKey();
+        GateNpcNavigation.ReleaseIfOwned(GateType.LeapOfFaith);
     }
 
-    private void OnUpdate(IFramework _) => LeapOfFaithAutomation.OnUpdate();
+    // Leap of Faith and Air Force One register at the same physical NPC (confirmed by user:
+    // "報名登高跳跳樂 和 報名空軍裝甲 共用NPC") — reuse AirForceNpcSpot rather than asking the
+    // user to record the same location twice under a different name.
+    private void OnUpdate(IFramework _)
+    {
+        LeapOfFaithAutomation.OnUpdate();
+        GateNpcNavigation.Tick(GateType.LeapOfFaith, C.GoldSaucerGates.AirForceNpcSpot, C.GoldSaucerGates.AirForceNpcAutoNavigate);
+    }
 
     public void Draw()
     {
@@ -140,10 +148,16 @@ public class LeapOfFaith : Module
         }
     }
 
-    /// <summary>Marks every platform position inferred from other players, so the growing "known
-    /// route" is directly visible on screen. Marker size/color scales with observation count —
-    /// densely-observed points (many players landed/stood there) read as more confidently safe
-    /// than a point only seen once or twice.</summary>
+    // "改為整合其他玩家多次路線的優化路線繪製" — only draw segments enough independent passes have
+    // confirmed to count as part of the real route; a stretch only ever seen once is more likely
+    // noise (a player briefly testing a doomed jump) than a safe path, so it's left out entirely
+    // rather than adding to the visual clutter.
+    private const int MinObservationsForOptimizedRoute = 2;
+
+    /// <summary>Draws the merged, cross-player-confirmed route — segments walked by multiple
+    /// players (or the same player multiple times) get drawn brighter/thicker than ones only just
+    /// crossing the confirmation threshold, so the more "obviously the real route" a stretch is,
+    /// the more it stands out.</summary>
     private static void DrawObservedPlatformMarkers()
     {
         var points = LeapOfFaithPlatformObserver.ObservedPlatforms;
@@ -175,64 +189,35 @@ public class LeapOfFaith : Module
         const float MaxRenderDistance = 40f;
         var playerPos = Player.Position;
 
-        // Consecutive same-player samples get connected into a thick ~1m-wide line instead of
-        // staying individual dots — a point can appear in more than one segment (different
-        // players' walks crossing/diverging), so forks/branches in the path draw naturally.
+        // Consecutive same-player samples get connected into a line so forks/branches in the path
+        // draw naturally (a point can appear in more than one segment). Drawn as a plain thin line
+        // now, not a filled ~1m-wide quad — the thick fill stacked into an illegible solid blob
+        // wherever many segments overlapped, per user feedback ("不要畫粗線了"). Auto-movement
+        // still follows the underlying segment data exactly the same either way — only the drawing
+        // changed, not the pathing. Segments below the confirmation threshold are skipped entirely
+        // (see MinObservationsForOptimizedRoute) so only the merged, multi-pass-confirmed route
+        // shows up instead of every single-pass sample.
         foreach (var segment in LeapOfFaithPlatformObserver.ComputeLinearSegments())
         {
+            if (segment.ObservationCount < MinObservationsForOptimizedRoute)
+            {
+                continue;
+            }
+
             if (Vector3.Distance(playerPos, segment.A) > MaxRenderDistance && Vector3.Distance(playerPos, segment.B) > MaxRenderDistance)
             {
                 continue;
             }
 
-            DrawThickWorldLine(drawList, segment.A, segment.B, LeapOfFaithPlatformObserver.PathSegmentWidth,
-                (EzColor.Blue & 0x00FFFFFFu) | (140u << 24));
-        }
-
-        foreach (var point in points)
-        {
-            if (Vector3.Distance(playerPos, point.Position) > MaxRenderDistance)
+            if (Svc.GameGui.WorldToScreen(segment.A, out var screenA) && Svc.GameGui.WorldToScreen(segment.B, out var screenB))
             {
-                continue;
-            }
-
-            if (Svc.GameGui.WorldToScreen(point.Position, out var screen))
-            {
-                // Kept small and dim on purpose — these dots are a background hint, not something
-                // that should compete with the actual target pointer for attention. EzColor packs
-                // ABGR with alpha in the top byte; adjust it directly rather than swapping colors.
-                var alpha = (uint)Math.Clamp(90 + (point.ObservationCount * 15), 90, 220);
-                var color = (EzColor.Blue & 0x00FFFFFFu) | (alpha << 24);
-                drawList.AddCircleFilled(screen, 3.5f, color);
+                var confidence = Math.Min(segment.ObservationCount, 6);
+                var thickness = 1.5f + (confidence * 0.4f);
+                var alpha = (byte)Math.Min(255, 120 + (confidence * 25));
+                var color = (EzColor.Blue & 0x00FFFFFFu) | ((uint)alpha << 24);
+                drawList.AddLine(screenA, screenB, color, thickness);
             }
         }
-    }
-
-    /// <summary>Draws a world-space line as a filled quad rather than a fixed-pixel-width
-    /// AddLine, so its on-screen thickness correctly reflects the real ~1m walkway width at any
-    /// camera distance (same world-to-screen-offset projection trick used for the bomb blast
-    /// circles elsewhere in this codebase).</summary>
-    private static void DrawThickWorldLine(ImDrawListPtr drawList, Vector3 a, Vector3 b, float worldWidth, uint color)
-    {
-        var dir = b - a;
-        dir.Y = 0;
-        if (dir.LengthSquared() < 0.0001f)
-        {
-            return;
-        }
-        dir = Vector3.Normalize(dir);
-        var perp = new Vector3(-dir.Z, 0, dir.X) * (worldWidth / 2f);
-
-        if (!Svc.GameGui.WorldToScreen(a - perp, out var s1) ||
-            !Svc.GameGui.WorldToScreen(a + perp, out var s2) ||
-            !Svc.GameGui.WorldToScreen(b + perp, out var s3) ||
-            !Svc.GameGui.WorldToScreen(b - perp, out var s4))
-        {
-            return;
-        }
-
-        Span<Vector2> quad = [s1, s2, s3, s4];
-        drawList.AddConvexPolyFilled(ref quad[0], quad.Length, color);
     }
 
     // Standing on a cactuar trophy for ~1s is what actually picks it up (per user), so once

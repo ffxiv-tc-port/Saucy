@@ -20,10 +20,15 @@ public class Cliffhanger : Module
     {
         Svc.Framework.Update -= OnUpdate;
         Svc.PluginInterface.UiBuilder.Draw -= Draw;
-        GameKeyInput.ReleaseHeldKey();
+        PreciseMovement.SetDesiredDirection(null);
+        GateNpcNavigation.ReleaseIfOwned(GateType.Cliffhanger);
     }
 
-    private void OnUpdate(IFramework _) => CliffhangerAutomation.OnUpdate();
+    private void OnUpdate(IFramework _)
+    {
+        CliffhangerAutomation.OnUpdate();
+        GateNpcNavigation.TickList(GateType.Cliffhanger, C.GoldSaucerGates.CliffhangerNpcSpots, C.GoldSaucerGates.CliffhangerNpcAutoNavigate);
+    }
 
     private void Draw()
     {

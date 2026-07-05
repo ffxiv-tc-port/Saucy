@@ -52,12 +52,19 @@ public static unsafe class AirForceAutomation
     private static DateTime lockedSinceUtc;
     private static int currentLockDelayMs;
 
+    // Repeatedly re-locking the SAME nearest target every cycle (as soon as its short per-target
+    // cooldown lapses) starved farther targets of a turn entirely, reported live as a target never
+    // getting shot ("有漏打一個目標 注意不要同一點連射 更換目標或等待冷卻再射"). Remember the last
+    // one actually fired at and, if any OTHER eligible target exists this pass, prefer it —
+    // falling back to re-firing the same one only when it's truly the only option.
+    private static ulong lastFiredTargetId;
+
     // Exposed for the "draw prediction circles" overlay so the avoid radius can be tuned visually
     // instead of by trial-and-error against the slider. DataId is included so it can be labeled
     // on screen — DataId misidentification has bitten this module twice already, so being able to
     // eyeball "which DataId is this thing on screen" without opening the debug tab is worth it.
     public readonly record struct BombCircle(System.Numerics.Vector2 Screen, float Radius, uint DataId);
-    public readonly record struct TargetCircle(System.Numerics.Vector2 Screen, bool SkippedForBomb, uint DataId);
+    public readonly record struct TargetCircle(System.Numerics.Vector2 Screen, float Radius, bool SkippedForBomb, uint DataId);
 
     public static BombCircle[] LastBombCircles { get; private set; } = [];
     public static TargetCircle[] LastTargetCircles { get; private set; } = [];
@@ -98,17 +105,30 @@ public static unsafe class AirForceAutomation
             // ReferenceDistance: a bomb at that distance uses the configured slider radius as-is;
             // closer bombs get a proportionally bigger avoid radius, farther ones smaller.
             const float ReferenceDistance = 20f;
+
+            // Ground-truth DataIds (BombDataId and the target ids below) also match copies of the
+            // same object sitting well below the actual playing field ("空軍裝甲 地下物件" — user
+            // confirmed the one in the screenshot was far away, not right next to the player, and
+            // pointed out it's UNDERGROUND). These are presumably template/pooled instances parked
+            // below the map before being moved into play, or despawned instances not yet cleaned
+            // up — either way, a real in-play bomb/target is never more than a few meters below the
+            // player's own altitude (the ride flies roughly level with them), so anything sitting
+            // much lower than that can't be a real target regardless of DataId match.
+            const float MaxBelowPlayerY = 15f;
+
             var bombs = Svc.Objects.OfType<IEventObj>()
-                .Where(x => x.DataId == BombDataId)
+                .Where(x => x.DataId == BombDataId && Player.Position.Y - x.Position.Y < MaxBelowPlayerY)
                 .Select(x => (Screen: Svc.GameGui.WorldToScreen(x.Position, out var s) ? s : (System.Numerics.Vector2?)null, Dist: Player.DistanceTo(x)))
                 .Where(b => b.Screen.HasValue)
-                .Select(b => (Screen: b.Screen!.Value, AvoidRadius: Math.Clamp(
+                .Select(b => (Screen: b.Screen!.Value, Dist: b.Dist, AvoidRadius: Math.Clamp(
                     C.GoldSaucerGates.AirForceBombAvoidRadius * (ReferenceDistance / Math.Max(b.Dist, 1f)),
                     40f, 500f)))
                 .ToArray();
             LastBombCircles = bombs.Select(b => new BombCircle(b.Screen, b.AvoidRadius, BombDataId)).ToArray();
 
             var targetCircles = new System.Collections.Generic.List<TargetCircle>();
+            (IGameObject Obj, System.Numerics.Vector2 Aim)? fallbackCandidate = null;
+            var fired = false;
 
             // AnimationId() (GameObject.EventState) never varies from 0 in this build — either the
             // pop-up/ready gating mechanic doesn't exist in this older game version, or the field
@@ -134,6 +154,11 @@ public static unsafe class AirForceAutomation
                     continue;
                 }
 
+                if (Player.Position.Y - x.Position.Y >= MaxBelowPlayerY)
+                {
+                    continue;
+                }
+
                 if (recentlyFiredAtUtc.TryGetValue(x.GameObjectId, out var firedAt) &&
                     (DateTime.UtcNow - firedAt).TotalMilliseconds < RecentlyFiredCooldownMs)
                 {
@@ -142,35 +167,100 @@ public static unsafe class AirForceAutomation
 
                 if (Svc.GameGui.WorldToScreen(x.Position, out var screen))
                 {
-                    var skippedForBomb = bombs.Any(b => System.Numerics.Vector2.Distance(b.Screen, screen) < b.AvoidRadius);
-                    targetCircles.Add(new TargetCircle(screen, skippedForBomb, x.DataId));
+                    // A target isn't a single point — it has visible size, and can be hit anywhere
+                    // within it, edges included ("目標可打邊邊"). Give it the same distance-scaled
+                    // radius formula as the bomb avoid-radius ("範圍和炸彈一樣") instead of treating
+                    // it as a point, so a bomb sitting near dead-center doesn't have to force a full
+                    // skip — aim at whichever point on the target's edge is farthest from the bomb
+                    // instead, and only skip entirely if even that edge point is still threatened.
+                    var targetDist = Player.DistanceTo(x);
+                    var targetRadius = Math.Clamp(
+                        C.GoldSaucerGates.AirForceBombAvoidRadius * (ReferenceDistance / Math.Max(targetDist, 1f)),
+                        40f, 500f);
+
+                    var aimPoint = screen;
+                    var skippedForBomb = false;
+                    foreach (var bomb in bombs)
+                    {
+                        // A bomb and target can land at nearly the same screen point while sitting
+                        // at very different real distances — whichever one is actually CLOSER to
+                        // the player is what the shot connects with first (closer object wins along
+                        // the same aim line), so a near bomb behind/around a far target is a bigger
+                        // threat than the raw 2D screen overlap alone suggests, and a far bomb
+                        // behind a near target barely matters at all ("小心同一點連射命中剛出現的
+                        // 炸彈...目標和炸彈有遠近區分 近的會先被命中"). Bias the effective avoid
+                        // radius by which one is actually nearer in world space.
+                        var effectiveBombRadius = bomb.Dist < targetDist ? bomb.AvoidRadius * 1.5f : bomb.AvoidRadius * 0.6f;
+
+                        var toCenter = screen - bomb.Screen;
+                        var overlapDist = effectiveBombRadius + targetRadius;
+                        if (toCenter.LengthSquared() >= overlapDist * overlapDist)
+                        {
+                            continue;
+                        }
+
+                        var away = toCenter.LengthSquared() > 1f
+                            ? System.Numerics.Vector2.Normalize(toCenter)
+                            : new System.Numerics.Vector2(1, 0);
+                        var edgePoint = screen + (away * targetRadius * 0.85f);
+
+                        if (System.Numerics.Vector2.Distance(edgePoint, bomb.Screen) < effectiveBombRadius)
+                        {
+                            skippedForBomb = true;
+                            break;
+                        }
+
+                        aimPoint = edgePoint;
+                    }
+
+                    targetCircles.Add(new TargetCircle(screen, targetRadius, skippedForBomb, x.DataId));
                     if (skippedForBomb)
                     {
                         continue;
                     }
 
-                    RideShootingAim.TrySetScreenAim(screen);
-
-                    if (x.GameObjectId != lockedTargetId)
+                    // Defer re-selecting the exact same target fired at last cycle — keep scanning
+                    // for a different eligible one first, only falling back to this one if it turns
+                    // out to be the sole option this pass.
+                    if (x.GameObjectId == lastFiredTargetId && fallbackCandidate == null)
                     {
-                        lockedTargetId = x.GameObjectId;
-                        lockedSinceUtc = DateTime.UtcNow;
-                        currentLockDelayMs = rng.Next(80, 200);
+                        fallbackCandidate = (x, aimPoint);
+                        continue;
                     }
 
-                    var lockedFor = (DateTime.UtcNow - lockedSinceUtc).TotalMilliseconds;
-                    if (lockedFor >= currentLockDelayMs && EzThrottler.Throttle("Shoot", 60))
-                    {
-                        recentlyFiredAtUtc[x.GameObjectId] = DateTime.UtcNow;
-                        Svc.Framework.RunOnTick(() => RideShootingAim.FireClick(screen), delayTicks: 1);
-                    }
-
+                    AimAndFire(x, aimPoint);
+                    fired = true;
                     break;
                 }
             }
 
+            if (!fired && fallbackCandidate is { } fallback)
+            {
+                AimAndFire(fallback.Obj, fallback.Aim);
+            }
+
             LastTargetCircles = [.. targetCircles];
             return;
+
+            void AimAndFire(IGameObject targetObj, System.Numerics.Vector2 aim)
+            {
+                RideShootingAim.TrySetScreenAim(aim);
+
+                if (targetObj.GameObjectId != lockedTargetId)
+                {
+                    lockedTargetId = targetObj.GameObjectId;
+                    lockedSinceUtc = DateTime.UtcNow;
+                    currentLockDelayMs = rng.Next(80, 200);
+                }
+
+                var lockedFor = (DateTime.UtcNow - lockedSinceUtc).TotalMilliseconds;
+                if (lockedFor >= currentLockDelayMs && EzThrottler.Throttle("Shoot", 60))
+                {
+                    recentlyFiredAtUtc[targetObj.GameObjectId] = DateTime.UtcNow;
+                    lastFiredTargetId = targetObj.GameObjectId;
+                    Svc.Framework.RunOnTick(() => RideShootingAim.FireClick(aim), delayTicks: 1);
+                }
+            }
         }
 
         LastBombCircles = [];

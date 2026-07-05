@@ -71,12 +71,87 @@ internal static class LeapOfFaithPlatformObserver
     private const int MaxTrailPointsPerPlayer = 60;
     private const float TeleportJumpDistance = 15f;
     private static readonly Dictionary<uint, List<Vector3>> otherPlayerTrails = [];
+    private static readonly Dictionary<uint, DateTime> otherPlayerTrailLastUpdateUtc = [];
     private static readonly Dictionary<uint, int> consecutiveFallSamples = [];
     private static readonly Dictionary<uint, float> fallStreakStartY = [];
 
     public static IReadOnlyList<ObservedPoint> ObservedPlatforms => observedPlatforms;
 
     public static IReadOnlyCollection<IReadOnlyList<Vector3>> OtherPlayerTrails => otherPlayerTrails.Values;
+
+    // "不能沿著5~10秒前 有人安全走過的路線嗎" — a trail still being updated right now is proof
+    // the player walking it hasn't fallen off it in the last few seconds, which is a much stronger
+    // safety signal than the aggregated dot cloud (which mixes in old data from anywhere, any time).
+    // Follows the trail step-by-step toward whichever recorded point is nearest the player, then the
+    // next point further along the SAME trail in the direction of progress — not just "nearest point
+    // overall" like the dot-cloud fallback, so the character actually shadows a real recent route
+    // instead of possibly cutting across it.
+    private const float GuideTrailMaxDistanceToPlayer = 10f;
+
+    // Matches LeapOfFaithAutomation.JumpSegmentLengthThreshold — a gap this large between two
+    // consecutive real samples of the SAME trail could only have been a real jump.
+    private const float JumpSegmentLengthThreshold = 3.5f;
+
+    public static Vector3? TryGetGuideWaypoint(Vector3 playerPos, Vector3 finalTarget, TimeSpan maxAge, out bool isLongHop)
+    {
+        isLongHop = false;
+        var now = DateTime.UtcNow;
+        var playerProgress = Vector3.Distance(playerPos, finalTarget);
+
+        Vector3? best = null;
+        var bestProgress = playerProgress;
+        var bestHopLength = 0f;
+
+        foreach (var (id, trail) in otherPlayerTrails)
+        {
+            if (trail.Count < 2 || !otherPlayerTrailLastUpdateUtc.TryGetValue(id, out var updated) || now - updated > maxAge)
+            {
+                continue;
+            }
+
+            // Find the trail point nearest the player, then look at the next few points along the
+            // SAME trail (in recorded order — i.e. the direction that player actually walked) for
+            // one that makes real progress toward the target.
+            var nearestIndex = -1;
+            var nearestDist = GuideTrailMaxDistanceToPlayer;
+            for (var i = 0; i < trail.Count; i++)
+            {
+                var dist = Vector3.Distance(playerPos, trail[i]);
+                if (dist < nearestDist)
+                {
+                    nearestDist = dist;
+                    nearestIndex = i;
+                }
+            }
+
+            if (nearestIndex < 0)
+            {
+                continue;
+            }
+
+            for (var i = nearestIndex + 1; i < trail.Count && i <= nearestIndex + 5; i++)
+            {
+                var candidate = trail[i];
+                var candidateProgress = Vector3.Distance(candidate, finalTarget);
+                if (candidateProgress >= bestProgress)
+                {
+                    continue;
+                }
+
+                bestProgress = candidateProgress;
+                best = candidate;
+                bestHopLength = Vector3.Distance(trail[i - 1], candidate);
+            }
+        }
+
+        if (best is { } waypoint)
+        {
+            isLongHop = bestHopLength >= JumpSegmentLengthThreshold;
+            return waypoint;
+        }
+
+        return null;
+    }
 
     public static void EnsureLoaded()
     {
@@ -190,6 +265,7 @@ internal static class LeapOfFaithPlatformObserver
             // in-progress trail was leading to a fall. Discard it rather than draw a line that
             // ends by walking off a platform into the abyss.
             otherPlayerTrails.Remove(id);
+            otherPlayerTrailLastUpdateUtc.Remove(id);
             return;
         }
 
@@ -228,6 +304,7 @@ internal static class LeapOfFaithPlatformObserver
         if (trail.Count == 0 || Vector3.Distance(trail[^1], pos) > 0.5f)
         {
             trail.Add(pos);
+            otherPlayerTrailLastUpdateUtc[id] = DateTime.UtcNow;
             if (trail.Count > MaxTrailPointsPerPlayer)
             {
                 trail.RemoveAt(0);
@@ -287,19 +364,49 @@ internal static class LeapOfFaithPlatformObserver
     private const float MaxSegmentDistance = 6f;
     private const int MaxPathSegments = 1500;
 
-    public readonly record struct PathSegment(Vector3 A, Vector3 B);
+    public sealed class PathSegment
+    {
+        public Vector3 A { get; set; }
+        public Vector3 B { get; set; }
+        public int ObservationCount { get; set; } = 1;
+    }
 
     private static readonly Dictionary<uint, Vector3?> lastCommittedPoint = [];
     private static readonly List<PathSegment> pathSegments = [];
 
     public static IReadOnlyList<PathSegment> ComputeLinearSegments() => pathSegments;
 
+    // "登高 顯示平台標記 改為整合其他玩家多次路線的優化路線繪製" — a segment walked by many
+    // different players (or the same player across many runs) is much more likely to be a real,
+    // safe route than one only ever seen once. Rather than drawing every raw segment as an
+    // undifferentiated cloud, merge repeats of "essentially the same stretch" into a single entry
+    // and bump its ObservationCount instead of adding a duplicate line — the draw side then only
+    // renders segments that clear a minimum confirmation count, turning the noisy point/segment
+    // cloud into one optimized, cross-player-confirmed route.
+    private const float SegmentDedupeRadius = 1.5f;
+
+    private static bool TryMergeIntoExisting(Vector3 a, Vector3 b)
+    {
+        foreach (var existing in pathSegments)
+        {
+            var sameDirection = Vector3.Distance(existing.A, a) < SegmentDedupeRadius && Vector3.Distance(existing.B, b) < SegmentDedupeRadius;
+            var reverseDirection = Vector3.Distance(existing.A, b) < SegmentDedupeRadius && Vector3.Distance(existing.B, a) < SegmentDedupeRadius;
+            if (sameDirection || reverseDirection)
+            {
+                existing.ObservationCount++;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static void OnPointCommitted(uint playerId, Vector3 pos)
     {
         if (lastCommittedPoint.TryGetValue(playerId, out var last) && last is { } lastPos &&
-            Vector3.Distance(lastPos, pos) <= MaxSegmentDistance)
+            Vector3.Distance(lastPos, pos) <= MaxSegmentDistance && !TryMergeIntoExisting(lastPos, pos))
         {
-            pathSegments.Add(new PathSegment(lastPos, pos));
+            pathSegments.Add(new PathSegment { A = lastPos, B = pos });
             if (pathSegments.Count > MaxPathSegments)
             {
                 pathSegments.RemoveAt(0);

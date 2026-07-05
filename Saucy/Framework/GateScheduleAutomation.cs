@@ -2,6 +2,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.GameHelpers;
 using Saucy.IPC;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 namespace Saucy.Framework;
@@ -16,7 +17,9 @@ namespace Saucy.Framework;
 /// </summary>
 internal static unsafe class GateScheduleAutomation
 {
-    private static bool IsCoordinatorWindow => DateTime.Now.Minute is 10 or 30 or 50;
+    // Delayed by 1 minute off the raw :10/:30/:50 mark per user feedback, presumably to give the
+    // previous GATE's wrap-up/reward window time to actually finish before wandering off.
+    private static bool IsCoordinatorWindow => DateTime.Now.Minute is 11 or 31 or 51;
 
     // The GATE registration NPC isn't necessarily interactable/present the instant the minute
     // ticks over (the coordinator-teleport/area transition may still be settling) — wait 30s into
@@ -29,12 +32,40 @@ internal static unsafe class GateScheduleAutomation
     // arrives, since arrival happens several frames later.
     private static GateNpcSpot? manualCoordinatorTarget;
 
+    // "我會在非活動期間類嘗試進入活動區 能讓我手動執行 開始導航嗎" — lets the join search run right
+    // now regardless of the :00/:20/:40 clock window, for testing/early entry. Auto-expires so a
+    // forgotten manual trigger doesn't run forever.
+    private static readonly TimeSpan ManualJoinDuration = TimeSpan.FromSeconds(60);
+    private static DateTime? manualJoinUntilUtc;
+
     // Once the coordinator's actually been talked to for this window, the teleport it triggers
     // may drop the player far from every OTHER recorded spot — re-running "nearest" every
     // remaining tick of the same ~1-minute window would then immediately walk back toward
     // whichever spot is nearest (often the one just left), per user feedback ("避免觸發下一個
     // 活動時又往回跑"). Latch once handled and don't try again until the window itself resets.
-    private static bool handledCoordinatorThisWindow;
+    //
+    // Persisted to Configuration (not a plain static bool) — a plugin reload mid-window used to
+    // forget "already handled" and immediately repeat the search/walk, since a fresh in-memory
+    // flag defaults back to false ("我已參加過 重載後記錄消失 又回去找NPC"). The window itself is
+    // only ~1 minute wide and windows are 20 minutes apart, so "handled within the last 10
+    // minutes" reliably means "already handled THIS window" without needing exact window-id
+    // bookkeeping.
+    private static readonly TimeSpan HandledLatchWindow = TimeSpan.FromMinutes(10);
+
+    private static bool HasHandledRecently(long utcTicks) =>
+        utcTicks != 0 && DateTime.UtcNow - new DateTime(utcTicks, DateTimeKind.Utc) < HandledLatchWindow;
+
+    private static void MarkCoordinatorHandled()
+    {
+        C.GoldSaucerGates.LastCoordinatorHandledUtcTicks = DateTime.UtcNow.Ticks;
+        C.Save();
+    }
+
+    private static void MarkJoinHandled()
+    {
+        C.GoldSaucerGates.LastJoinHandledUtcTicks = DateTime.UtcNow.Ticks;
+        C.Save();
+    }
 
     public static void Tick()
     {
@@ -42,6 +73,17 @@ internal static unsafe class GateScheduleAutomation
         {
             ReleaseJoinNavigation();
             manualCoordinatorTarget = null;
+            manualJoinUntilUtc = null;
+
+            // Actually being on stage means the join succeeded (interacting alone doesn't always
+            // report success back if the ride/duty pulls the player in immediately after) — latch
+            // this so that leaving the GATE while still inside the same window doesn't restart the
+            // NPC search from scratch ("退出遊戲後 會一直找同一個NPC").
+            if (GateDirector.IsPlayerOnStage())
+            {
+                MarkJoinHandled();
+            }
+
             return;
         }
 
@@ -54,26 +96,33 @@ internal static unsafe class GateScheduleAutomation
         }
         else if (IsCoordinatorWindow)
         {
-            if (C.GoldSaucerGates.EventCoordinatorAutoNavigate && !handledCoordinatorThisWindow &&
+            if (C.GoldSaucerGates.EventCoordinatorAutoNavigate &&
+                !HasHandledRecently(C.GoldSaucerGates.LastCoordinatorHandledUtcTicks) &&
                 NavigateToNearestCoordinator())
             {
-                handledCoordinatorThisWindow = true;
+                MarkCoordinatorHandled();
             }
         }
-        else
-        {
-            handledCoordinatorThisWindow = false;
-        }
 
-        if (C.GoldSaucerGates.AutoJoinNearSupportedNpc && IsJoinWindow)
+        // Per-GATE toggles (AirForceAutoJoin/WindBlowsAutoJoin/etc.) are applied inside
+        // SupportedSpots itself, so the overall search just needs to run whenever ANY of them
+        // might be enabled — no single shared "auto join" flag to check here anymore.
+        var manualJoinActive = manualJoinUntilUtc is { } until && DateTime.UtcNow < until;
+        if (manualJoinActive || (IsJoinWindow && !HasHandledRecently(C.GoldSaucerGates.LastJoinHandledUtcTicks)))
         {
             TryJoinNearestSupportedNpc();
         }
         else
         {
             ReleaseJoinNavigation();
+            manualJoinUntilUtc = null;
         }
     }
+
+    /// <summary>Manual "開始導航" trigger — runs the same GATE-join search/walk/interact flow as
+    /// the :00/:20/:40 window, right now, ignoring the clock and the "already handled" latch. Use
+    /// when testing or entering the area early/outside the normal window.</summary>
+    public static void TriggerManualJoin() => manualJoinUntilUtc = DateTime.UtcNow + ManualJoinDuration;
 
     /// <summary>"立即移動" button — walks toward this specific spot and interacts on arrival,
     /// re-checked every tick regardless of the :10/:30/:50 window.</summary>
@@ -125,7 +174,18 @@ internal static unsafe class GateScheduleAutomation
                 return true;
             }
 
-            return ObjectHelper.TryInteractWithBaseId(spot.DataId, GateNpcNavigation.CloseRange, "Saucy.GateSchedule.Coordinator");
+            if (GateNpcNavigation.IsInteractOnCooldown)
+            {
+                return false;
+            }
+
+            var interacted = ObjectHelper.TryInteractWithBaseId(spot.DataId, GateNpcNavigation.CloseRange, "Saucy.GateSchedule.Coordinator");
+            if (interacted)
+            {
+                GateNpcNavigation.MarkInteracted();
+            }
+
+            return interacted;
         }
 
         if (!Vnavmesh.IsMoving())
@@ -136,13 +196,59 @@ internal static unsafe class GateScheduleAutomation
         return false;
     }
 
-    // Only the 3 GATE NPCs the user has actually recorded via the per-GATE panels — "支援的NPC"
-    // per the user's request, i.e. GATEs this plugin can already fully play once joined.
-    private static GateNpcSpot[] SupportedSpots => [
-        C.GoldSaucerGates.AirForceNpcSpot,
-        C.GoldSaucerGates.WindBlowsNpcSpot,
-        C.GoldSaucerGates.SliceIsRightNpcSpot
-    ];
+    // The GATE NPCs the user has actually recorded via the per-GATE panels — "支援的NPC" per the
+    // user's request, i.e. GATEs this plugin can already fully play once joined. Air Force One's
+    // spot also covers Leap of Faith (confirmed shared NPC — "報名登高跳跳樂 和 報名空軍裝甲 共用
+    // NPC"), and Cliffhanger contributes every spot in its list (it has two, confirmed by user).
+    //
+    // Paired with the GateType each spot actually belongs to (not just a flat position list) so a
+    // successful join can record WHICH gate was just registered for — needed by
+    // IsWithinPostJoinSettle below.
+    // "為每個GATE單獨加上自動報名開關" — each GATE's spot(s) are only offered up to the
+    // nearest-NPC search when that GATE's own toggle is on, instead of one shared switch
+    // controlling every supported GATE at once.
+    private static IEnumerable<(Module.GateType Gate, GateNpcSpot Spot)> SupportedSpots
+    {
+        get
+        {
+            if (C.GoldSaucerGates.AirForceAutoJoin)
+            {
+                yield return (Module.GateType.AirForceOne, C.GoldSaucerGates.AirForceNpcSpot);
+            }
+
+            if (C.GoldSaucerGates.WindBlowsAutoJoin)
+            {
+                yield return (Module.GateType.AnyWayTheWindBlows, C.GoldSaucerGates.WindBlowsNpcSpot);
+            }
+
+            if (C.GoldSaucerGates.SliceIsRightAutoJoin)
+            {
+                yield return (Module.GateType.SliceIsRight, C.GoldSaucerGates.SliceIsRightNpcSpot);
+            }
+
+            if (C.GoldSaucerGates.CliffhangerAutoJoin)
+            {
+                foreach (var spot in C.GoldSaucerGates.CliffhangerNpcSpots)
+                {
+                    yield return (Module.GateType.Cliffhanger, spot);
+                }
+            }
+        }
+    }
+
+    // "報名後 還沒傳送 路徑就已經是錯的了" — the moment the registration NPC is interacted with,
+    // the actual teleport onto the arena hasn't happened yet, so any movement logic that starts
+    // immediately (whether gated on IsInGate or not) can aim at coordinates that only make sense
+    // AFTER that teleport, walking off toward nonsense from wherever the player was still standing
+    // to register. Record when each GATE was actually joined so callers (WindBlows/SliceIsRight)
+    // can hold off starting movement until a real settle delay has passed.
+    private static readonly Dictionary<Module.GateType, DateTime> lastJoinedUtc = [];
+
+    /// <summary>True while still within `seconds` of that GATE's last successful registration —
+    /// callers should hold off starting any movement toward an in-arena spot until this goes
+    /// false.</summary>
+    public static bool IsWithinPostJoinSettle(Module.GateType gate, double seconds) =>
+        lastJoinedUtc.TryGetValue(gate, out var joinedUtc) && (DateTime.UtcNow - joinedUtc).TotalSeconds < seconds;
 
     private const float JoinInteractRange = 5f;
 
@@ -161,6 +267,14 @@ internal static unsafe class GateScheduleAutomation
     private static DateTime? joinSearchStartUtc;
     private static bool joinNavOwned;
 
+    // "不要連續報名 CD30秒" — dedicated to just the registration interact itself, separate from
+    // GateNpcNavigation's shared 30s interact cooldown (which also covers coordinator interacts and
+    // the manual "立即互動" button, so an unrelated interact elsewhere could otherwise reset the
+    // same shared timer and let registration fire again sooner than intended).
+    private const double RegisterCooldownSeconds = 30;
+    private static DateTime lastRegisterUtc = DateTime.MinValue;
+    private static bool IsRegisterOnCooldown => (DateTime.UtcNow - lastRegisterUtc).TotalSeconds < RegisterCooldownSeconds;
+
     private static void TryJoinNearestSupportedNpc()
     {
         // Only walks up and interacts — the resulting confirmation dialogue is left for another
@@ -176,7 +290,8 @@ internal static unsafe class GateScheduleAutomation
         var playerPos = Player.Position;
         IGameObject? nearestNpc = null;
         var nearestDist = float.MaxValue;
-        foreach (var spot in SupportedSpots)
+        var nearestGate = Module.GateType.None;
+        foreach (var (gate, spot) in SupportedSpots)
         {
             if (!spot.Recorded || spot.DataId == 0)
             {
@@ -194,6 +309,7 @@ internal static unsafe class GateScheduleAutomation
             {
                 nearestDist = dist;
                 nearestNpc = candidate;
+                nearestGate = gate;
             }
         }
 
@@ -209,8 +325,16 @@ internal static unsafe class GateScheduleAutomation
 
         if (nearestDist <= JoinInteractRange)
         {
+            if (!IsRegisterOnCooldown && !GateNpcNavigation.IsInteractOnCooldown &&
+                ObjectHelper.TryInteractWithObject(nearestNpc, "Saucy.GateSchedule.Join"))
+            {
+                GateNpcNavigation.MarkInteracted();
+                MarkJoinHandled();
+                lastJoinedUtc[nearestGate] = DateTime.UtcNow;
+                lastRegisterUtc = DateTime.UtcNow;
+            }
+
             ReleaseJoinNavigation();
-            ObjectHelper.TryInteractWithObject(nearestNpc, "Saucy.GateSchedule.Join");
             return;
         }
 

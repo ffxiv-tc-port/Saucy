@@ -95,6 +95,8 @@ public sealed partial class Saucy : IDalamudPlugin
         SubscriptionManager.Prepare();
         SubscriptionManager.Subscribe();
         Svc.Framework.Update += RunBot;
+        Svc.PluginInterface.UiBuilder.Draw += ObjectDebugOverlay.Draw;
+        PreciseMovement.Init();
     }
     public string Name => "Saucy";
     public static Configuration C { get; private set; } = null!;
@@ -104,6 +106,8 @@ public sealed partial class Saucy : IDalamudPlugin
         Svc.Commands.RemoveHandler(commandName);
         Svc.PluginInterface.UiBuilder.OpenMainUi -= EzConfigGui.Open;
         Svc.Framework.Update -= RunBot;
+        Svc.PluginInterface.UiBuilder.Draw -= ObjectDebugOverlay.Draw;
+        PreciseMovement.Shutdown();
         PrepareTriadSessionForPluginUnload();
         _triadCollectionHost?.Dispose();
         YesAlready.ResumeIfPausedBySaucy();

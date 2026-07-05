@@ -1,5 +1,6 @@
 using ECommons.GameHelpers;
 using Saucy.IPC;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 namespace Saucy.Framework;
@@ -14,6 +15,18 @@ namespace Saucy.Framework;
 internal static class GateNpcNavigation
 {
     public const float CloseRange = 3f;
+
+    // Shared across every NPC-interact call site here AND in GateScheduleAutomation (per-GATE
+    // auto-navigate, Event Coordinator, and GATE-join all funnel through this) — once any of them
+    // fires an interact, hold off on firing another one anywhere for 30s, per user feedback ("與
+    // NPC對話後 CD30秒"). Without this, lingering near an NPC while its window/condition stays
+    // true kept re-triggering the interact repeatedly.
+    private const double InteractCooldownSeconds = 30;
+    private static DateTime lastInteractUtc = DateTime.MinValue;
+
+    public static bool IsInteractOnCooldown => (DateTime.UtcNow - lastInteractUtc).TotalSeconds < InteractCooldownSeconds;
+
+    public static void MarkInteracted() => lastInteractUtc = DateTime.UtcNow;
 
     // This toggle is unconditional/always-on (unlike the GateScheduleAutomation join window,
     // which only searches within a tight radius during the :00/:20/:40 window) — without a cap it
@@ -42,8 +55,29 @@ internal static class GateNpcNavigation
         spot.DataId = target.DataId;
         spot.NpcName = target.Name.TextValue;
         C.Save();
-        message = $"已記錄「{spot.NpcName}」的位置。";
+
+        // DataId 0 means interact-by-id can never find this object again (e.g. the lock was on a
+        // player/decoration/something without a real ENpcBase entry) — recording still succeeds
+        // (position/navigation still work) but auto-interact will silently never fire, which is
+        // exactly what happened to WindBlows' NPC spot ("暴風倖存者 不會和報名NPC互動"). Flag it
+        // immediately instead of letting it fail quietly later.
+        message = target.DataId == 0
+            ? $"已記錄「{spot.NpcName}」的位置，但這個目標沒有有效的 DataId——導航會正常走到附近，但自動互動不會生效，請確認鎖定的是正確的 NPC。"
+            : $"已記錄「{spot.NpcName}」的位置。";
         return true;
+    }
+
+    /// <summary>Records the player's own current position rather than a targeted NPC — for marking
+    /// a plain location (e.g. a GATE's field boundary/starting spot) that has no NPC to lock onto.</summary>
+    public static void RecordCurrentPosition(GateNpcSpot spot, string label)
+    {
+        spot.Recorded = true;
+        spot.X = Player.Position.X;
+        spot.Y = Player.Position.Y;
+        spot.Z = Player.Position.Z;
+        spot.DataId = 0;
+        spot.NpcName = label;
+        C.Save();
     }
 
     /// <summary>Appends a new named spot to a user-managed list (e.g. Event Coordinator NPCs,
@@ -84,9 +118,79 @@ internal static class GateNpcNavigation
         if (Vnavmesh.IsWithinHorizontalRange(destination, CloseRange))
         {
             ReleaseIfOwned(gate);
-            if (spot.DataId != 0)
+            if (spot.DataId != 0 && !IsInteractOnCooldown &&
+                ObjectHelper.TryInteractWithBaseId(spot.DataId, CloseRange, $"Saucy.GateNpc.{gate}"))
             {
-                ObjectHelper.TryInteractWithBaseId(spot.DataId, CloseRange, $"Saucy.GateNpc.{gate}");
+                MarkInteracted();
+            }
+
+            return;
+        }
+
+        if (owners.TryGetValue(gate, out var owns) && owns)
+        {
+            if (!Vnavmesh.IsMoving())
+            {
+                Vnavmesh.TryMoveTo(destination, false, CloseRange);
+            }
+            return;
+        }
+
+        if (Vnavmesh.IsMoving())
+        {
+            return;
+        }
+
+        if (Vnavmesh.TryMoveTo(destination, false, CloseRange))
+        {
+            owners[gate] = true;
+        }
+    }
+
+    /// <summary>Same as Tick, but for a GATE whose registration NPC has more than one physical
+    /// spot (e.g. Cliffhanger, confirmed to have two) — picks whichever recorded spot is nearest
+    /// each call instead of assuming a single fixed one.</summary>
+    public static void TickList(Module.GateType gate, List<GateNpcSpot> spots, bool enabled)
+    {
+        if (!enabled || spots.Count == 0 || !Vnavmesh.IsInstalled || !GateDirector.InSaucer || GateDirector.IsInGate(gate) ||
+            !Player.Available)
+        {
+            ReleaseIfOwned(gate);
+            return;
+        }
+
+        var playerPos = Player.Position;
+        GateNpcSpot? nearest = null;
+        var nearestDist = float.MaxValue;
+        foreach (var spot in spots)
+        {
+            if (!spot.Recorded)
+            {
+                continue;
+            }
+
+            var dist = Vector3.Distance(playerPos, new Vector3(spot.X, spot.Y, spot.Z));
+            if (dist < nearestDist)
+            {
+                nearestDist = dist;
+                nearest = spot;
+            }
+        }
+
+        if (nearest is not { } target || nearestDist > MaxTriggerDistance)
+        {
+            ReleaseIfOwned(gate);
+            return;
+        }
+
+        var destination = new Vector3(target.X, target.Y, target.Z);
+        if (Vnavmesh.IsWithinHorizontalRange(destination, CloseRange))
+        {
+            ReleaseIfOwned(gate);
+            if (target.DataId != 0 && !IsInteractOnCooldown &&
+                ObjectHelper.TryInteractWithBaseId(target.DataId, CloseRange, $"Saucy.GateNpc.{gate}"))
+            {
+                MarkInteracted();
             }
 
             return;
@@ -123,6 +227,61 @@ internal static class GateNpcNavigation
         }
 
         return Vnavmesh.TryMoveTo(new Vector3(spot.X, spot.Y, spot.Z), false, CloseRange);
+    }
+
+    // ObjectHelper.TryInteractWithObject needs to be called across MULTIPLE ticks — the first call
+    // only sets the target, a later throttled call actually fires the interact (see its own comment
+    // for why). A UI button's OnClick only fires once per click, so calling TryInteractWithBaseId
+    // directly from a button handler could only ever complete the "set target" phase — the actual
+    // interact never happened unless the button happened to be clicked a second time while already
+    // targeted, which read as "這個NPC只有鎖定 沒互動". Keep retrying every frame (via
+    // TickManualInteract, called unconditionally from Saucy.Tick.cs) until it actually succeeds or
+    // times out, instead of a single fire-and-forget call.
+    private const double ManualInteractTimeoutSeconds = 5;
+    private static GateNpcSpot? pendingManualInteractSpot;
+    private static DateTime pendingManualInteractExpiresUtc;
+
+    /// <summary>"立即互動" button — attempts to target+interact with the recorded NPC right now,
+    /// without walking there first (only actually fires if the player happens to already be close
+    /// enough and the NPC is currently loaded in the object table). Still respects the shared 30s
+    /// interact cooldown.</summary>
+    public static void TryInteractNow(GateNpcSpot spot)
+    {
+        if (!spot.Recorded || spot.DataId == 0)
+        {
+            return;
+        }
+
+        pendingManualInteractSpot = spot;
+        pendingManualInteractExpiresUtc = DateTime.UtcNow.AddSeconds(ManualInteractTimeoutSeconds);
+    }
+
+    /// <summary>Call every frame regardless of module/GATE state — keeps retrying a pending manual
+    /// interact request (see TryInteractNow) until it actually fires or times out.</summary>
+    public static void TickManualInteract()
+    {
+        if (pendingManualInteractSpot is not { } spot)
+        {
+            return;
+        }
+
+        if (DateTime.UtcNow >= pendingManualInteractExpiresUtc)
+        {
+            pendingManualInteractSpot = null;
+            return;
+        }
+
+        if (IsInteractOnCooldown)
+        {
+            pendingManualInteractSpot = null;
+            return;
+        }
+
+        if (ObjectHelper.TryInteractWithBaseId(spot.DataId, CloseRange, "Saucy.GateNpc.Manual"))
+        {
+            MarkInteracted();
+            pendingManualInteractSpot = null;
+        }
     }
 
     public static void ReleaseIfOwned(Module.GateType gate)

@@ -10,6 +10,7 @@ using Saucy.IPC;
 using Saucy.LeapOfFaith;
 using Saucy.OtherGames;
 using System;
+using System.Numerics;
 namespace Saucy;
 
 public unsafe partial class PluginUI
@@ -40,6 +41,15 @@ public unsafe partial class PluginUI
             {
                 SaucyTheme.TextMuted("當你不在安全點上時，會自動導航你移動到安全點。");
             }
+
+            if (ImGui.Button("強制移動測試（忽略 GATE/安全點判定）##WindForceMove"))
+            {
+                AnyWayTheWindBlows.TriggerForceMove();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("暴風倖存者還是沒自動移動時用這個測試——按一下觸發一次移動嘗試，跳過 GATE/安全點判定。");
+            }
         }
 
         ImGui.Dummy(new(0, 4));
@@ -50,6 +60,11 @@ public unsafe partial class PluginUI
         SaucyTheme.TextMuted($"目前偵測到的 GateType：{currentGate}（本模組認定的暴風倖存者值：{expectedGateType}）");
         SaucyTheme.TextMuted($"vnavmesh 已安裝：{Vnavmesh.IsInstalled}　導航就緒：{Vnavmesh.IsNavReady()}　移動中：{Vnavmesh.IsMoving()}");
         SaucyTheme.TextMuted($"在安全點上：{AnyWayTheWindBlows.Stage.SafeSpot.On}　靠近安全點：{AnyWayTheWindBlows.Stage.SafeSpot.Near}");
+        if (Player.Available)
+        {
+            SaucyTheme.TextMuted($"IsOnPlatform 判定：{WindBlowsGateMovement.DebugIsOnPlatform(Player.Position)}　" +
+                                  $"與安全點距離：{Vector3.Distance(Player.Position, AnyWayTheWindBlows.Stage.SafeSpot.Position):F2}");
+        }
         if (Vnavmesh.IsInstalled && Player.Available)
         {
             var floorHere = Vnavmesh.TryGetPointOnFloor(Player.Position, allowUnlandable: false, halfExtentXz: 1.5f);
@@ -103,6 +118,11 @@ public unsafe partial class PluginUI
         if (ImGui.Button($"立即移動##{idSuffix}"))
         {
             GateNpcNavigation.TryMoveNow(spot);
+        }
+        ImGui.SameLine();
+        if (ImGui.Button($"立即互動##{idSuffix}"))
+        {
+            GateNpcNavigation.TryInteractNow(spot);
         }
     }
 
@@ -179,24 +199,7 @@ public unsafe partial class PluginUI
             if (autoMove)
             {
                 SaucyTheme.TextMuted("沒有跳台碰撞偵測，只會朝目標方向移動並定時跳躍，可能會摔落，請留意。");
-
-                var invert = C.GoldSaucerGates.LeapOfFaithInvertTurn;
-                if (ImGui.Checkbox("反轉轉向##LeapOfFaithInvert", ref invert))
-                {
-                    C.GoldSaucerGates.LeapOfFaithInvertTurn = invert;
-                    C.Save();
-                }
-                if (ImGui.IsItemHovered())
-                {
-                    ImGui.SetTooltip("如果自動移動時角色一直轉錯方向，勾選這個試試看。");
-                }
-
-                var jumpInterval = C.GoldSaucerGates.LeapOfFaithJumpIntervalSeconds;
-                if (ImGui.SliderFloat("跳躍間隔（秒）##LeapOfFaithJumpInterval", ref jumpInterval, 0.6f, 3f, "%.1f"))
-                {
-                    C.GoldSaucerGates.LeapOfFaithJumpIntervalSeconds = jumpInterval;
-                    C.Save();
-                }
+                SaucyTheme.TextMuted("跳躍時機改為觀察已記錄的藍色軌道自動判斷，不再是固定間隔。");
             }
         }
 
@@ -287,11 +290,36 @@ public unsafe partial class PluginUI
             {
                 SaucyTheme.TextMuted("沒有跳躍/碰撞偵測，只會朝雛鳥方向移動並嘗試遠離炸彈，請留意安全。");
 
-                var invert = C.GoldSaucerGates.CliffhangerInvertTurn;
-                if (ImGui.Checkbox("反轉轉向##CliffhangerInvert", ref invert))
+                if (ImGui.Button("啟動移動（從路線第一點開始跑）##CliffhangerStartTestRun"))
                 {
-                    C.GoldSaucerGates.CliffhangerInvertTurn = invert;
-                    C.Save();
+                    CliffhangerAutomation.StartTestRun();
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("不等 GATE 實際開始，直接在目前位置從已錄製路線的第一個點開始跑；按一次就會重新從頭開始。");
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("停止測試##CliffhangerStopTestRun"))
+                {
+                    CliffhangerAutomation.TestRunActive = false;
+                }
+                ImGui.SameLine();
+                SaucyTheme.TextMuted(CliffhangerAutomation.TestRunActive ? "測試中" : "未在測試");
+
+                DrawCliffhangerSparseRoute();
+
+                SaucyTheme.TextMuted($"診斷：vnavmesh 已安裝={Vnavmesh.IsInstalled}　導航就緒={Vnavmesh.IsNavReady()}　" +
+                                      $"移動中={Vnavmesh.IsMoving()}　目前路點索引={CliffhangerAutomation.RouteIndex}/{C.GoldSaucerGates.CliffhangerRoute.Count}");
+
+                var route = C.GoldSaucerGates.CliffhangerRoute;
+                var idx = CliffhangerAutomation.RouteIndex;
+                if (Player.Available && idx >= 0 && idx < route.Count)
+                {
+                    var wp = route[idx];
+                    var dest = new Vector3(wp.X, wp.Y, wp.Z);
+                    var dist = Vector3.Distance(Player.Position, dest);
+                    SaucyTheme.TextMuted($"目前路點：{wp.Label}（跳躍點={wp.IsJumpPoint}）　" +
+                                          $"跟玩家距離={dist:F2}m　炸彈阻擋中={CliffhangerAutomation.IsBlockedByBomb}");
                 }
             }
         }
@@ -346,6 +374,90 @@ public unsafe partial class PluginUI
                               $"（本模組認定的 Cliffhanger 值：{expectedGateType}）");
     }
 
+    /// <summary>
+    /// Sparse, user-marked route (start / jump points with a separately-recorded direction / end)
+    /// — per user request ("由我記錄點...跳躍點 方向 另外錄"), takes priority over the dense
+    /// auto-recorded replay when set up. Order in the list IS the walking order; add points one at
+    /// a time by standing at each spot and clicking "新增目前位置".
+    /// </summary>
+    private static void DrawCliffhangerSparseRoute()
+    {
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("手動標記路線（起點/跳躍點/終點，依清單順序走）：");
+
+        var route = C.GoldSaucerGates.CliffhangerRoute;
+        SaucyTheme.TextMuted("只要清單裡有路點，「自動移動」開啟時就會強制優先使用這條路線（取代自動錄製重播），不需要另外開關。");
+
+        for (var i = 0; i < route.Count; i++)
+        {
+            var wp = route[i];
+            ImGui.PushID(i);
+            ImGui.TextUnformatted($"{i + 1}. {wp.Label}（{wp.X:F1}, {wp.Y:F1}, {wp.Z:F1}）");
+
+            var isJumpPoint = wp.IsJumpPoint;
+            if (ImGui.Checkbox("跳躍點##IsJumpPoint", ref isJumpPoint))
+            {
+                wp.IsJumpPoint = isJumpPoint;
+                C.Save();
+            }
+
+            if (wp.IsJumpPoint)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("移動到跳躍點並跳躍##CliffhangerRouteJump"))
+                {
+                    // "立即移動沒有用" — without forcing these on, OnUpdate's `inGate` check (real
+                    // GATE state OR TestRunActive) can be false while just testing the route outside
+                    // an actual run, so it exits before ever reaching the manual-move logic at all.
+                    // Same fix already applied to the debug panel's 3-point test buttons.
+                    CliffhangerAutomation.TestRunActive = true;
+                    C.SetModuleEnabled(ModuleNames.Cliffhanger, true);
+                    CliffhangerAutomation.TryMoveNowToAndJump(new(wp.X, wp.Y, wp.Z));
+                }
+            }
+            else
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("立即移動##CliffhangerRouteMove"))
+                {
+                    CliffhangerAutomation.TestRunActive = true;
+                    C.SetModuleEnabled(ModuleNames.Cliffhanger, true);
+                    CliffhangerAutomation.TryMoveNowTo(new(wp.X, wp.Y, wp.Z));
+                }
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("刪除"))
+            {
+                route.RemoveAt(i);
+                C.Save();
+                ImGui.PopID();
+                break;
+            }
+
+            ImGui.PopID();
+        }
+
+        if (ImGui.Button("新增目前位置到路線結尾##AddCliffhangerRoutePoint"))
+        {
+            if (Player.Available)
+            {
+                route.Add(new()
+                {
+                    X = Player.Position.X, Y = Player.Position.Y, Z = Player.Position.Z,
+                    Label = route.Count == 0 ? "起點" : $"路點 {route.Count + 1}"
+                });
+                C.Save();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("清空路線##ClearCliffhangerRoute"))
+        {
+            route.Clear();
+            C.Save();
+        }
+    }
+
     private static void DrawSliceIsRightPanel()
     {
         DrawPanelHeader("必中一閃快刀斬魔");
@@ -357,6 +469,26 @@ public unsafe partial class PluginUI
         }
 
         ImGui.TextWrapped("這關的實際機制由 BossModReborn 接管，這裡只負責啟用/停用；報名 NPC 導航設定已統一移到「活動解說員排程」頁面。");
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("進入 GATE 後先移動到場地邊界，再讓 BossModReborn 接管（不會再碰移動）：");
+        var startSpot = C.GoldSaucerGates.SliceIsRightStartSpot;
+        ImGui.TextWrapped(startSpot.Recorded
+            ? $"已記錄：{startSpot.NpcName}（{startSpot.X:F1}, {startSpot.Y:F1}, {startSpot.Z:F1}）"
+            : "尚未記錄場地邊界位置——請先進入 GATE 站到你要的位置。");
+
+        if (ImGui.Button("記錄目前站立位置##SliceIsRightStartSpot"))
+        {
+            GateNpcNavigation.RecordCurrentPosition(startSpot, "場地邊界");
+        }
+
+        using var disabled = ImRaii.Disabled(!startSpot.Recorded);
+        var startAutoNav = C.GoldSaucerGates.SliceIsRightStartAutoNavigate;
+        if (ImGui.Checkbox("進入 GATE 後自動移動至此##SliceIsRightStartAutoNavigate", ref startAutoNav))
+        {
+            C.GoldSaucerGates.SliceIsRightStartAutoNavigate = startAutoNav;
+            C.Save();
+        }
     }
 
     private static BannerInfo BuildBannerInfo()

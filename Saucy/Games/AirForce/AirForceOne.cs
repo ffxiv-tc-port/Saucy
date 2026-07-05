@@ -67,7 +67,7 @@ public class AirForceOne : Module
         foreach (var target in AirForceAutomation.LastTargetCircles)
         {
             var color = target.SkippedForBomb ? EzColor.Orange : EzColor.Green;
-            drawList.AddCircle(target.Screen, 12f, color, 0, 2f);
+            drawList.AddCircle(target.Screen, target.Radius, color, 0, 2f);
             drawList.AddText(target.Screen + new System.Numerics.Vector2(-15, 15), color, target.DataId.ToString());
         }
     }
