@@ -1,11 +1,11 @@
 {
-  "Author": "Taurenkey, Kagekazu",
+  "Author": "Taurenkey, Kagekazu, Lother",
   "Name": "Saucy",
   "Punchline": "當賺取 MGP 太費工夫的時候。",
   "Description": "自動化部分金碟遊樂園小遊戲。",
   "InternalName": "Saucy",
-  "IconUrl": "https://s3.puni.sh/media/plugin/7/icon-bl3wub19h2u.png",
-  "RepoUrl": "https://github.com/PunishXIV/Saucy",
+  "IconUrl": "https://raw.githubusercontent.com/Lother/Saucy/master/Saucy/Icon.png",
+  "RepoUrl": "https://github.com/Lother/Saucy",
   "DalamudApiLevel": 12,
   "Tags": [
     "gold saucer",
