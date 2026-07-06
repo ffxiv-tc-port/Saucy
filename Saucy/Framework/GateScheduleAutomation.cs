@@ -17,9 +17,9 @@ namespace Saucy.Framework;
 /// </summary>
 internal static unsafe class GateScheduleAutomation
 {
-    // Delayed by 1 minute off the raw :10/:30/:50 mark per user feedback, presumably to give the
-    // previous GATE's wrap-up/reward window time to actually finish before wandering off.
-    private static bool IsCoordinatorWindow => DateTime.Now.Minute is 11 or 31 or 51;
+    // "去找活動接待員得排程 改成 活動前5分鐘" — GATEs start at :00/:20/:40, so 5 minutes before
+    // each of those is :55/:15/:35.
+    private static bool IsCoordinatorWindow => DateTime.Now.Minute is 55 or 15 or 35;
 
     // The GATE registration NPC isn't necessarily interactable/present the instant the minute
     // ticks over (the coordinator-teleport/area transition may still be settling) — wait 30s into
@@ -46,11 +46,15 @@ internal static unsafe class GateScheduleAutomation
     //
     // Persisted to Configuration (not a plain static bool) — a plugin reload mid-window used to
     // forget "already handled" and immediately repeat the search/walk, since a fresh in-memory
-    // flag defaults back to false ("我已參加過 重載後記錄消失 又回去找NPC"). The window itself is
-    // only ~1 minute wide and windows are 20 minutes apart, so "handled within the last 10
-    // minutes" reliably means "already handled THIS window" without needing exact window-id
-    // bookkeeping.
-    private static readonly TimeSpan HandledLatchWindow = TimeSpan.FromMinutes(10);
+    // flag defaults back to false ("我已參加過 重載後記錄消失 又回去找NPC").
+    //
+    // "上鎖10分鐘改成30秒 避免錯過整個活動" — the actual coordinator/registration teleport only
+    // takes ~5-10s; a full 10-minute latch meant that if the interact/teleport silently failed for
+    // any reason, there was no way to retry again until the ENTIRE 20-minute-apart window had long
+    // since passed, missing that GATE/coordinator entirely. 30s is still comfortably longer than a
+    // real teleport takes (so a genuinely successful attempt won't immediately retry and interrupt
+    // itself), while letting a failed one recover well within the same ~1-minute window.
+    private static readonly TimeSpan HandledLatchWindow = TimeSpan.FromSeconds(30);
 
     private static bool HasHandledRecently(long utcTicks) =>
         utcTicks != 0 && DateTime.UtcNow - new DateTime(utcTicks, DateTimeKind.Utc) < HandledLatchWindow;
@@ -173,6 +177,14 @@ internal static unsafe class GateScheduleAutomation
             {
                 return true;
             }
+
+            // Auto-advance any plain narration text the interact triggers — some of these NPCs
+            // teleport right off a Talk dialogue with no SelectString menu at all, so requiring a
+            // menu to be visible before reporting "done" (tried briefly) meant it was NEVER marked
+            // handled for those, and kept walking back to re-interact even after the teleport had
+            // already happened ("傳送後又導回原地"). Report done as soon as the interact itself
+            // actually fires, same as before.
+            TalkHelper.TryAdvance("Saucy.GateSchedule.CoordinatorTalk");
 
             if (GateNpcNavigation.IsInteractOnCooldown)
             {
@@ -325,6 +337,21 @@ internal static unsafe class GateScheduleAutomation
 
         if (nearestDist <= JoinInteractRange)
         {
+            // "觸發了不一定會推進對話到選項" — a plain narration Talk window (before the eventual
+            // yes/no confirm another plugin like YesAlready handles) doesn't advance itself. Click
+            // through it every tick we're standing right at our own registration target — safe to
+            // do broadly here since we only reach this branch while actively trying to register for
+            // a GATE we're right next to, not some unrelated conversation.
+            //
+            // Report "done" as soon as the interact itself actually fires (not just target-lock) —
+            // requiring a menu/dialogue to be visible first briefly seemed safer, but some of these
+            // NPCs teleport right off a Talk window with no SelectString at all, so that condition
+            // never became true, MarkJoinHandled() never fired, and the join flow just kept retrying
+            // forever — even after the teleport had already happened, which then fed wrong/stale
+            // state into the post-join movement logic and kicked the character back out of the arena
+            // ("NPC報名後 會跳出場").
+            TalkHelper.TryAdvance("Saucy.GateSchedule.JoinTalk");
+
             if (!IsRegisterOnCooldown && !GateNpcNavigation.IsInteractOnCooldown &&
                 ObjectHelper.TryInteractWithObject(nearestNpc, "Saucy.GateSchedule.Join"))
             {

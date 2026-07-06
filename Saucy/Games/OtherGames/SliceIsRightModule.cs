@@ -93,7 +93,11 @@ public class SliceIsRight : Module
             return;
         }
 
-        if (GateScheduleAutomation.IsWithinPostJoinSettle(GateType.SliceIsRight, PostJoinSettleSeconds))
+        // "地圖還沒完全載入 他就開始計算新的路線了 這是造成摔落的主因" — a fixed time delay alone
+        // doesn't guarantee vnavmesh has actually finished (re)building the mesh for the new area;
+        // wait for its own readiness signal too, not just the settle timer.
+        if (GateScheduleAutomation.IsWithinPostJoinSettle(GateType.SliceIsRight, PostJoinSettleSeconds) ||
+            (Vnavmesh.IsInstalled && !Vnavmesh.IsNavReady()))
         {
             return;
         }

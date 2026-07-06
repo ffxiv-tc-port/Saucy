@@ -427,7 +427,14 @@ internal static unsafe class CliffhangerAutomation
 
         UpdateMeasuredSpeed();
 
-        if ((DateTime.UtcNow - gateEnteredUtc).TotalSeconds < GateEntrySettleSeconds)
+        // "地圖還沒完全載入 他就開始計算新的路線了 這是造成摔落的主因" — a fixed time delay alone
+        // doesn't guarantee the navmesh has actually finished (re)building for the new area; if
+        // vnavmesh reports itself not ready yet, any path it computes (or floor query the precise
+        // steering does) can be based on incomplete/stale mesh data, sending the character off an
+        // edge that isn't really there yet. Wait for the timer AND, if vnavmesh is installed, its
+        // own readiness signal — whichever takes longer.
+        if ((DateTime.UtcNow - gateEnteredUtc).TotalSeconds < GateEntrySettleSeconds ||
+            (Vnavmesh.IsInstalled && !Vnavmesh.IsNavReady()))
         {
             ReleaseKeys();
             return;

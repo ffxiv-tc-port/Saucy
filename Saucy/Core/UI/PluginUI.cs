@@ -495,7 +495,7 @@ public unsafe partial class PluginUI : Window
     private static void DrawGateSchedulePanel()
     {
         DrawPanelHeader("活動解說員排程", "GATE 排程自動化");
-        ImGui.TextWrapped("每小時 :11/:31/:51 自動導航至最近的已記錄「活動解說員」；" +
+        ImGui.TextWrapped("每小時 :55/:15/:35（活動開始前5分鐘）自動導航至最近的已記錄「活動解說員」；" +
                            "每小時 :00/:20/:40 若在已記錄的支援 GATE NPC 附近，自動互動並嘗試參加。");
 
         var autoOpen = C.GoldSaucerGates.AutoOpenUiOnGateJoin;
@@ -507,7 +507,7 @@ public unsafe partial class PluginUI : Window
 
         ImGui.Dummy(new(0, 4));
         var coordinatorAuto = C.GoldSaucerGates.EventCoordinatorAutoNavigate;
-        if (ImGui.Checkbox("自動導航至活動解說員（:11/:31/:51）##EventCoordinatorAutoNavigate", ref coordinatorAuto))
+        if (ImGui.Checkbox("自動導航至活動解說員（:55/:15/:35）##EventCoordinatorAutoNavigate", ref coordinatorAuto))
         {
             C.GoldSaucerGates.EventCoordinatorAutoNavigate = coordinatorAuto;
             C.Save();
