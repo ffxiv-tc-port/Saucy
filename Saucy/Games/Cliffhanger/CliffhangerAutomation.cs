@@ -381,13 +381,14 @@ internal static unsafe class CliffhangerAutomation
     /// panel to show whether a bomb is the reason the route currently isn't advancing.</summary>
     public static bool IsBlockedByBomb => TryGetBlockingBomb(out _);
 
-    // The GATE starts by teleporting the player onto the course — GateDirector can report
-    // "in gate" a moment before that teleport-in has actually finished settling the character at
-    // the real starting position, so starting auto-movement immediately could act on a stale/
-    // mid-transition position. Wait briefly after entering before letting any movement logic run
+    // "報名後 還沒傳送 路徑就已經是錯的了" — same shared settle window used by WindBlows/
+    // SliceIsRight: right after registering, the actual teleport onto the course hasn't necessarily
+    // landed yet, so IsInGate can flip true a moment before the character has actually settled at
+    // the real starting position. Unified onto GateScheduleAutomation's join timer (populated by
+    // GateNpcNavigation.TickList's registration interact) instead of Cliffhanger's own
+    // entry-timestamp guard, so every GATE module holds off movement on the same signal
     // ("傳送到指定位置後 才開始自動移動").
-    private const double GateEntrySettleSeconds = 1.5;
-    private static DateTime gateEnteredUtc;
+    public const double PostJoinSettleSeconds = 30;
 
     public static void OnUpdate()
     {
@@ -396,14 +397,13 @@ internal static unsafe class CliffhangerAutomation
             LastObservedGateType = GateDirector.GetCurrentGate();
         }
 
-        var inGate = GateDirector.IsInGate(global::Saucy.Framework.Module.GateType.Cliffhanger) || TestRunActive;
+        var inGate = GateDirector.IsInGate(Module.GateType.Cliffhanger) || TestRunActive;
         if (inGate && !wasInGate)
         {
             ownTrail.Clear();
             replayRoute = CliffhangerRecorder.BuildReplayRoute();
             replayIndex = 0;
             routeIndex = 0;
-            gateEnteredUtc = DateTime.UtcNow;
         }
         wasInGate = inGate;
 
@@ -433,7 +433,7 @@ internal static unsafe class CliffhangerAutomation
         // steering does) can be based on incomplete/stale mesh data, sending the character off an
         // edge that isn't really there yet. Wait for the timer AND, if vnavmesh is installed, its
         // own readiness signal — whichever takes longer.
-        if ((DateTime.UtcNow - gateEnteredUtc).TotalSeconds < GateEntrySettleSeconds ||
+        if (GateScheduleAutomation.IsWithinPostJoinSettle(Module.GateType.Cliffhanger, PostJoinSettleSeconds) ||
             (Vnavmesh.IsInstalled && !Vnavmesh.IsNavReady()))
         {
             ReleaseKeys();

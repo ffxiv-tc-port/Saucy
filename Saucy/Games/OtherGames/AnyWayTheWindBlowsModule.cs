@@ -89,11 +89,7 @@ public class AnyWayTheWindBlows : Module
         // immediately (even once IsInGate reads true) can aim at a destination that only makes
         // sense post-teleport, from wherever the player still physically was to register. Hold off
         // for a real settle window after that join before letting movement start at all.
-        // "地圖還沒完全載入 他就開始計算新的路線了 這是造成摔落的主因" — a fixed time delay alone
-        // doesn't guarantee vnavmesh has actually finished (re)building the mesh for the new area;
-        // wait for its own readiness signal too, not just the settle timer.
-        if (GateScheduleAutomation.IsWithinPostJoinSettle(GateType.AnyWayTheWindBlows, PostJoinSettleSeconds) ||
-            (Vnavmesh.IsInstalled && !Vnavmesh.IsNavReady()))
+        if (GateScheduleAutomation.IsWithinPostJoinSettle(GateType.AnyWayTheWindBlows, PostJoinSettleSeconds))
         {
             WindBlowsGateMovement.ReleaseIfOwned();
             return;

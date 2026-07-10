@@ -122,6 +122,7 @@ internal static class GateNpcNavigation
                 ObjectHelper.TryInteractWithBaseId(spot.DataId, CloseRange, $"Saucy.GateNpc.{gate}"))
             {
                 MarkInteracted();
+                GateScheduleAutomation.MarkJoined(gate);
             }
 
             return;
@@ -191,6 +192,7 @@ internal static class GateNpcNavigation
                 ObjectHelper.TryInteractWithBaseId(target.DataId, CloseRange, $"Saucy.GateNpc.{gate}"))
             {
                 MarkInteracted();
+                GateScheduleAutomation.MarkJoined(gate);
             }
 
             return;

@@ -24,9 +24,21 @@ public class Cliffhanger : Module
         GateNpcNavigation.ReleaseIfOwned(GateType.Cliffhanger);
     }
 
+    // Same settle-window guard already applied to WindBlows/SliceIsRight: right after registering
+    // with the NPC, the teleport onto the course hasn't necessarily landed yet, so IsInGate can
+    // briefly still read false while GateNpcNavigation.TickList — seeing "not in gate" — tries to
+    // walk back toward the (now far outside the course) registration NPC using a stale pre-teleport
+    // position. Hold off until the shared join timer clears.
     private void OnUpdate(IFramework _)
     {
         CliffhangerAutomation.OnUpdate();
+
+        if (GateScheduleAutomation.IsWithinPostJoinSettle(GateType.Cliffhanger, CliffhangerAutomation.PostJoinSettleSeconds))
+        {
+            GateNpcNavigation.ReleaseIfOwned(GateType.Cliffhanger);
+            return;
+        }
+
         GateNpcNavigation.TickList(GateType.Cliffhanger, C.GoldSaucerGates.CliffhangerNpcSpots, C.GoldSaucerGates.CliffhangerNpcAutoNavigate);
     }
 

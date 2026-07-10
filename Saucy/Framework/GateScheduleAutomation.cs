@@ -262,6 +262,15 @@ internal static unsafe class GateScheduleAutomation
     public static bool IsWithinPostJoinSettle(Module.GateType gate, double seconds) =>
         lastJoinedUtc.TryGetValue(gate, out var joinedUtc) && (DateTime.UtcNow - joinedUtc).TotalSeconds < seconds;
 
+    // GateNpcNavigation.Tick/TickList perform the actual registration interact for most GATEs
+    // (Cliffhanger, WindBlows, LeapOfFaith/AirForce) — this dictionary was previously only ever
+    // written by TryJoinNearestSupportedNpc below, so IsWithinPostJoinSettle silently never became
+    // true for anything registered through that normal per-GATE auto-navigate path, and the settle
+    // guard in each module's OnUpdate never actually engaged ("報名後傳送還沒結束前 就開始從傳送前
+    // 位置規劃路徑跳出場外" persisted despite the guard existing). Let those call sites record the
+    // join here too instead of only the coordinator-search flow.
+    public static void MarkJoined(Module.GateType gate) => lastJoinedUtc[gate] = DateTime.UtcNow;
+
     private const float JoinInteractRange = 5f;
 
     // A coordinator teleport drops the player right at the venue for the next GATE, so the real
