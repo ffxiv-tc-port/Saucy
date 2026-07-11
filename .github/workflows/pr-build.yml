@@ -1,0 +1,43 @@
+name: Compile
+
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 9.x
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud-latest.zip
+          Expand-Archive -Force dalamud-latest.zip "$env:DALAMUD_HOME"
+        env:
+          DALAMUD_HOME: ${{ github.workspace }}\dalamud
+      - name: Build with dotnet
+        run: dotnet build --configuration Release Saucy/Saucy.csproj
+        env:
+          DALAMUD_HOME: ${{ github.workspace }}\dalamud
+      - name: GenVersion
+        id: generate_version
+        shell: pwsh
+        run: |
+          $time = (Get-Date).AddHours(8).ToString("yyyyMMddHHmmss")
+          echo "VERSION=$time" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.generate_version.outputs.VERSION }}
+          name: Release ${{ steps.generate_version.outputs.VERSION }}
+          files: |
+            Saucy/Saucy/bin/**/Saucy/latest.zip
+            Saucy/Saucy/bin/**/Saucy/Saucy.json
+          generate_release_notes: true
