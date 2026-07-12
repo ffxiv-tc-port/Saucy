@@ -1,10 +1,9 @@
-name: Compile
+name: Release
 
 on:
   push:
-    tags-ignore:
+    tags:
       - 'v*'
-  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -30,3 +29,12 @@ jobs:
         run: dotnet build --configuration Release Saucy/Saucy.csproj
         env:
           DALAMUD_HOME: ${{ github.workspace }}\dalamud
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          files: |
+            Saucy/Saucy/bin/**/Saucy/latest.zip
+            Saucy/Saucy/bin/**/Saucy/Saucy.json
+          generate_release_notes: true
