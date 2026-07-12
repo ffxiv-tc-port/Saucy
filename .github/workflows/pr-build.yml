@@ -11,15 +11,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 9.x
-      - name: Download Dalamud
+      - name: Download Dalamud (pinned TC-compatible build)
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud-latest.zip
-          Expand-Archive -Force dalamud-latest.zip "$env:DALAMUD_HOME"
+          Invoke-WebRequest -Uri https://github.com/Lother/dalamud-tc-pin/releases/download/v12.0.2/dalamud-api12-net9.zip -OutFile dalamud-pinned.zip
+          Expand-Archive -Force dalamud-pinned.zip "$env:DALAMUD_HOME"
         env:
           DALAMUD_HOME: ${{ github.workspace }}\dalamud
       - name: Build with dotnet
