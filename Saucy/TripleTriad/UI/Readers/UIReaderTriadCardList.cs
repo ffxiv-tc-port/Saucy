@@ -79,7 +79,19 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     public void OnAddonUpdate(nint addonPtr)
     {
+        if (addonPtr == nint.Zero)
+        {
+            SetStatus(Status.AddonNotFound);
+            return;
+        }
+
         var addon = (AddonGSInfoCardList*)addonPtr;
+        if (addon->AtkUnitBase.RootNode == null)
+        {
+            SetStatus(Status.NodesNotReady);
+            return;
+        }
+
         (cachedState.screenPos, cachedState.screenSize) = GUINodeUtils.GetNodePosAndSize(addon->AtkUnitBase.RootNode);
 
         var descNode = addon->SelectedCardDescription;
