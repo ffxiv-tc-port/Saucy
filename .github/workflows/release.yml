@@ -34,12 +34,17 @@ jobs:
         run: dotnet build --configuration Release Saucy/Saucy.csproj -p:Version=${{ env.VER }} -p:AssemblyVersion=${{ env.VER }} -p:FileVersion=${{ env.VER }}
         env:
           DALAMUD_HOME: ${{ github.workspace }}\dalamud
+      - name: Rename artifact to Saucy.zip
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path . -Recurse -Filter latest.zip | Select-Object -First 1
+          Copy-Item $zip.FullName -Destination "Saucy.zip"
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           files: |
-            Saucy/bin/**/Saucy/latest.zip
+            Saucy.zip
             Saucy/bin/**/Saucy/Saucy.json
           generate_release_notes: true
