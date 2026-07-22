@@ -1,12 +1,13 @@
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using ECommons.LanguageHelpers;
 namespace Saucy.TripleTriad;
 
 internal static class TriadBattleHall
 {
     public const uint TerritoryId = 579;
 
-    public const string NavigationBlockedMessage =
-        "[Saucy] The Battlehall is a Duty Finder instance.\nSaucy cannot path there — enter via Duty Finder.";
+    public static string NavigationBlockedMessage =>
+        "[Saucy] " + "The Battlehall is a Duty Finder instance.\nSaucy cannot path there — enter via Duty Finder.".Loc();
 
     public static bool IsBattleHallTerritory(uint territoryId) => territoryId == TerritoryId;
 

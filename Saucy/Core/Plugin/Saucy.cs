@@ -1,6 +1,7 @@
 using Dalamud.Plugin;
 using ECommons;
 using ECommons.Configuration;
+using ECommons.LanguageHelpers;
 using ECommons.SimpleGui;
 using NAudio.Wave;
 using PunishLib;
@@ -170,7 +171,7 @@ public sealed partial class Saucy : IDalamudPlugin
         {
             TriadRunSession.ModuleEnabled = true;
             TriadRunSession.BeginAutomationSession();
-            Svc.Chat.Print("[Saucy] Triad Module Enabled!");
+            Svc.Chat.Print("[Saucy] " + "Triad Module Enabled!".Loc());
             return;
         }
 
@@ -185,11 +186,11 @@ public sealed partial class Saucy : IDalamudPlugin
             if (int.TryParse(args[2], out var val))
             {
                 TriadRunSession.ApplyRunMode(TriadRunMode.PlayXTimes, matchCount: val);
-                Svc.Chat.Print("[Saucy] Play X Amount of Times Enabled!");
+                Svc.Chat.Print("[Saucy] " + "Play X Amount of Times Enabled!".Loc());
             }
             else
             {
-                Svc.Chat.Print($"[Saucy] Incorrect value specified: {args[2]}");
+                Svc.Chat.Print("[Saucy] " + "Incorrect value specified: ??".Loc(args[2]));
             }
             return;
         }
@@ -199,13 +200,13 @@ public sealed partial class Saucy : IDalamudPlugin
             if (args[2].ToLower() == "any")
             {
                 TriadRunSession.ApplyRunMode(TriadRunMode.PlayUntilAnyCard);
-                Svc.Chat.Print("[Saucy] Play Until Any Cards Drop Enabled!");
+                Svc.Chat.Print("[Saucy] " + "Play Until Any Cards Drop Enabled!".Loc());
             }
 
             if (args[2].ToLower() == "all")
             {
                 TriadRunSession.ApplyRunMode(TriadRunMode.PlayUntilAllCards);
-                Svc.Chat.Print("[Saucy] Play Until All Cards Drop from NPC at Least X Times Enabled!");
+                Svc.Chat.Print("[Saucy] " + "Play Until All Cards Drop from NPC at Least X Times Enabled!".Loc());
             }
 
             if (args.Length >= 4 && int.TryParse(args[3], out var val))

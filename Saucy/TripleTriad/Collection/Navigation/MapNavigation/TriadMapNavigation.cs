@@ -1,6 +1,7 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using ECommons.GameHelpers;
+using ECommons.LanguageHelpers;
 using Saucy.Framework;
 using Saucy.IPC;
 using System;
@@ -153,7 +154,7 @@ internal static unsafe partial class TriadMapNavigation
         }
         else if (DateTime.UtcNow - pending.StartedUtc > timeout)
         {
-            Svc.Chat.PrintError("[Saucy] Navigation timed out.");
+            Svc.Chat.PrintError("[Saucy] " + "Navigation timed out.".Loc());
             ClearPending();
             return;
         }

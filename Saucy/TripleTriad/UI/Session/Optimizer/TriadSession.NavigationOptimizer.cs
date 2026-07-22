@@ -1,4 +1,5 @@
 #nullable disable
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 namespace Saucy.TripleTriad.UI;
@@ -93,7 +94,7 @@ public partial class TriadSession
 
         _navigationOptimizerRetryCount++;
         PrintOptimizerChat(
-            $"[Saucy] Deck optimization interrupted for {result.Npc.Name}; retry {_navigationOptimizerRetryCount}/{MaxNavigationOptimizerRetries}…");
+            "[Saucy] " + "Deck optimization interrupted for ??; retry ??/??…".Loc(result.Npc.Name, _navigationOptimizerRetryCount, MaxNavigationOptimizerRetries));
         _optimizerTimedOut = false;
         StartDeckOptimizer(result.Npc, ResolveRegionModsForNpc(result.Npc), navigationRequest: true);
         return true;

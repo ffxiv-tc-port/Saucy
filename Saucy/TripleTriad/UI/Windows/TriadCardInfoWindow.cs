@@ -3,6 +3,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using ECommons.LanguageHelpers;
 using System;
 using System.Numerics;
 namespace Saucy.TripleTriad;
@@ -20,7 +21,7 @@ public class TriadCardInfoWindow : Window, IDisposable
     private TriadCard? selectedCard;
     private GameCardInfo? selectedCardInfo;
 
-    public TriadCardInfoWindow(UIReaderTriadCardList uiReaderCardList, TriadCardSearchWindow cardSearchWindow) : base("卡片資訊")
+    public TriadCardInfoWindow(UIReaderTriadCardList uiReaderCardList, TriadCardSearchWindow cardSearchWindow) : base("Card Info".Loc())
     {
         this.uiReaderCardList = uiReaderCardList;
         this.cardSearchWindow = cardSearchWindow;
@@ -152,7 +153,7 @@ public class TriadCardInfoWindow : Window, IDisposable
                 ImGui.AlignTextToFramePadding();
             }
 
-            ImGui.Text("獎勵來源：");
+            ImGui.Text("Reward from:".Loc());
 
             if (selectedCardInfo != null && rewardNpc != null && rewardNpcInfo != null && rewardNpcInfo.Location != null)
             {
@@ -171,14 +172,14 @@ public class TriadCardInfoWindow : Window, IDisposable
                 }
                 else
                 {
-                    TriadNpcMapUi.DrawMapLocationRow(rewardNpcInfo.Location, "在地圖上顯示", rewardNpc);
+                    TriadNpcMapUi.DrawMapLocationRow(rewardNpcInfo.Location, "Show on map".Loc(), rewardNpc);
                 }
 
                 ImGui.TextColored(colorGray, rewardNpcRules);
             }
             else
             {
-                ImGui.TextColored(colorGray, "無可用資料");
+                ImGui.TextColored(colorGray, "Not available".Loc());
             }
         }
     }
@@ -194,7 +195,7 @@ public class TriadCardInfoWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-            ImGui.SetTooltip("在 NPC 分頁中顯示");
+            ImGui.SetTooltip("Show in NPC tab".Loc());
         }
     }
 

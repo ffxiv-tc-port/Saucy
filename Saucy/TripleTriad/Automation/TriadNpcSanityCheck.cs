@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using ECommons.GameHelpers;
+using ECommons.LanguageHelpers;
 using ECommons.Throttlers;
 using Saucy.Framework;
 using Saucy.IPC;
@@ -28,8 +29,8 @@ internal static class TriadNpcSanityCheck
 
         var npcName = TriadNpcProximity.ResolveTriadNpcForProximityCheck()?.Name;
         TriadRunSession.DisableModule(string.IsNullOrEmpty(npcName)
-            ? "No Triple Triad NPC nearby (maybe get closer if in front of one)."
-            : $"No Triple Triad NPC nearby ({npcName}). Maybe get closer if you're in front of one.");
+            ? "No Triple Triad NPC nearby (maybe get closer if in front of one).".Loc()
+            : "No Triple Triad NPC nearby (??). Maybe get closer if you're in front of one.".Loc(npcName));
     }
 
     private static bool ShouldSkip()

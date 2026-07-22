@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using ECommons.Automation;
+using ECommons.LanguageHelpers;
 using Saucy.Framework;
 using Saucy.OtherGames;
 using System;
@@ -123,7 +124,7 @@ internal static class TriadRunSession
             npcInfo != null &&
             TriadCardFarmSession.HasAllNpcRewardsOwned(npcInfo))
         {
-            Svc.Chat.Print($"[Saucy] You already have every card from {npc.Name}. Farming MGP instead.");
+            Svc.Chat.Print("[Saucy] " + "You already have every card from ??. Farming MGP instead.".Loc(npc.Name));
             goal = TriadNavigationGoal.FarmMgp;
         }
 
@@ -300,7 +301,7 @@ internal static class TriadRunSession
         TriadDeckOptimizerJobs.CancelActive(userCancelled: true);
         if (announce)
         {
-            Svc.Chat.Print("[Saucy] Stopped navigation, travel, and triad automation.");
+            Svc.Chat.Print("[Saucy] " + "Stopped navigation, travel, and triad automation.".Loc());
         }
     }
 
