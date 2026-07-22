@@ -1,5 +1,6 @@
 using ImGuiNET;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.LanguageHelpers;
 using System;
 using System.Linq;
 using System.Numerics;
@@ -13,16 +14,16 @@ public partial class PluginUI
 
         (var life, var sess) = (C.Stats, C.SessionStats);
 
-        DrawStatsCard("九宮幻卡", TriadHeadline(life), () => DrawTriadRows(life, sess));
-        DrawStatsCard("空軍裝甲駕駛員", AirForceHeadline(life), () => DrawAirForceRows(life, sess));
+        DrawStatsCard("Triple Triad".Loc(), TriadHeadline(life), () => DrawTriadRows(life, sess));
+        DrawStatsCard("Air Force One".Loc(), AirForceHeadline(life), () => DrawAirForceRows(life, sess));
     }
 
     private static void DrawStatsToolbar()
     {
-        ImGui.TextDisabled("按住 Ctrl 以重置統計。");
+        ImGui.TextDisabled("Hold Ctrl to reset stats.".Loc());
         ImGui.SameLine();
-        const string lifeLbl = "重置累計";
-        const string sessLbl = "重置本次";
+        var lifeLbl = "Reset Lifetime".Loc();
+        var sessLbl = "Reset Session".Loc();
         var pad = ImGui.GetStyle().FramePadding.X * 2f;
         var lifeW = ImGui.CalcTextSize(lifeLbl).X + pad;
         var sessW = ImGui.CalcTextSize(sessLbl).X + pad;
@@ -52,14 +53,14 @@ public partial class PluginUI
     {
         if (s.GamesPlayedWithSaucy == 0)
         {
-            return "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304";
+            return "no games played".Loc();
         }
         var pct = Math.Round(s.GamesWonWithSaucy / (double)s.GamesPlayedWithSaucy * 100, 1);
-        return $"{s.GamesPlayedWithSaucy:N0} \u5834 \u00b7 \u52dd\u7387 {pct}%";
+        return "?? games \u00b7 ??% win".Loc($"{s.GamesPlayedWithSaucy:N0}", pct);
     }
 
     private static string AirForceHeadline(Stats s) =>
-        s.AirForceGamesPlayed == 0 ? "\u5c1a\u7121\u5c0d\u6230\u7d00\u9304" : $"{s.AirForceGamesPlayed:N0} \u5834";
+        s.AirForceGamesPlayed == 0 ? "no games played".Loc() : "?? games".Loc($"{s.AirForceGamesPlayed:N0}");
 
     private static void DrawTriadRows(Stats life, Stats sess)
     {
@@ -69,23 +70,23 @@ public partial class PluginUI
             return;
         }
         StatsHeader();
-        StatsRow("對戰場數", life.GamesPlayedWithSaucy, sess.GamesPlayedWithSaucy,
+        StatsRow("Games".Loc(), life.GamesPlayedWithSaucy, sess.GamesPlayedWithSaucy,
             perHour: SessionCountPerHour(sess.GamesPlayedWithSaucy, StatsSessionClock.GetTriadElapsedHours()));
-        StatsRow("勝場", life.GamesWonWithSaucy, sess.GamesWonWithSaucy);
-        StatsRow("敗場", life.GamesLostWithSaucy, sess.GamesLostWithSaucy);
-        StatsRow("平手", life.GamesDrawnWithSaucy, sess.GamesDrawnWithSaucy);
-        StatsRow("獲得卡片", life.CardsDroppedWithSaucy, sess.CardsDroppedWithSaucy);
-        StatsRow("卡片轉賣價值", $"{GetDroppedCardValues(life):N0}", $"{GetDroppedCardValues(sess):N0}");
-        StatsRow("獲得 MGP", $"{life.MGPWon:N0}", $"{sess.MGPWon:N0}", true,
+        StatsRow("Wins".Loc(), life.GamesWonWithSaucy, sess.GamesWonWithSaucy);
+        StatsRow("Losses".Loc(), life.GamesLostWithSaucy, sess.GamesLostWithSaucy);
+        StatsRow("Draws".Loc(), life.GamesDrawnWithSaucy, sess.GamesDrawnWithSaucy);
+        StatsRow("Cards won".Loc(), life.CardsDroppedWithSaucy, sess.CardsDroppedWithSaucy);
+        StatsRow("Card resale value".Loc(), $"{GetDroppedCardValues(life):N0}", $"{GetDroppedCardValues(sess):N0}");
+        StatsRow("MGP won".Loc(), $"{life.MGPWon:N0}", $"{sess.MGPWon:N0}", true,
             perHour: SessionMgpPerHour(sess.MGPWon, StatsSessionClock.GetTriadElapsedHours()));
 
         (var lifeNpcCount, var lifeNpcName) = TopNpcCell(life);
         (var sessNpcCount, var sessNpcName) = TopNpcCell(sess);
-        StatsRow("最常對戰 NPC", lifeNpcCount, sessNpcCount, tooltipLife: lifeNpcName, tooltipSess: sessNpcName);
+        StatsRow("Most played NPC".Loc(), lifeNpcCount, sessNpcCount, tooltipLife: lifeNpcName, tooltipSess: sessNpcName);
 
         (var lifeCardCount, var lifeCardName) = TopCardCell(life);
         (var sessCardCount, var sessCardName) = TopCardCell(sess);
-        StatsRow("最常獲得卡片", lifeCardCount, sessCardCount, tooltipLife: lifeCardName, tooltipSess: sessCardName);
+        StatsRow("Most won card".Loc(), lifeCardCount, sessCardCount, tooltipLife: lifeCardName, tooltipSess: sessCardName);
     }
 
     private static void DrawAirForceRows(Stats life, Stats sess)
@@ -96,9 +97,9 @@ public partial class PluginUI
             return;
         }
         StatsHeader();
-        StatsRow("對戰場數", life.AirForceGamesPlayed, sess.AirForceGamesPlayed,
+        StatsRow("Games".Loc(), life.AirForceGamesPlayed, sess.AirForceGamesPlayed,
             perHour: SessionCountPerHour(sess.AirForceGamesPlayed, StatsSessionClock.GetAirForceElapsedHours()));
-        StatsRow("獲得 MGP", $"{life.AirForceMGP:N0}", $"{sess.AirForceMGP:N0}", true,
+        StatsRow("MGP won".Loc(), $"{life.AirForceMGP:N0}", $"{sess.AirForceMGP:N0}", true,
             perHour: SessionMgpPerHour(sess.AirForceMGP, StatsSessionClock.GetAirForceElapsedHours()));
     }
 
@@ -124,22 +125,22 @@ public partial class PluginUI
 
     private static void StatsHeader()
     {
-        ImGui.TableSetupColumn("項目", ImGuiTableColumnFlags.WidthStretch, 0.30f);
-        ImGui.TableSetupColumn("累計", ImGuiTableColumnFlags.WidthStretch, 0.25f);
-        ImGui.TableSetupColumn("本次", ImGuiTableColumnFlags.WidthStretch, 0.25f);
-        ImGui.TableSetupColumn("每小時", ImGuiTableColumnFlags.WidthStretch, 0.20f);
+        ImGui.TableSetupColumn("Metric", ImGuiTableColumnFlags.WidthStretch, 0.30f);
+        ImGui.TableSetupColumn("Lifetime", ImGuiTableColumnFlags.WidthStretch, 0.25f);
+        ImGui.TableSetupColumn("Session", ImGuiTableColumnFlags.WidthStretch, 0.25f);
+        ImGui.TableSetupColumn("PerHour", ImGuiTableColumnFlags.WidthStretch, 0.20f);
 
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
-        RightAlignCellText("累計", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("Lifetime".Loc(), SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         ImGui.TableNextColumn();
-        RightAlignCellText("本次", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("Session".Loc(), SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         ImGui.TableNextColumn();
-        RightAlignCellText("每小時", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("Per hour".Loc(), SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("自本小遊戲首次計入紀錄以來的本次場次速率。");
+            ImGui.SetTooltip("Session rate since this minigame first counted a result.".Loc());
         }
     }
 

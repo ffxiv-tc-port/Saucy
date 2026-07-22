@@ -4,6 +4,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
+using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game.GoldSaucer;
 using PunishLib.ImGuiMethods;
 using Saucy.Framework;
@@ -23,17 +24,17 @@ public unsafe partial class PluginUI : Window
 
     private static readonly string[] SidebarLabels =
     [
-        "暴風倖存者",
-        "空軍裝甲駕駛員",
-        "登高跳跳樂大挑戰",
-        "搶救小鳥大作戰",
-        "必中一閃快刀斬魔",
-        "活動解說員排程",
-        "九宮幻卡",
-        "統計",
-        "關於",
-        "除錯",
-        "Saucy 主題",
+        "Wind Blows",
+        "Air Force One",
+        "Leap of Faith",
+        "Cliffhanger",
+        "Slice is Right",
+        "GATE schedule",
+        "Triple Triad",
+        "Stats",
+        "About",
+        "Debug",
+        "Saucy theme",
         "GATES",
         "OTHER GAMES"
     ];
@@ -55,7 +56,7 @@ public unsafe partial class PluginUI : Window
 
         TitleBarButtons.Add(new()
         {
-            ShowTooltip = () => ImGui.SetTooltip("♥ Ko-fi（支持我的轉蛋成癮症）"),
+            ShowTooltip = () => ImGui.SetTooltip("♥ Ko-fi (to support my gacha addiction)".Loc()),
             Icon = FontAwesomeIcon.Heart,
             IconOffset = new(1, 1),
             Click = _ => ShellStart(KagekazuKofiUrl)
@@ -103,7 +104,7 @@ public unsafe partial class PluginUI : Window
         var maxLabel = 0f;
         foreach (var s in SidebarLabels)
         {
-            var w = ImGui.CalcTextSize(s).X;
+            var w = ImGui.CalcTextSize(s.Loc()).X;
             if (w > maxLabel)
             {
                 maxLabel = w;
@@ -129,7 +130,7 @@ public unsafe partial class PluginUI : Window
         var showDelta = info.SessionDelta > 0
                         && Environment.TickCount64 - _lastMgpIncreaseMs < DeltaVisibleMs;
         var delta = showDelta ? $"  +{info.SessionDelta:N0}" : "";
-        var status = info.ModuleStatus == "閒置" ? "閒置" : $"已啟用：{info.ModuleStatus}";
+        var status = info.ModuleStatus == "Idle" ? "Idle".Loc() : "Enabled: ??".Loc(info.ModuleStatus.Loc());
         WindowName = $"Saucy  \u2022  {status}  \u2022  MGP {info.Mgp:N0}{delta}###Saucy";
     }
 
@@ -169,23 +170,23 @@ public unsafe partial class PluginUI : Window
 
     private void DrawSidebar()
     {
-        DrawSidebarHeader("GATES");
-        NavSelectable("暴風倖存者", NavItem.AnyWayTheWindBlows);
-        NavSelectable("空軍裝甲駕駛員", NavItem.AirForceOne);
-        NavSelectable("登高跳跳樂大挑戰", NavItem.LeapOfFaith);
-        NavSelectable("搶救小鳥大作戰", NavItem.Cliffhanger);
-        NavSelectable("必中一閃快刀斬魔", NavItem.SliceIsRight);
-        NavSelectable("活動解說員排程", NavItem.GateSchedule);
+        DrawSidebarHeader("GATES".Loc());
+        NavSelectable("Wind Blows".Loc(), NavItem.AnyWayTheWindBlows);
+        NavSelectable("Air Force One".Loc(), NavItem.AirForceOne);
+        NavSelectable("Leap of Faith".Loc(), NavItem.LeapOfFaith);
+        NavSelectable("Cliffhanger".Loc(), NavItem.Cliffhanger);
+        NavSelectable("Slice is Right".Loc(), NavItem.SliceIsRight);
+        NavSelectable("GATE schedule".Loc(), NavItem.GateSchedule);
 
         ImGui.Dummy(new(0, 6));
-        DrawSidebarHeader("OTHER GAMES");
-        NavSelectable("九宮幻卡", NavItem.TripleTriad);
+        DrawSidebarHeader("OTHER GAMES".Loc());
+        NavSelectable("Triple Triad".Loc(), NavItem.TripleTriad);
 
         ImGui.Dummy(new(0, 6));
         ImGui.Separator();
-        NavSelectable("統計", NavItem.Stats);
-        NavSelectable("關於", NavItem.About);
-        NavSelectable("除錯", NavItem.Debug);
+        NavSelectable("Stats".Loc(), NavItem.Stats);
+        NavSelectable("About".Loc(), NavItem.About);
+        NavSelectable("Debug".Loc(), NavItem.Debug);
 
         var style = ImGui.GetStyle();
         var checkboxH = ImGui.GetFrameHeight();
@@ -199,12 +200,12 @@ public unsafe partial class PluginUI : Window
 
         ImGui.Separator();
         var on = C.SaucyThemeEnabled;
-        if (ImGui.Checkbox("Saucy 主題", ref on))
+        if (ImGui.Checkbox("Saucy theme".Loc(), ref on))
         {
             C.SaucyThemeEnabled = on;
             C.Save();
         }
-        ImGui.TextDisabled("設計者：Wah");
+        ImGui.TextDisabled("Designed by Wah".Loc());
     }
 
     private void NavSelectable(string label, NavItem item)
@@ -236,10 +237,10 @@ public unsafe partial class PluginUI : Window
 
     private static void DrawTriadPanel()
     {
-        DrawPanelHeader("九宮幻卡");
+        DrawPanelHeader("Triple Triad".Loc());
         ImGuiEx.EzTabBar("###Triad",
-            ("主要", TriadSettingsUi.Draw, null, false),
-            ("快取", TriadCacheSettingsUi.Draw, null, false));
+            ("Main".Loc(), TriadSettingsUi.Draw, null, false),
+            ("Cache".Loc(), TriadCacheSettingsUi.Draw, null, false));
     }
 
     private static void DrawPanelHeader(string title, string? subtitle = null) =>
@@ -494,7 +495,7 @@ public unsafe partial class PluginUI : Window
     /// </summary>
     private static void DrawGateSchedulePanel()
     {
-        DrawPanelHeader("活動解說員排程", "GATE 排程自動化");
+        DrawPanelHeader("GATE schedule".Loc(), "GATE schedule automation".Loc());
         ImGui.TextWrapped("每小時 :55/:15/:35（活動開始前5分鐘）自動導航至最近的已記錄「活動解說員」；" +
                            "每小時 :00/:20/:40 若在已記錄的支援 GATE NPC 附近，自動互動並嘗試參加。");
 

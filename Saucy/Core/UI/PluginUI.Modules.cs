@@ -2,6 +2,7 @@ using ImGuiNET;
 using Dalamud.Interface.Utility.Raii;
 using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
+using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Saucy.AirForce;
 using Saucy.Cliffhanger;
@@ -17,7 +18,7 @@ public unsafe partial class PluginUI
 {
     private static void DrawWindBlowsPanel()
     {
-        DrawPanelHeader("暴風倖存者", "統計安全點");
+        DrawPanelHeader("Wind Blows".Loc(), "Statistical safe spot".Loc());
         var enabled = C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows);
         if (ImGui.Checkbox("啟用##Wind", ref enabled))
         {
@@ -128,10 +129,10 @@ public unsafe partial class PluginUI
 
     private static void DrawAirForcePanel()
     {
-        DrawPanelHeader("空軍裝甲駕駛員", "射擊乘坐小遊戲");
+        DrawPanelHeader("Air Force One".Loc(), "Rail shooter minigame".Loc());
         ImGuiEx.EzTabBar("###AirForce",
-            ("主要", DrawAirForceMain, null, false),
-            ("除錯", AirForceAutomation.DrawDebug, null, false));
+            ("Main".Loc(), DrawAirForceMain, null, false),
+            ("Debug".Loc(), AirForceAutomation.DrawDebug, null, false));
     }
 
     private static void DrawAirForceMain()
@@ -176,7 +177,7 @@ public unsafe partial class PluginUI
 
     private static void DrawLeapOfFaithPanel()
     {
-        DrawPanelHeader("登高跳跳樂大挑戰");
+        DrawPanelHeader("Leap of Faith".Loc());
         var enabled = C.IsModuleEnabled(ModuleNames.LeapOfFaith);
         if (ImGui.Checkbox("啟用##LeapOfFaith", ref enabled))
         {
@@ -266,7 +267,7 @@ public unsafe partial class PluginUI
 
     private static void DrawCliffhangerPanel()
     {
-        DrawPanelHeader("搶救小鳥大作戰");
+        DrawPanelHeader("Cliffhanger".Loc());
         var enabled = C.IsModuleEnabled(ModuleNames.Cliffhanger);
         if (ImGui.Checkbox("啟用##Cliffhanger", ref enabled))
         {
@@ -460,7 +461,7 @@ public unsafe partial class PluginUI
 
     private static void DrawSliceIsRightPanel()
     {
-        DrawPanelHeader("必中一閃快刀斬魔");
+        DrawPanelHeader("Slice is Right".Loc());
         var enabled = C.IsModuleEnabled(ModuleNames.SliceIsRight);
         if (ImGui.Checkbox("啟用##SliceIsRight", ref enabled))
         {
@@ -499,27 +500,27 @@ public unsafe partial class PluginUI
         string status;
         if (TriadRunSession.ModuleEnabled)
         {
-            status = "九宮幻卡";
+            status = "Triple Triad";
         }
         else if (C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows))
         {
-            status = "暴風倖存者";
+            status = "Wind Blows";
         }
         else if (C.IsModuleEnabled(ModuleNames.AirForceOne))
         {
-            status = "空軍裝甲駕駛員";
+            status = "Air Force One";
         }
         else if (C.IsModuleEnabled(ModuleNames.LeapOfFaith))
         {
-            status = "登高跳跳樂大挑戰";
+            status = "Leap of Faith";
         }
         else if (C.IsModuleEnabled(ModuleNames.Cliffhanger))
         {
-            status = "搶救小鳥大作戰";
+            status = "Cliffhanger";
         }
         else
         {
-            status = "閒置";
+            status = "Idle";
         }
 
         var sessionDelta = C.SessionStats.MGPWon + C.SessionStats.CuffMGP + C.SessionStats.LimbMGP +
