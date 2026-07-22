@@ -2,6 +2,7 @@ using ImGuiNET;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 namespace Saucy.TripleTriad;
 
@@ -76,7 +77,7 @@ internal static class TriadNpcMapUi
     {
         if (TriadBattleHall.ShouldBlockMapNavigation(npc, location))
         {
-            return $"{showOnMapTooltip}\n決鬥擂台是任務搜索器副本。\nSaucy 無法自動前往。";
+            return showOnMapTooltip + "\n" + "The Battlehall is a Duty Finder instance.\nSaucy cannot path there.".Loc();
         }
 
         var unlockLine = TriadNpcUnlockHelper.TryGetTooltipLine(npc);
@@ -87,25 +88,25 @@ internal static class TriadNpcMapUi
 
         if (!Vnavmesh.IsInstalled)
         {
-            return $"{showOnMapTooltip}\n請安裝 vnavmesh 以自動前往此 NPC。";
+            return showOnMapTooltip + "\n" + "Install vnavmesh to walk to this NPC.".Loc();
         }
 
-        var lines = $"{showOnMapTooltip}\n左鍵：自動前往並farm缺少的卡片。";
+        var lines = showOnMapTooltip + "\n" + "Left-click: path there and farm missing cards.".Loc();
         if (npc != null)
         {
-            lines += "\n右鍵：自動前往並farm MGP。";
-            lines += "\n抵達後將啟用九宮飛牌自動化。";
-            lines += "\n若已擁有此 NPC 的所有卡片，左鍵將改為farm MGP。";
-            lines += "\n即使該選項關閉，左鍵在缺卡時仍會建立最佳化牌組。";
+            lines += "\n" + "Right-click: path there and farm MGP.".Loc();
+            lines += "\n" + "Enables Triple Triad automation on arrival.".Loc();
+            lines += "\n" + "Left-click uses MGP farm if you already have every card from this NPC.".Loc();
+            lines += "\n" + "Left-click with missing cards builds an optimized deck even if that option is off.".Loc();
         }
         else
         {
-            lines = $"{showOnMapTooltip}\n點擊以使用 vnavmesh 自動前往。";
+            lines = showOnMapTooltip + "\n" + "Click to path with vnavmesh.".Loc();
         }
 
         if (Lifestream.IsInstalled)
         {
-            lines += "\n使用 Lifestream 進行移動（傳送水晶或以太之光）。";
+            lines += "\n" + "Uses Lifestream for travel (aetheryte or aethernet shard).".Loc();
             var route = MultiAreaRouteRegistry.FindRoute(location);
             if (route?.TooltipHint != null)
             {

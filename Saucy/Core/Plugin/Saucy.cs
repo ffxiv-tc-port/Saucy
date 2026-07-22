@@ -37,6 +37,7 @@ public sealed partial class Saucy : IDalamudPlugin
     public Saucy(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this, Module.All);
+        ECommons.LanguageHelpers.Localization.Init("ChineseTraditional");
         PunishLibMain.Init(pluginInterface, "Saucy", new AboutPlugin());
         EzConfig.Migrate<Configuration>();
         C = EzConfig.Init<Configuration>();

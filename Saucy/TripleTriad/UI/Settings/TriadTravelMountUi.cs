@@ -1,6 +1,7 @@
 using ImGuiNET;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.LanguageHelpers;
 using Lumina.Excel.Sheets;
 using System;
 using System.Linq;
@@ -10,7 +11,7 @@ internal static class TriadTravelMountUi
 {
     public static void Draw()
     {
-        ImGui.TextWrapped("在使用 vnavmesh 導航前往 Triple Triad NPC 前召喚的坐騎。");
+        ImGui.TextWrapped("Mount used before vnavmesh pathing to Triple Triad NPCs.".Loc());
         ImGui.Dummy(new(0, 4));
 
         var selectedMountId = C.TriadCollection.TravelMountId;
@@ -18,7 +19,7 @@ internal static class TriadTravelMountUi
         using var mountCombo = ImRaii.Combo("##TriadTravelMount", GetPreviewLabel(selectedMountId));
         if (mountCombo)
         {
-            if (ImGui.Selectable("坐騎輪盤", selectedMountId == 0))
+            if (ImGui.Selectable("Mount roulette".Loc(), selectedMountId == 0))
             {
                 C.TriadCollection.TravelMountId = 0;
                 C.Save();
@@ -36,27 +37,27 @@ internal static class TriadTravelMountUi
 
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "預設使用遊戲內建的坐騎輪盤通用動作。選擇特定坐騎後，地圖導航前會固定召喚該坐騎。");
+            "Default uses the game's Mount Roulette general action. Pick a mount to always summon that one before map navigation.".Loc());
     }
 
     private static string GetPreviewLabel(uint mountId)
     {
         if (mountId == 0)
         {
-            return "坐騎輪盤";
+            return "Mount roulette".Loc();
         }
 
         var mountSheet = Svc.Data.GetExcelSheet<Mount>();
         var row = mountSheet?.GetRowOrDefault(mountId);
         if (row == null)
         {
-            return $"坐騎 #{mountId}（無法使用）";
+            return "Mount #?? (unavailable)".Loc(mountId);
         }
 
         var name = row.Value.Singular.ExtractText();
         if (!TravelMountHelper.IsMountUnlocked(mountId))
         {
-            return $"{name}（無法使用）";
+            return "?? (unavailable)".Loc(name);
         }
 
         return name;

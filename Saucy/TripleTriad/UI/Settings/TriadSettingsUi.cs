@@ -2,6 +2,7 @@ using ImGuiNET;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.LanguageHelpers;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -18,14 +19,14 @@ internal static class TriadSettingsUi
         var runTargetNpc = TriadRunTarget.Resolve();
 
         var enabled = TriadRunSession.ModuleEnabled;
-        if (ImGui.Checkbox("啟用自動化", ref enabled))
+        if (ImGui.Checkbox("Enable automation".Loc(), ref enabled))
         {
             if (enabled && !TriadNpcProximity.IsRelevantTriadNpcNearby())
             {
                 var npcName = TriadNpcProximity.ResolveTriadNpcForProximityCheck()?.Name;
                 DuoLog.Warning(string.IsNullOrEmpty(npcName)
-                    ? "附近沒有九宮牌 NPC（如果就站在對方面前，試著再靠近一點）。"
-                    : $"附近沒有九宮牌 NPC（{npcName}）。如果就站在對方面前，試著再靠近一點。");
+                    ? "No Triple Triad NPC nearby (maybe get closer if in front of one).".Loc()
+                    : "No Triple Triad NPC nearby (??). Maybe get closer if you're in front of one.".Loc(npcName));
             }
             else
             {
@@ -46,40 +47,40 @@ internal static class TriadSettingsUi
 
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "接受對戰邀請、選擇卡組並自動進行連戰。請在準備對戰前或對戰準備期間開啟。");
+            "Accepts match invites, selects a deck, and plays through rematches. Turn on before or during match prep.".Loc());
 
         var autoOpen = C.OpenAutomatically;
-        if (ImGui.Checkbox("挑戰 NPC 時自動開啟視窗", ref autoOpen))
+        if (ImGui.Checkbox("Open window when challenging an NPC".Loc(), ref autoOpen))
         {
             C.OpenAutomatically = autoOpen;
             C.Save();
         }
 
         var collectionUi = C.CollectionUiEnabled;
-        if (ImGui.Checkbox("金碟遊樂園卡片搜尋面板", ref collectionUi))
+        if (ImGui.Checkbox("Gold Saucer card search panels".Loc(), ref collectionUi))
         {
             C.CollectionUiEnabled = collectionUi;
             C.Save();
         }
 
         ImGuiComponents.HelpMarker(
-            "在金碟遊樂園卡片介面旁顯示可搜尋的卡片清單，包含編輯卡組（TriadBuddy 風格的 [No.1] 排序）。" +
-            "同時會在卡片收藏主畫面顯示 NPC 搜尋功能。");
+            ("Shows a searchable card list beside the Gold Saucer card UI, including Edit Deck (TriadBuddy-style [No.1] ordering). " +
+            "Also shows NPC search on the main card collection screen.").Loc());
 
         ImGui.Dummy(new(0, 4));
 
-        SaucyTheme.DrawCard("卡組", null, DrawDeckBody);
-        SaucyTheme.DrawCard("執行模式", null, DrawRunModeBody);
-        SaucyTheme.DrawCard("移動", "地圖導航", TriadTravelMountUi.Draw);
-        SaucyTheme.DrawCard("通知", null, DrawNotificationsBody);
-        SaucyTheme.DrawCard("相依項目", "選用整合功能", TriadDependenciesUi.Draw);
+        SaucyTheme.DrawCard("Deck".Loc(), null, DrawDeckBody);
+        SaucyTheme.DrawCard("Run mode".Loc(), null, DrawRunModeBody);
+        SaucyTheme.DrawCard("Travel".Loc(), "Map navigation".Loc(), TriadTravelMountUi.Draw);
+        SaucyTheme.DrawCard("Notifications".Loc(), null, DrawNotificationsBody);
+        SaucyTheme.DrawCard("Dependencies".Loc(), "Optional integrations".Loc(), TriadDependenciesUi.Draw);
     }
 
     private static void DrawDeckOptimizerSettings()
     {
         using var indent = ImRaii.PushIndent();
         var showOptimizerChatSpam = C.ShowOptimizerChatSpam;
-        if (ImGui.Checkbox("顯示卡組自動化聊天訊息", ref showOptimizerChatSpam))
+        if (ImGui.Checkbox("Show deck automation chat spam".Loc(), ref showOptimizerChatSpam))
         {
             C.ShowOptimizerChatSpam = showOptimizerChatSpam;
             C.Save();
@@ -87,8 +88,8 @@ internal static class TriadSettingsUi
 
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "在聊天欄顯示 [Saucy] 卡組最佳化、卡組選擇及設定檔寫入訊息。" +
-            "不會隱藏遊戲本身的訊息（例如「將於下一場對戰中使用」）。");
+            ("Shows [Saucy] deck optimizer, deck selection, and profile-write messages in chat. " +
+            "Does not hide the game's own lines (e.g. \"in play for the next match\").").Loc());
 
         DrawDeckOptimizerMaxThreadsSlider();
         DrawDeckOptimizerTimeoutSlider();
@@ -101,7 +102,7 @@ internal static class TriadSettingsUi
         var threads = Configuration.ClampDeckOptimizerMaxThreads(C.DeckOptimizerMaxThreads);
         var maxCores = Environment.ProcessorCount;
         ImGui.SetNextItemWidth(220f * ImGuiHelpers.GlobalScale);
-        if (ImGui.SliderInt("最佳化執行緒數（0 = 全部）", ref threads, 0, maxCores, threads == 0 ? "全部" : "%d"))
+        if (ImGui.SliderInt("Optimizer threads (0 = all)".Loc(), ref threads, 0, maxCores, threads == 0 ? "All".Loc() : "%d"))
         {
             C.DeckOptimizerMaxThreads = Configuration.ClampDeckOptimizerMaxThreads(threads);
             C.Save();
@@ -110,14 +111,14 @@ internal static class TriadSettingsUi
         if (ImGui.IsItemHovered())
         {
             ImGui.SetTooltip(
-                $"平行卡組測試將使用 {maxCores} 個邏輯核心中的 {SaucyParallelism.DeckOptimizerThreads} 個。");
+                "Uses ?? of ?? logical cores for parallel deck tests.".Loc(SaucyParallelism.DeckOptimizerThreads, maxCores));
         }
 
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "建構最佳化卡組時使用的平行執行緒數（0 = 全部核心）。" +
+            "Parallel threads while building an optimized deck (0 = all cores).".Loc() +
             (SaucyParallelism.IsWineHost
-                ? "\n\nLinux / Wine（XLCore、Steam Deck）：無論此處如何設定，卡組建構都會限制為邏輯核心數的一半。在 Wine 下使用全部核心進行平行卡組建構可能導致遊戲直接崩潰。"
+                ? "\n\nLinux / Wine (XLCore, Steam Deck): deck builds are capped to half your logical cores no matter what you pick here. Using every core for parallel deck builds can hard-crash the game under Wine.".Loc()
                 : ""));
     }
 
@@ -125,7 +126,7 @@ internal static class TriadSettingsUi
     {
         var timeout = Math.Clamp(C.DeckOptimizerTimeoutMinutes, 1, 15);
         ImGui.SetNextItemWidth(220f * ImGuiHelpers.GlobalScale);
-        if (ImGui.SliderInt("最佳化逾時時間（分鐘）", ref timeout, 1, 15, "%d 分鐘"))
+        if (ImGui.SliderInt("Optimizer timeout (min)".Loc(), ref timeout, 1, 15, "%d min".Loc()))
         {
             C.DeckOptimizerTimeoutMinutes = Math.Clamp(timeout, 1, 15);
             C.Save();
@@ -133,20 +134,20 @@ internal static class TriadSettingsUi
 
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "超過此時間後將取消背景卡組建構。若在選擇卡組時仍未完成建構，Saucy 會改用你最佳的設定檔卡組。" +
-            "地圖導航會等待卡組準備完成後才會開始。");
+            ("Cancels a background deck build after this long. If the build is not finished by deck select, Saucy falls back to your best profile deck. " +
+            "Map navigation waits until a deck is ready.").Loc());
     }
 
     private static void DrawDeckBody()
     {
         if (TriadRun.profileGS.GetPlayerDecks()!.Count() == 0)
         {
-            ImGui.TextWrapped("先挑戰一次 NPC 以載入此處的設定檔卡組。");
+            ImGui.TextWrapped("Challenge an NPC once to load your profile decks here.".Loc());
             return;
         }
 
         var useAutoDeck = C.UseSimmedDeck;
-        if (ImGui.Checkbox("自動選擇最佳卡組", ref useAutoDeck))
+        if (ImGui.Checkbox("Auto-pick best deck".Loc(), ref useAutoDeck))
         {
             C.UseSimmedDeck = useAutoDeck;
             C.Save();
@@ -170,7 +171,7 @@ internal static class TriadSettingsUi
 
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "在選擇卡組時自動挑選卡組。預設：選擇你設定檔卡組中開局勝率最高的一副。");
+            "Picks a deck at deck select. Default: highest opening win % among your profile decks.".Loc());
 
         if (C.UseSimmedDeck)
         {
@@ -193,7 +194,7 @@ internal static class TriadSettingsUi
             }
 
             var useCachedDeck = C.UseCachedOptimizedDeckIfAvailable;
-            if (ImGui.Checkbox("若有快取卡組則使用快取卡組", ref useCachedDeck))
+            if (ImGui.Checkbox("Use cached deck if available".Loc(), ref useCachedDeck))
             {
                 if (useCachedDeck)
                 {
@@ -215,11 +216,11 @@ internal static class TriadSettingsUi
 
             ImGui.SameLine();
             ImGuiComponents.HelpMarker(
-                "在準備對戰時，若此 NPC 與規則存在符合的快取卡組，會將其載入設定檔卡組槽 5。" +
-                "自動選擇仍會模擬你的設定檔卡組並挑選開局勝率最高者。無法與「建構最佳化卡組」同時使用。");
+                ("At match prep, loads a matching cached deck into profile slot 5 when one exists for this NPC and rules. " +
+                "Auto-pick still sims your profile decks and picks the highest opening win %. Cannot be combined with Build optimized deck.").Loc());
 
             var alwaysBuild = C.AlwaysBuildOptimizedDeck;
-            if (ImGui.Checkbox("建構最佳化卡組", ref alwaysBuild))
+            if (ImGui.Checkbox("Build optimized deck".Loc(), ref alwaysBuild))
             {
                 if (alwaysBuild)
                 {
@@ -241,9 +242,9 @@ internal static class TriadSettingsUi
 
             ImGui.SameLine();
             ImGuiComponents.HelpMarker(
-                "在準備對戰時，若沒有符合此 NPC 與規則的有效快取或現有「NPC (Saucy)」設定檔卡組，會使用你擁有的卡片建構卡組。" +
-                $"若自上次為該 NPC 建構卡組以來已獲得 {TriadOptimizedDeckCacheStore.RebuildAfterNewCardCount} 張以上新卡，則會重新建構。" +
-                "會儲存至設定檔卡組槽 5 並自動選擇。無法與「使用快取卡組」同時使用。");
+                "At match prep, builds a deck from your owned cards when no valid cache or existing \"NPC (Saucy)\" profile deck fits this NPC and rules.".Loc() + " " +
+                "Rebuilds if you have gained ?? or more new cards since the last build for that NPC.".Loc(TriadOptimizedDeckCacheStore.RebuildAfterNewCardCount) + " " +
+                "Saves to profile slot 5 and selects it. Cannot be combined with Use cached deck.".Loc());
 
             if (C.AlwaysBuildOptimizedDeck)
             {
@@ -260,11 +261,11 @@ internal static class TriadSettingsUi
 
             if (TriadRun.IsPreviewEvalPendingForNpc(targetedNpc))
             {
-                ImGui.TextDisabled($"目標 NPC：{targetedNpc.Name}（計算勝率中…）");
+                ImGui.TextDisabled("Target NPC: ?? (calculating win %…)".Loc(targetedNpc.Name));
             }
             else
             {
-                ImGui.TextDisabled($"目標 NPC：{targetedNpc.Name}");
+                ImGui.TextDisabled("Target NPC: ??".Loc(targetedNpc.Name));
             }
 
             ImGui.Spacing();
@@ -272,10 +273,10 @@ internal static class TriadSettingsUi
 
         var selectedDeck = C.SelectedDeckIndex;
         var decks = TriadRun.profileGS.GetPlayerDecks()!;
-        var previewName = "（無）";
+        var previewName = "(none)".Loc();
         if (selectedDeck == Configuration.GameRecommendedDeckIndex)
         {
-            previewName = "遊戲推薦";
+            previewName = "Game recommended".Loc();
         }
         else if (selectedDeck >= 0 && selectedDeck < decks.Count() && decks[selectedDeck] != null)
         {
@@ -284,25 +285,25 @@ internal static class TriadSettingsUi
             previewName = TriadDeckEvalDisplay.FormatDeckNameWithWinChance(rawName, previewData);
             if (string.IsNullOrEmpty(previewName))
             {
-                previewName = "（無）";
+                previewName = "(none)".Loc();
             }
         }
 
-        ImGui.TextUnformatted("選擇卡組");
+        ImGui.TextUnformatted("Select deck".Loc());
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "遊戲推薦使用 FFXIV 內建的卡組建議進行本場對戰（並非 Saucy 的模擬結果）。");
+            "Game recommended uses FFXIV's built-in deck suggestion for the current match (not Saucy sims).".Loc());
         ImGui.SetNextItemWidth(300f * ImGuiHelpers.GlobalScale);
         using var deckCombo = ImRaii.Combo("##SaucyDeckSelect", previewName);
         if (deckCombo)
         {
-            if (ImGui.Selectable("（無）##ClearDeckSelection", selectedDeck == -1))
+            if (ImGui.Selectable("(none)".Loc() + "##ClearDeckSelection", selectedDeck == -1))
             {
                 C.SelectedDeckIndex = -1;
                 C.Save();
             }
 
-            if (ImGui.Selectable("遊戲推薦##GameRecommendedDeck",
+            if (ImGui.Selectable("Game recommended".Loc() + "##GameRecommendedDeck",
                 selectedDeck == Configuration.GameRecommendedDeckIndex))
             {
                 C.SelectedDeckIndex = Configuration.GameRecommendedDeckIndex;
@@ -328,10 +329,10 @@ internal static class TriadSettingsUi
     private static void DrawRunModeBody()
     {
         ImGui.TextWrapped(
-            "選擇 Saucy 何時停止對戰。插件載入時預設未選擇任何選項，Saucy 會持續連戰直到自動化被停用。");
+            "Choose when Saucy stops playing. On plugin load no option is selected and Saucy rematches until automation is disabled.".Loc());
         ImGui.Dummy(new(0, 4));
 
-        if (ImGui.RadioButton("固定對戰場數", TriadRunSession.PlayXTimes))
+        if (ImGui.RadioButton("Fixed match count".Loc(), TriadRunSession.PlayXTimes))
         {
             CommitDraftMatchCount();
             TriadRunSession.ApplyRunMode(TriadRunMode.PlayXTimes, matchCount: DraftMatchCount);
@@ -340,7 +341,7 @@ internal static class TriadSettingsUi
         if (TriadRunSession.PlayXTimes)
         {
             using var subIndent = ImRaii.PushIndent();
-            ImGui.Text("次數：");
+            ImGui.Text("How many times:".Loc());
             ImGui.SameLine();
             ImGui.SetNextItemWidth(56f * ImGuiHelpers.GlobalScale);
             var count = Math.Max(1, C.TriadMatchCount);
@@ -355,23 +356,23 @@ internal static class TriadSettingsUi
             var remaining = TriadRunSession.ModuleEnabled
                 ? Math.Max(0, TriadRunSession.NumberOfTimes)
                 : Math.Max(1, C.TriadMatchCount);
-            ImGui.TextDisabled($"本場次剩餘對戰數：{remaining}");
+            ImGui.TextDisabled("Matches left this session: ??".Loc(remaining));
         }
 
-        if (ImGui.RadioButton("首次掉落卡片後停止", TriadRunSession.PlayUntilCardDrops))
+        if (ImGui.RadioButton("Stop after first card drop".Loc(), TriadRunSession.PlayUntilCardDrops))
         {
             TriadRunSession.ApplyRunMode(TriadRunMode.PlayUntilAnyCard);
         }
 
-        if (ImGui.RadioButton("刷取此 NPC 所有卡片各一張", TriadRunSession.PlayUntilAllCardsDropOnce))
+        if (ImGui.RadioButton("Farm all NPC cards once".Loc(), TriadRunSession.PlayUntilAllCardsDropOnce))
         {
             TriadRunSession.ApplyRunMode(TriadRunMode.PlayUntilAllCards, TriadRunTarget.Resolve());
         }
 
         if (TriadRunSession.NoRunModeSelected)
         {
-            ImGui.TextDisabled("未設定停止條件 — 將持續執行直到自動化被停用。");
-            ImGui.TextDisabled("在多人任務搜尋器準備完成時會停止連戰。");
+            ImGui.TextDisabled("No stop condition — runs until automation is disabled.".Loc());
+            ImGui.TextDisabled("Stops rematching while Duty Finder is ready.".Loc());
         }
 
         if (TriadRunSession.PlayUntilAllCardsDropOnce)
@@ -384,23 +385,23 @@ internal static class TriadSettingsUi
 
             if (runTargetNpc != null)
             {
-                ImGui.TextDisabled($"NPC：{TriadNpcDB.Get().FindByID(runTargetNpc.npcId).Name}");
+                ImGui.TextDisabled("NPC: ??".Loc(TriadNpcDB.Get().FindByID(runTargetNpc.npcId).Name));
                 if (onMatchRegistration)
                 {
-                    ImGui.TextDisabled("（對戰登記視窗已開啟）");
+                    ImGui.TextDisabled("(match registration open)".Loc());
                 }
             }
             else if (onMatchRegistration)
             {
-                ImGui.TextDisabled("NPC：讀取對戰登記中…");
+                ImGui.TextDisabled("NPC: reading match registration…".Loc());
             }
             else
             {
-                ImGui.TextDisabled("NPC：請開啟對戰登記視窗以列出尚缺的卡片。");
+                ImGui.TextDisabled("NPC: open match registration to list missing cards.".Loc());
             }
 
             var onlyUnobtained = C.OnlyUnobtainedCards;
-            if (ImGui.Checkbox("僅顯示尚缺卡片", ref onlyUnobtained))
+            if (ImGui.Checkbox("Missing cards only".Loc(), ref onlyUnobtained))
             {
                 C.OnlyUnobtainedCards = onlyUnobtained;
                 C.Save();
@@ -421,17 +422,17 @@ internal static class TriadSettingsUi
                 var cardName = cardInfo != null
                     ? TriadCardDB.Get().FindById(cardInfo.CardId)?.Name ?? $"Card #{entry.Key}"
                     : $"Card #{entry.Key}";
-                ImGui.Text($"\u2022 {cardName} \u2014 {entry.Value}/1");
+                ImGui.Text($"• {cardName} — {entry.Value}/1");
             }
 
             if (onlyUnobtained && runTargetNpc != null &&
                 !TriadCardFarmSession.HasUnobtainedNpcRewards(runTargetNpc))
             {
-                SaucyTheme.TextErrorWrapped("\u4f60\u5df2\u7d93\u64c1\u6709\u9019\u4f4d NPC \u7684\u6240\u6709\u5361\u7247\u3002\u8acb\u53d6\u6d88\u52fe\u9078\u300c\u50c5\u986f\u793a\u5c1a\u7f3a\u5361\u7247\u300d\u6216\u9078\u64c7\u5176\u4ed6 NPC\u3002");
+                SaucyTheme.TextErrorWrapped("You already have every card from this NPC. Uncheck \"Missing cards only\" or choose a different NPC.".Loc());
             }
             else if (onlyUnobtained && TriadCardFarmSession.TempCardsWonList.Count == 0)
             {
-                SaucyTheme.TextErrorWrapped("\u8207 NPC \u958b\u59cb\u4e00\u5834\u5c0d\u6230\u4ee5\u67e5\u770b\u5c1a\u7f3a\u7684\u5361\u7247\u3002");
+                SaucyTheme.TextErrorWrapped("Start a match with an NPC to see which cards are still missing.".Loc());
             }
         }
     }
@@ -451,17 +452,17 @@ internal static class TriadSettingsUi
     private static void DrawNotificationsBody()
     {
         var logOutAfterRun = C.LogOutAfterTriadRun;
-        if (ImGui.Checkbox("執行完成後登出遊戲", ref logOutAfterRun))
+        if (ImGui.Checkbox("Log out when run completes".Loc(), ref logOutAfterRun))
         {
             C.LogOutAfterTriadRun = logOutAfterRun;
             C.Save();
         }
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "當執行完成時登出遊戲：固定場數歸零、卡片掉落模式觸發，或卡片刷取完成。");
+            "Logs out of the game when a run finishes: fixed match count reaches zero, card drop mode triggers, or card farm completes.".Loc());
 
         var playSound = C.PlaySound;
-        if (ImGui.Checkbox("執行完成後播放音效", ref playSound))
+        if (ImGui.Checkbox("Play sound when run completes".Loc(), ref playSound))
         {
             C.PlaySound = playSound;
             C.Save();
@@ -501,7 +502,7 @@ internal static class TriadSettingsUi
 
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("開啟音效資料夾 — 將 MP3 檔案放入此處即可新增自訂音效。");
+            ImGui.SetTooltip("Open sound folder — drop MP3s here to add your own.".Loc());
         }
     }
 
@@ -509,7 +510,7 @@ internal static class TriadSettingsUi
     {
         if (string.IsNullOrWhiteSpace(deckName))
         {
-            deckName = $"卡組 {deckId + 1}";
+            deckName = "Deck ??".Loc(deckId + 1);
         }
 
         if (targetNpc == null)

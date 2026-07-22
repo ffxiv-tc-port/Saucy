@@ -1,4 +1,5 @@
 using ImGuiNET;
+using ECommons.LanguageHelpers;
 using System;
 using System.Numerics;
 namespace Saucy.TripleTriad;
@@ -21,43 +22,43 @@ internal static class TriadDeckOptimizerStatusUi
         ImGui.Spacing();
 
         var header = string.IsNullOrEmpty(contextLabel)
-            ? $"正在為 {job.NpcName} 建構卡組…"
-            : $"{contextLabel}：{job.NpcName}";
+            ? "Building deck for ??…".Loc(job.NpcName)
+            : $"{contextLabel}: {job.NpcName}";
 
         SaucyTheme.TextWarning(header);
 
         var openingLabel = job.FormatBestWinChance();
         if (!string.IsNullOrEmpty(openingLabel))
         {
-            ImGui.Text($"開局勝率：{openingLabel}");
+            ImGui.Text("Opening win chance: ??".Loc(openingLabel));
             if (job.OpeningEvalInFlight)
             {
                 ImGui.SameLine();
-                ImGui.TextDisabled("（更新中…）");
+                ImGui.TextDisabled("(updating…)".Loc());
             }
         }
         else if (job.OpeningEvalInFlight)
         {
-            ImGui.TextDisabled("開局勝率：計算中…");
+            ImGui.TextDisabled("Opening win chance: calculating…".Loc());
         }
 
         var progress = Math.Clamp(job.ProgressPercent, 0, 100) / 100f;
         ImGui.ProgressBar(progress, new Vector2(-1, 0));
 
-        ImGui.TextDisabled($"擁有卡片數：{job.NumOwnedCards:N0}");
-        ImGui.TextDisabled($"可能卡組數：{job.NumPossibleDecksDesc}");
-        ImGui.TextDisabled($"已測試：{job.NumTestedDecksDesc}");
-        ImGui.TextDisabled($"進度：{job.ProgressPercent}%");
-        ImGui.TextDisabled($"剩餘時間：{job.FormatTimeLeftDesc()}");
+        ImGui.TextDisabled("Cards owned: ??".Loc($"{job.NumOwnedCards:N0}"));
+        ImGui.TextDisabled("Possible decks: ??".Loc(job.NumPossibleDecksDesc));
+        ImGui.TextDisabled("Tested: ??".Loc(job.NumTestedDecksDesc));
+        ImGui.TextDisabled("Progress: ??%".Loc(job.ProgressPercent));
+        ImGui.TextDisabled("Time left: ??".Loc(job.FormatTimeLeftDesc()));
 
-        if (ImGui.Button("取消建構", new(-1, 0)))
+        if (ImGui.Button("Cancel build".Loc(), new(-1, 0)))
         {
             TriadRun.CancelDeckOptimizerJob(userCancelled: true);
         }
 
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("停止目前的背景卡組建構。");
+            ImGui.SetTooltip("Stops the current background deck build.".Loc());
         }
     }
 }
