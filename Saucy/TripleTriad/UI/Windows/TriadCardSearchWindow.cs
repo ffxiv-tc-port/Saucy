@@ -47,10 +47,10 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         this.uiReaderCardList = uiReaderCardList;
         this.statsWindow = statsWindow;
 
-        var searchFilterCardPtr = ImGuiNative.ImGuiTextFilter_ImGuiTextFilter(null);
+        var searchFilterCardPtr = ImGuiNative.ImGuiTextFilter(null);
         searchFilterCard = new(searchFilterCardPtr);
 
-        var searchFilterNpcPtr = ImGuiNative.ImGuiTextFilter_ImGuiTextFilter(null);
+        var searchFilterNpcPtr = ImGuiNative.ImGuiTextFilter(null);
         searchFilterNpc = new(searchFilterNpcPtr);
 
         uiReaderCardList.OnVisibilityChanged += _ => UpdateWindowData();

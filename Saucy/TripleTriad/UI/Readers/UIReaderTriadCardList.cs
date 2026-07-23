@@ -417,7 +417,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     public static nint LoadFailsafeAgent()
     {
-        var uiModule = (UIModule*)Svc.GameGui.GetUIModule();
+        var uiModule = (UIModule*)Svc.GameGui.GetUIModule().Address;
         if (uiModule != null)
         {
             var agentModule = uiModule->GetAgentModule();

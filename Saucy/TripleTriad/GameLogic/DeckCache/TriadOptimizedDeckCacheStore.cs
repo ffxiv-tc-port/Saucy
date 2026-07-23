@@ -16,7 +16,7 @@ internal static class TriadOptimizedDeckCacheStore
         get
         {
             var uiState = UIState.Instance();
-            return uiState != null && uiState->PlayerState.IsLoaded != 0;
+            return uiState != null && uiState->PlayerState.IsLoaded;
         }
     }
 

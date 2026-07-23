@@ -96,7 +96,7 @@ public static unsafe class SelectYesnoHelper
         yesno = null;
         for (var i = 1; i < 100; i++)
         {
-            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectYesno", i);
+            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectYesno", i).Address;
             if (addon == null)
             {
                 return false;

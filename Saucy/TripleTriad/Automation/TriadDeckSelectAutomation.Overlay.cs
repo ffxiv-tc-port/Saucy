@@ -91,7 +91,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
         var agentHandle = Svc.GameGui.FindAgentInterface((nint)addon);
         if (agentHandle != nint.Zero)
         {
-            var agent = (AgentInterface*)agentHandle;
+            var agent = (AgentInterface*)agentHandle.Address;
             agent->HideAddon();
             agent->Hide();
             addon->Update(0);

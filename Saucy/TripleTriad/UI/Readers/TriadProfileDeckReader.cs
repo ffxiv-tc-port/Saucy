@@ -18,7 +18,7 @@ public unsafe class TriadProfileDeckReader
 
         try
         {
-            var uiModule = (Svc.GameGui != null) ? (UIModule*)Svc.GameGui.GetUIModule() : null;
+            var uiModule = (Svc.GameGui != null) ? (UIModule*)Svc.GameGui.GetUIModule().Address : null;
             var gsModule = (uiModule != null) ? uiModule->GetGoldSaucerModule() : null;
 
             if (gsModule != null)
@@ -85,7 +85,7 @@ public unsafe class TriadProfileDeckReader
 
         try
         {
-            var uiModule = (Svc.GameGui != null) ? (UIModule*)Svc.GameGui.GetUIModule() : null;
+            var uiModule = (Svc.GameGui != null) ? (UIModule*)Svc.GameGui.GetUIModule().Address : null;
             var gsModule = (uiModule != null) ? uiModule->GetGoldSaucerModule() : null;
             if (gsModule == null)
             {
