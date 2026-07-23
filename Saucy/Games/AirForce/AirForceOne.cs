@@ -1,4 +1,4 @@
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using ECommons.ImGuiMethods;
 using Saucy.Framework;
 using static Saucy.Framework.ImGuiScopes;
