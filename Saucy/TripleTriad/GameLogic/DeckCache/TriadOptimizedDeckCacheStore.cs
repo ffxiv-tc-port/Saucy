@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 namespace Saucy.TripleTriad.GameLogic;
 
 internal static class TriadOptimizedDeckCacheStore
@@ -416,48 +417,68 @@ internal static class TriadOptimizedDeckCacheStore
         {
             activeContentId = contentId;
             loadedForCharacter = true;
+        }
 
+        // TickCharacter() calls this from the framework thread once per login/character switch.
+        // The rest of this class assumes single-threaded (framework-thread-only) access to
+        // activeFile and isn't otherwise lock-protected, so do the file I/O + JSON parsing on a
+        // background thread but publish the result back on the framework thread instead of
+        // touching activeFile directly here.
+        Task.Run(() =>
+        {
             var path = GetCachePath(contentId);
             if (!File.Exists(path))
             {
                 TryMigrateLegacyCache(contentId, path);
             }
 
+            TriadOptimizedDeckCacheFile loaded;
             if (!File.Exists(path))
             {
-                activeFile = new();
-                activeFile.RegionalRuleSignaturesByNpcId = new();
-                ImportLegacyBuildTimestampsLocked();
-                return;
+                loaded = new();
+                loaded.RegionalRuleSignaturesByNpcId = new();
             }
-
-            try
+            else
             {
-                var json = File.ReadAllText(path);
-                activeFile = JsonConvert.DeserializeObject<TriadOptimizedDeckCacheFile>(json) ??
-                             new TriadOptimizedDeckCacheFile();
-                if (activeFile.Version != SchemaVersion)
+                try
                 {
-                    if (activeFile.Version == 1)
+                    var json = File.ReadAllText(path);
+                    loaded = JsonConvert.DeserializeObject<TriadOptimizedDeckCacheFile>(json) ??
+                                 new TriadOptimizedDeckCacheFile();
+                    if (loaded.Version != SchemaVersion)
                     {
-                        activeFile.Version = SchemaVersion;
-                        activeFile.RegionalRuleSignaturesByNpcId ??= new();
+                        if (loaded.Version == 1)
+                        {
+                            loaded.Version = SchemaVersion;
+                            loaded.RegionalRuleSignaturesByNpcId ??= new();
+                        }
+                        else
+                        {
+                            loaded = new();
+                        }
                     }
-                    else
-                    {
-                        activeFile = new();
-                    }
-                }
 
-                activeFile.RegionalRuleSignaturesByNpcId ??= new();
-                ImportLegacyBuildTimestampsLocked();
+                    loaded.RegionalRuleSignaturesByNpcId ??= new();
+                }
+                catch (Exception ex)
+                {
+                    Svc.Log.Warning(ex, "[Saucy] Failed to load optimized deck cache; starting empty.");
+                    loaded = new();
+                }
             }
-            catch (Exception ex)
+
+            Svc.Framework.RunOnFrameworkThread(() =>
             {
-                Svc.Log.Warning(ex, "[Saucy] Failed to load optimized deck cache; starting empty.");
-                activeFile = new();
-            }
-        }
+                lock (FileLock)
+                {
+                    if (activeContentId != contentId)
+                        return; // character changed again before this finished; drop stale result
+
+                    activeFile = loaded;
+                    ImportLegacyBuildTimestampsLocked();
+                }
+            });
+        });
     }
 
     private static void ImportLegacyBuildTimestampsLocked()
