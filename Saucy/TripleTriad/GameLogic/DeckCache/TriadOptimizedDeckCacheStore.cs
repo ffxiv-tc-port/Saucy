@@ -50,6 +50,12 @@ internal static class TriadOptimizedDeckCacheStore
     private static TriadOptimizedDeckCacheFile? activeFile;
     private static bool loadedForCharacter;
 
+    // GetCharacterCacheViews() is called every frame the settings "Cache" tab is drawn; caching
+    // the result and only recomputing when the underlying data actually changed avoids rescanning
+    // the plugin-configs directory and re-parsing every character's JSON cache file every frame.
+    private static IReadOnlyList<TriadOptimizedDeckCacheCharacterView>? cachedCharacterViews;
+    private static bool characterViewsDirty = true;
+
     public static void TickCharacter()
     {
         if (!Svc.ClientState.IsLoggedIn)
@@ -214,6 +220,12 @@ internal static class TriadOptimizedDeckCacheStore
         lock (FileLock)
         {
             EnsureLoaded();
+
+            if (!characterViewsDirty && cachedCharacterViews != null)
+            {
+                return cachedCharacterViews;
+            }
+
             var currentContentId = GetLocalContentId();
             var views = new List<TriadOptimizedDeckCacheCharacterView>();
             var configsRoot = GetPluginConfigsRoot();
@@ -254,12 +266,27 @@ internal static class TriadOptimizedDeckCacheStore
                 views.Add(BuildCharacterView(currentContentId, activeFile, true));
             }
 
-            return
+            cachedCharacterViews =
             [
                 .. views
                     .OrderByDescending(v => v.IsCurrentCharacter)
                     .ThenBy(v => v.DisplayName, StringComparer.OrdinalIgnoreCase)
             ];
+            characterViewsDirty = false;
+            return cachedCharacterViews;
+        }
+    }
+
+    /// <summary>
+    /// Forces the next call to <see cref="GetCharacterCacheViews"/> to rescan disk instead of
+    /// returning the cached list. Called automatically whenever cache data actually changes;
+    /// exposed publicly so the settings UI can offer a manual refresh too.
+    /// </summary>
+    public static void InvalidateCharacterCacheViews()
+    {
+        lock (FileLock)
+        {
+            characterViewsDirty = true;
         }
     }
 
@@ -366,6 +393,7 @@ internal static class TriadOptimizedDeckCacheStore
 
             activeFile = new();
             loadedForCharacter = true;
+            characterViewsDirty = true;
 
             try
             {
@@ -475,6 +503,7 @@ internal static class TriadOptimizedDeckCacheStore
                         return; // character changed again before this finished; drop stale result
 
                     activeFile = loaded;
+                    characterViewsDirty = true;
                     ImportLegacyBuildTimestampsLocked();
                 }
             });
@@ -527,6 +556,7 @@ internal static class TriadOptimizedDeckCacheStore
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var json = JsonConvert.SerializeObject(activeFile, Formatting.Indented);
                 File.WriteAllText(path, json);
+                characterViewsDirty = true;
             }
             catch (Exception ex)
             {
@@ -540,6 +570,7 @@ internal static class TriadOptimizedDeckCacheStore
         loadedForCharacter = false;
         activeFile = null;
         activeContentId = 0;
+        characterViewsDirty = true;
     }
 
     private static string GetCachePath(ulong contentId)
