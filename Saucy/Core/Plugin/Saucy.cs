@@ -55,7 +55,7 @@ public sealed partial class Saucy : IDalamudPlugin
 
         Svc.Commands.AddHandler(commandName, new(OnCommand)
         {
-            HelpMessage = "Opens the Saucy menu. Use /saucy d for debug, /saucy stop to halt navigation and automation."
+            HelpMessage = "Opens the Saucy menu. Use /saucy d for debug, /saucy stop to halt navigation and automation.".Loc()
         });
 
         dataLoader = new();
