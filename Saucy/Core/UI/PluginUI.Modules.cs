@@ -156,6 +156,9 @@ public unsafe partial class PluginUI
         if (ImGui.SliderFloat("炸彈避讓半徑（像素）##AirForceBombRadius", ref bombRadius, 40f, 400f, "%.0f"))
         {
             C.GoldSaucerGates.AirForceBombAvoidRadius = bombRadius;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
             C.Save();
         }
         if (ImGui.IsItemHovered())
@@ -330,6 +333,9 @@ public unsafe partial class PluginUI
         if (ImGui.SliderFloat("炸彈波及範圍猜測（公尺）##CliffhangerBlastRadius", ref blastRadius, 1f, 15f, "%.1f"))
         {
             C.GoldSaucerGates.CliffhangerBombBlastRadiusGuess = blastRadius;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
             C.Save();
         }
         if (ImGui.IsItemHovered())
@@ -341,6 +347,9 @@ public unsafe partial class PluginUI
         if (ImGui.SliderFloat("炸彈標示顯示時間（秒）##CliffhangerBombDisplay", ref bombDisplaySeconds, 0.5f, 10f, "%.1f"))
         {
             C.GoldSaucerGates.CliffhangerBombDisplaySeconds = bombDisplaySeconds;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
             C.Save();
         }
         if (ImGui.IsItemHovered())

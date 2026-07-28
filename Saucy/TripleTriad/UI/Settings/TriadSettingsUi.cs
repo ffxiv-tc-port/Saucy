@@ -105,6 +105,10 @@ internal static class TriadSettingsUi
         if (ImGui.SliderInt("Optimizer threads (0 = all)".Loc(), ref threads, 0, maxCores, threads == 0 ? "All".Loc() : "%d"))
         {
             C.DeckOptimizerMaxThreads = Configuration.ClampDeckOptimizerMaxThreads(threads);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
             C.Save();
         }
 
@@ -129,6 +133,10 @@ internal static class TriadSettingsUi
         if (ImGui.SliderInt("Optimizer timeout (min)".Loc(), ref timeout, 1, 15, "%d min".Loc()))
         {
             C.DeckOptimizerTimeoutMinutes = Math.Clamp(timeout, 1, 15);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
             C.Save();
         }
 
