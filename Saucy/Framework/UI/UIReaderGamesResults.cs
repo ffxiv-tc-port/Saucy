@@ -1,7 +1,7 @@
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Saucy.AirForce;
+using Saucy.TripleTriad.Utils;
 using System;
-using System.Linq;
 namespace Saucy.Framework.UI;
 
 public class UIReaderGamesResults : IUIReader
@@ -82,7 +82,7 @@ public class UIReaderGamesResults : IUIReader
 
         if (AirForceAutomation.ShouldTrackReward)
         {
-            if (!int.TryParse(number->NodeText.ToString().Where(char.IsDigit).ToArray(), out airForceResults.numMGP))
+            if (!GoldSaucerRewardMgpParser.TryParseMgpDigits(GUINodeUtils.GetNodeText((AtkResNode*)number), out airForceResults.numMGP))
             {
                 airForceResults.numMGP = -1;
             }

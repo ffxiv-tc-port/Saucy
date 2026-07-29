@@ -6,6 +6,9 @@ namespace Saucy.TripleTriad.Utils;
 
 public class GUINodeUtils
 {
+    public static unsafe bool IsNodeVisible(AtkResNode* node) =>
+        node != null && node->IsVisible();
+
     public static unsafe AtkResNode* PickChildNode(AtkResNode* maybeCompNode, int childIdx, int expectedNumChildren)
     {
         if (maybeCompNode != null && (int)maybeCompNode->Type >= 1000)
