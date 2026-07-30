@@ -12,6 +12,7 @@ public sealed partial class Saucy
         {
             SubscriptionManager.Subscribe();
             GateNpcNavigation.TickManualInteract();
+            Framework.GoldSaucer.GoldSaucerNavigator.Tick();
             UpdateGateAutoOpen();
             GateScheduleAutomation.Tick();
             TriadOptimizedDeckCacheStore.TickCharacter();

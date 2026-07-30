@@ -30,6 +30,7 @@ public unsafe partial class PluginUI : Window
         "Cliffhanger",
         "Slice is Right",
         "GATE schedule",
+        "Navigation",
         "Triple Triad",
         "Mini Cactpot",
         "Stats",
@@ -183,6 +184,7 @@ public unsafe partial class PluginUI : Window
         DrawSidebarHeader("OTHER GAMES".Loc());
         NavSelectable("Triple Triad".Loc(), NavItem.TripleTriad);
         NavSelectable("Mini Cactpot".Loc(), NavItem.MiniCactpot);
+        NavSelectable("Navigation".Loc(), NavItem.Navigation);
 
         ImGui.Dummy(new(0, 6));
         ImGui.Separator();
@@ -232,6 +234,7 @@ public unsafe partial class PluginUI : Window
             case NavItem.SliceIsRight: DrawSliceIsRightPanel(); break;
             case NavItem.MiniCactpot: DrawMiniCactpotPanel(); break;
             case NavItem.GateSchedule: DrawGateSchedulePanel(); break;
+            case NavItem.Navigation: DrawNavigationPanel(); break;
             case NavItem.Stats: DrawStatsTab(); break;
             case NavItem.About: AboutTab.Draw("Saucy"); break;
             case NavItem.Debug: DrawDebugTab(); break;
@@ -823,6 +826,7 @@ public unsafe partial class PluginUI : Window
         SliceIsRight,
         MiniCactpot,
         GateSchedule,
+        Navigation,
         Stats,
         About,
         Debug
