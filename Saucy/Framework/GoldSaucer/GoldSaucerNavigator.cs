@@ -60,7 +60,7 @@ internal static class GoldSaucerNavigator
         // Resolve which physical counter to head for up front so a destination whose NPC the sheets
         // don't know about fails loudly here instead of starting a journey to Vector3.Zero.
         var origin = Player.Available ? Player.Position : Vector3.Zero;
-        if (!GoldSaucerVenue.TryGetNearestInstance(destination, origin, out var npcId, out var position))
+        if (!GoldSaucerVenue.TryGetNearestInstance(destination, origin, out var objectId, out var position))
         {
             Svc.Chat.PrintError("[Saucy] " + "Could not resolve a position for ??.".Loc(label));
             return;
@@ -69,7 +69,7 @@ internal static class GoldSaucerNavigator
         Begin(new Journey
         {
             Label = label,
-            NpcId = npcId,
+            ObjectId = objectId,
             Destination = destination,
             Target = position
         });
@@ -95,13 +95,13 @@ internal static class GoldSaucerNavigator
         // The recorded NpcName is whatever the player had targeted, i.e. already in their own
         // language — but prefer the sheet name when the DataId resolves, so a spot recorded on a
         // different client still reads correctly.
-        var label = (spot.DataId != 0 ? GoldSaucerVenue.TryGetNpcName(spot.DataId) : null)
+        var label = (spot.DataId != 0 ? GoldSaucerVenue.TryGetObjectName(spot.DataId) : null)
                     ?? (string.IsNullOrWhiteSpace(spot.NpcName) ? "the recorded spot".Loc() : spot.NpcName);
 
         Begin(new Journey
         {
             Label = label,
-            NpcId = spot.DataId,
+            ObjectId = spot.DataId,
             Target = new Vector3(spot.X, spot.Y, spot.Z)
         });
     }
@@ -556,9 +556,9 @@ internal static class GoldSaucerNavigator
         if (active.Destination != null)
         {
             if (GoldSaucerVenue.TryGetNearestInstance(
-                    active.Destination, Player.Position, out var npcId, out var position))
+                    active.Destination, Player.Position, out var objectId, out var position))
             {
-                active.NpcId = npcId;
+                active.ObjectId = objectId;
                 active.Target = position;
             }
 
@@ -568,12 +568,12 @@ internal static class GoldSaucerNavigator
         // Recorded-spot journey: the stored coordinate is only a starting hint. Once the NPC is
         // actually loaded, walk to where it really is — GATE registration NPCs are respawned per
         // GATE and do not always reappear on the exact yalm they were recorded at.
-        if (active.NpcId == 0)
+        if (active.ObjectId == 0)
         {
             return;
         }
 
-        var live = ObjectHelper.FindNearestByBaseId(active.NpcId);
+        var live = ObjectHelper.FindNearestByBaseId(active.ObjectId);
         if (live != null)
         {
             active.Target = live.Position;
@@ -584,12 +584,12 @@ internal static class GoldSaucerNavigator
     /// Deliberately does NOT interact — registering for an activity stays a manual choice.</summary>
     private static void TargetOnArrival(Journey active)
     {
-        if (active.NpcId == 0)
+        if (active.ObjectId == 0)
         {
             return;
         }
 
-        var npc = ObjectHelper.FindNearestByBaseId(active.NpcId, ArriveRange + 4f);
+        var npc = ObjectHelper.FindNearestByBaseId(active.ObjectId, ArriveRange + 4f);
         if (npc != null)
         {
             Svc.Targets.Target = npc;
@@ -680,7 +680,7 @@ internal static class GoldSaucerNavigator
         public string? ForcedAethernetName;
         public required string Label;
         public int MoveRetries;
-        public uint NpcId;
+        public uint ObjectId;
         public Phase Phase;
         public DateTime PhaseStartedUtc;
         public DateTime StartedUtc;

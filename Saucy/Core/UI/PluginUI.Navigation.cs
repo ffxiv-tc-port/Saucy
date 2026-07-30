@@ -88,9 +88,9 @@ public unsafe partial class PluginUI
 
     private static string? ResolveDestinationNpcName(GoldSaucerDestination destination)
     {
-        foreach (var npcId in destination.NpcIds)
+        foreach (var objectId in destination.ObjectIds)
         {
-            var name = GoldSaucerVenue.TryGetNpcName(npcId);
+            var name = GoldSaucerVenue.TryGetObjectName(objectId);
             if (name != null)
             {
                 return name;
