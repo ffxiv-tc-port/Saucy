@@ -106,28 +106,55 @@ internal static class GoldSaucerVenue
                 return npcPositions;
             }
 
-            var map = new Dictionary<uint, Vector3>();
-            var sheet = Svc.Data.GetExcelSheet<LuminaLevel>();
-            if (sheet != null)
-            {
-                foreach (var row in sheet)
-                {
-                    if (row.Territory.RowId != TerritoryId || row.Type != LevelTypeENpc)
-                    {
-                        continue;
-                    }
+            var map = Scan(requireENpcType: true);
 
-                    var objectId = row.Object.RowId;
-                    if (objectId != 0)
-                    {
-                        map.TryAdd(objectId, new Vector3(row.X, row.Y, row.Z));
-                    }
-                }
+            // Belt and braces: the Type == 8 filter is the only part of this that could not be
+            // verified offline (the CSV dump and Lumina share a schema, so the column *should* line
+            // up). If it ever stops matching, an unfiltered scan still yields the right coordinates
+            // for the ids we actually look up, which all have exactly one Level row in this
+            // territory. Better a slightly looser scan than a silently empty map.
+            if (map.Count == 0)
+            {
+                Svc.Log.Warning(
+                    "No Gold Saucer ENpc Level rows matched Type == {0}; retrying without the type filter.",
+                    LevelTypeENpc);
+                map = Scan(requireENpcType: false);
             }
 
             npcPositions = map;
             return map;
         }
+    }
+
+    private static Dictionary<uint, Vector3> Scan(bool requireENpcType)
+    {
+        var map = new Dictionary<uint, Vector3>();
+        var sheet = Svc.Data.GetExcelSheet<LuminaLevel>();
+        if (sheet == null)
+        {
+            return map;
+        }
+
+        foreach (var row in sheet)
+        {
+            if (row.Territory.RowId != TerritoryId)
+            {
+                continue;
+            }
+
+            if (requireENpcType && row.Type != LevelTypeENpc)
+            {
+                continue;
+            }
+
+            var objectId = row.Object.RowId;
+            if (objectId != 0)
+            {
+                map.TryAdd(objectId, new Vector3(row.X, row.Y, row.Z));
+            }
+        }
+
+        return map;
     }
 
     /// <summary>The Saucer's own aethernet: the hub crystal plus its shards, sorted so the hub comes
