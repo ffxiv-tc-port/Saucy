@@ -140,6 +140,12 @@ public static unsafe class SelectYesnoHelper
         return !string.IsNullOrWhiteSpace(prompt) && PromptContainsAny(prompt, BlockedSystemPromptMarkers);
     }
 
+    /// <summary>購票長按鈕版面（Yes=11、No=12 HoldButton）——彩券「花費 MGP 購買」類確認框
+    /// 專用的版面；一般是/否框（8/11）不會有可見的節點 12。用來把「購買下一張彩券」跟同樣
+    /// 掛在彩券 agent 底下的一般確認框（例如中止遊玩）區分開。</summary>
+    public static bool IsTicketPurchaseLayout(AddonSelectYesno* yesno) =>
+        yesno != null && IsComponentNodeVisible(yesno, TicketPurchaseNoButtonNodeId);
+
     public static bool IsArcadeYesno(AddonSelectYesno* yesno) =>
         yesno != null && IsArcadeAddon(&yesno->AtkUnitBase) && HasYesnoButtons(yesno);
 

@@ -66,6 +66,10 @@ public class Configuration : IPluginConfiguration
 
     public bool PauseForAutoRetainer { get; set; }
 
+    /// <summary>仙人微彩：一張完成關窗後自動確認「購買下一張」，把當日彩券一次完成。
+    /// 只在 MiniCactpot 模組啟用時生效。</summary>
+    public bool MiniCactpotAutoPlayAgain { get; set; } = true;
+
     public int Version { get; set; }
 
     public void MigrateToBackgroundCpuCores()

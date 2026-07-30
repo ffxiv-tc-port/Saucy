@@ -501,6 +501,42 @@ public unsafe partial class PluginUI
         }
     }
 
+    private static void DrawMiniCactpotPanel()
+    {
+        DrawPanelHeader("Mini Cactpot".Loc(), "Daily scratch lottery".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.MiniCactpot);
+        if (ImGui.Checkbox("啟用##MiniCactpot", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.MiniCactpot, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後，開啟仙人微彩（每日刮刮樂）面板時會自動依期望值翻格、選線並領獎。" +
+                          "未啟用時不註冊任何監聽，手動遊玩不會被搶操作。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var playAgain = C.MiniCactpotAutoPlayAgain;
+            if (ImGui.Checkbox("自動購買下一張（一次完成當日全部彩券）##MiniCactpotPlayAgain", ref playAgain))
+            {
+                C.MiniCactpotAutoPlayAgain = playAgain;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("一張完成關窗後，自動在「要購買下一張彩票嗎」按確認。" +
+                                 "只會按仙人微彩自己的購票確認框（長按式按鈕版面），其他對話框一律不碰。");
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("第一張彩券的購買確認（花費 10 MGP）永遠由你自己按下——模組只接手面板開啟後的流程。");
+
+        var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.MiniCactpot.MiniCactpotModule>();
+        SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
+    }
+
     private static BannerInfo BuildBannerInfo()
     {
         var im = InventoryManager.Instance();
@@ -526,6 +562,10 @@ public unsafe partial class PluginUI
         else if (C.IsModuleEnabled(ModuleNames.Cliffhanger))
         {
             status = "Cliffhanger";
+        }
+        else if (C.IsModuleEnabled(ModuleNames.MiniCactpot))
+        {
+            status = "Mini Cactpot";
         }
         else
         {

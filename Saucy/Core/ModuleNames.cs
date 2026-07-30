@@ -7,4 +7,5 @@ public static class ModuleNames
     public const string LeapOfFaith = "LeapOfFaith";
     public const string Cliffhanger = "Cliffhanger";
     public const string SliceIsRight = "SliceIsRight";
+    public const string MiniCactpot = "MiniCactpotModule";
 }
