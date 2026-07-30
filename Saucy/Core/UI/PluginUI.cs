@@ -639,11 +639,7 @@ public unsafe partial class PluginUI : Window
         {
             var spot = cliffhangerSpots[i];
             ImGui.TextUnformatted($"{spot.NpcName}（{spot.X:F1}, {spot.Y:F1}, {spot.Z:F1}）");
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"立即移動##CliffhangerNpcMove{i}"))
-            {
-                GateNpcNavigation.TryMoveNow(spot);
-            }
+            DrawRecordedSpotNavigationRow(spot, $"CliffhangerNpc{i}");
             ImGui.SameLine();
             if (ImGui.SmallButton($"立即互動##CliffhangerNpcInteract{i}"))
             {

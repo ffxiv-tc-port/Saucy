@@ -116,15 +116,16 @@ public unsafe partial class PluginUI
             C.Save();
         }
         ImGui.SameLine();
-        if (ImGui.Button($"立即移動##{idSuffix}"))
-        {
-            GateNpcNavigation.TryMoveNow(spot);
-        }
-        ImGui.SameLine();
         if (ImGui.Button($"立即互動##{idSuffix}"))
         {
             GateNpcNavigation.TryInteractNow(spot);
         }
+
+        // Replaces the old "立即移動" button, which called Vnavmesh.TryMoveTo once and threw the
+        // result away — so it silently did nothing whenever vnavmesh was missing or the navmesh was
+        // still building, and never reported arrival. The navigator waits for the mesh, reports
+        // success/failure, and can be stopped from the Navigation panel.
+        DrawRecordedSpotNavigationRow(spot, idSuffix);
     }
 
     private static void DrawAirForcePanel()
