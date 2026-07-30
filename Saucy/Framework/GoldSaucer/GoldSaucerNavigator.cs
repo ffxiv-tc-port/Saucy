@@ -3,6 +3,7 @@ using Dalamud.Game.ClientState.Keys;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using ECommons.GameHelpers;
 using ECommons.LanguageHelpers;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using Lumina.Excel.Sheets;
 using Saucy.IPC;
 using Saucy.TripleTriad;
@@ -401,6 +402,14 @@ internal static class GoldSaucerNavigator
 
     private static bool IsManualMovementRequested()
     {
+        // Typing "was" into the chat box must not read as "the player grabbed the controls".
+        // Svc.KeyState reflects raw key state, which the game keeps updating while a text field has
+        // focus, so without this guard any chat message containing W/A/S/D would cancel the trip.
+        if (IsTextInputActive())
+        {
+            return false;
+        }
+
         foreach (var key in MovementKeys)
         {
             if (Svc.KeyState[key])
@@ -410,6 +419,12 @@ internal static class GoldSaucerNavigator
         }
 
         return false;
+    }
+
+    private static unsafe bool IsTextInputActive()
+    {
+        var module = RaptureAtkModule.Instance();
+        return module != null && module->AtkModule.IsTextInputActive();
     }
 
     private static readonly VirtualKey[] MovementKeys =
