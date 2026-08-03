@@ -8,4 +8,5 @@ public static class ModuleNames
     public const string Cliffhanger = "Cliffhanger";
     public const string SliceIsRight = "SliceIsRight";
     public const string MiniCactpot = "MiniCactpotModule";
+    public const string OutOnALimb = "OutOnALimbModule";
 }

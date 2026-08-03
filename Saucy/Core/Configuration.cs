@@ -70,6 +70,9 @@ public class Configuration : IPluginConfiguration
     /// 只在 MiniCactpot 模組啟用時生效。</summary>
     public bool MiniCactpotAutoPlayAgain { get; set; } = true;
 
+    /// <summary>孤樹無援（陸行鳥廣場伐木機台）自動遊玩設定。只在 OutOnALimb 模組啟用時生效。</summary>
+    public OutOnALimb.LimbSettings OutOnALimb { get; set; } = new();
+
     public int Version { get; set; }
 
     public void MigrateToBackgroundCpuCores()

@@ -538,6 +538,110 @@ public unsafe partial class PluginUI
         SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
     }
 
+    private static void DrawOutOnALimbPanel()
+    {
+        DrawPanelHeader("Out on a Limb".Loc(), "Chocobo Square logging machine".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.OutOnALimb);
+        if (ImGui.Checkbox("啟用##OutOnALimb", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.OutOnALimb, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後，孤樹無援的機台畫面開著時會自動幫你停力量表、並依系統訊息回報的「手感」" +
+                          "推算最佳砍伐位置後揮斧。模組不會自己去找機台、不會自己互動、也不會自己開始新的一局——" +
+                          "走過去按下開始的永遠是你。");
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("這是伺服器看得見的行為模式：自動出手沒有人類的反應延遲，連續遊玩時尤其明顯。" +
+                             "模組只讀取畫面上本來就顯示給你看的資料（機台面板欄位、指針角度、聊天欄的手感訊息），" +
+                             "不讀寫遊戲封包、不修改遊戲記憶體，出手方式就是按下畫面上原本就有的按鈕。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+
+            var difficulty = C.OutOnALimb.Difficulty;
+            ImGui.SetNextItemWidth(140f);
+            if (ImGuiEx.EnumCombo("力量表目標##LimbDifficulty", ref difficulty))
+            {
+                C.OutOnALimb.Difficulty = difficulty;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("第一階段力量表要停在哪一格。泰坦最快（獎勵最高）也最難停中，仙人掌怪最慢最好停。");
+            }
+
+            var tolerance = C.OutOnALimb.Tolerance;
+            ImGui.SetNextItemWidth(140f);
+            if (ImGui.SliderInt("容許誤差##LimbTolerance", ref tolerance, 1, 4))
+            {
+                C.OutOnALimb.Tolerance = Math.Clamp(tolerance, 1, 4);
+                C.Save();
+            }
+
+            var requiredFps = RequiredFramerate(C.OutOnALimb.Difficulty, C.OutOnALimb.Tolerance);
+            var currentFps = (int)ImGui.GetIO().Framerate;
+            SaucyTheme.TextMuted($"建議畫面更新率：{requiredFps} FPS（你目前 {currentFps} FPS）。" +
+                                 "模組是每幀去看指針轉到哪裡，更新率不夠就會按不準；把容許誤差放寬或降低難度可以降低需求。");
+
+            var autoPowerMeter = C.OutOnALimb.AutoPowerMeter;
+            if (ImGui.Checkbox("自動停力量表##LimbAutoPowerMeter", ref autoPowerMeter))
+            {
+                C.OutOnALimb.AutoPowerMeter = autoPowerMeter;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("力量表畫面是孤樹無援與礦脈探索共用的，所以只有在附近確實認得出" +
+                                 "孤樹無援機台時才會幫你停——認不出來就完全不碰，由你自己停表，砍伐階段照樣會接手。");
+            }
+
+            var autoContinue = C.OutOnALimb.AutoContinue;
+            if (ImGui.Checkbox("自動接受「挑戰翻倍」##LimbAutoContinue", ref autoContinue))
+            {
+                C.OutOnALimb.AutoContinue = autoContinue;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("預設關閉：砍完一棵樹後的續戰確認框交給你自己按。" +
+                                 "開啟後，只有在剩餘時間足夠時才會接受；讀不到剩餘時間一律按「否」收工。");
+            }
+
+            if (autoContinue)
+            {
+                var stopAt = C.OutOnALimb.StopAtSecondsRemaining;
+                ImGui.SetNextItemWidth(140f);
+                if (ImGui.DragInt("剩餘秒數低於此值就收工##LimbStopAt", ref stopAt, 0.5f, 0, 60))
+                {
+                    C.OutOnALimb.StopAtSecondsRemaining = Math.Clamp(stopAt, 0, 60);
+                    C.Save();
+                }
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        var limbModule = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.OutOnALimb.OutOnALimbModule>();
+        SaucyTheme.TextMuted($"狀態：{(limbModule == null ? "模組未載入" : enabled ? limbModule.LastAction : "未啟用")}");
+    }
+
+    /// <summary>指針掃過目標所需的取樣率——容許誤差越窄、難度越高，指針停留在窗口內的時間越短。
+    /// 數值沿用上游 Saucy 的實測表。</summary>
+    private static int RequiredFramerate(global::Saucy.OutOnALimb.LimbDifficulty difficulty, int tolerance)
+    {
+        int[] table = difficulty switch
+        {
+            global::Saucy.OutOnALimb.LimbDifficulty.Titan => [480, 240, 120, 90, 60],
+            global::Saucy.OutOnALimb.LimbDifficulty.Morbol => [240, 120, 90, 60, 30],
+            var _ => [120, 90, 60, 30, 15]
+        };
+
+        var index = Math.Clamp(tolerance, 0, table.Length - 1);
+        return table[index];
+    }
+
     private static BannerInfo BuildBannerInfo()
     {
         var im = InventoryManager.Instance();
