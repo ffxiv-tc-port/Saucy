@@ -6,6 +6,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Saucy.Framework;
 using System;
+using System.Threading.Tasks;
 using static ECommons.GenericHelpers;
 using AgentId = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId;
 
@@ -28,11 +29,13 @@ public unsafe class MiniCactpotModule : Module
     private const string AddonName = "LotteryDaily"; // addon 內部名，跨語言用戶端一致（非在地化字串）
 
     private const string ClickThrottleKey = "Saucy.MiniCactpot.Click";
-    private const int ClickThrottleMs = 800;
 
-    /// <summary>全部翻開後先讓開獎動畫/派彩數字跑一下再關窗（DR 是立刻關；這裡放緩，
-    /// 玩家至少看得到中了多少）。</summary>
-    private const int CloseDelayMs = 1600;
+    /// <summary>面板消失超過這麼久就當成「重新進場」，下一張彩券恢復完整暖機。</summary>
+    private const int VisitResetMs = 10000;
+
+    /// <summary>選線確認送出後，隔多久沒有進展才允許重送一次。正常情況下一張彩券只會送出
+    /// 一次 <c>Callback(2, lane)</c>；這個窗口只是為了在確認真的被吃掉時不要永久卡住。</summary>
+    private const int LaneReconfirmMs = 5000;
 
     private const uint CellNodeIdFirst = 30;
     private const uint CellNodeIdLast = 38;
@@ -41,10 +44,31 @@ public unsafe class MiniCactpotModule : Module
 
     private readonly MiniCactpotSolver solver = new();
 
+    /// <summary>保護底下所有背景求解狀態。</summary>
+    private readonly object solveLock = new();
+
     private DateTime? boardReadyUtc;
     private DateTime? closeArmedUtc;
+    private DateTime? addonGoneSinceUtc;
     private int pendingCell = -1;
     private int pendingCellRevealedCount = -1;
+    private int confirmedLane = -1;
+    private DateTime? confirmedLaneUtc;
+    private bool boardLayoutSeen;
+
+    private bool solveInFlight;
+    private bool hasSolvedCell;
+    private ulong solvedBoardKey;
+    private int solvedCell = -1;
+
+    /// <summary>點擊間隔。做成設定，但夾在下限之上——理由見 Configuration 上的說明。</summary>
+    private static int ClickThrottleMs => Math.Clamp(
+        C.MiniCactpotClickIntervalMs,
+        Configuration.MiniCactpotMinClickIntervalMs,
+        Configuration.MiniCactpotMaxClickIntervalMs);
+
+    /// <summary>全部翻開後先讓開獎動畫/派彩數字跑一下再關窗，玩家至少看得到中了多少。</summary>
+    private static int CloseDelayMs => Math.Clamp(C.MiniCactpotCloseDelayMs, 0, Configuration.MiniCactpotMaxCloseDelayMs);
 
     public override string Name => "Mini Cactpot";
 
@@ -64,6 +88,8 @@ public unsafe class MiniCactpotModule : Module
         Svc.AddonLifecycle.UnregisterListener(OnAddonEvent);
         TaskManager.Abort();
         ResetTicketState();
+        boardLayoutSeen = false;
+        addonGoneSinceUtc = null;
         LastAction = "等待開啟仙人微彩面板";
     }
 
@@ -96,11 +122,25 @@ public unsafe class MiniCactpotModule : Module
         if (addon == null)
         {
             MinigameInputPacing.Reset(ref boardReadyUtc);
+            addonGoneSinceUtc ??= DateTime.UtcNow;
+            if (boardLayoutSeen &&
+                (DateTime.UtcNow - addonGoneSinceUtc.Value).TotalMilliseconds >= VisitResetMs)
+            {
+                // 離開夠久＝下次是重新進場，恢復完整暖機。
+                boardLayoutSeen = false;
+            }
+
             return;
         }
 
-        // 開面板後先暖機一小段（同其他小遊戲模組的節奏），不跟面板初始化搶時序。
-        if (!MinigameInputPacing.TryMarkWarmup(ref boardReadyUtc))
+        addonGoneSinceUtc = null;
+
+        // 開面板後先暖機一小段，不跟面板初始化搶時序。但「自動購買下一張」會在同一次進場
+        // 連開好幾次面板，版面早就建好了——第二張之後只留短緩衝，省下純粹的等待。
+        var warmupMs = boardLayoutSeen
+            ? MinigameInputPacing.RepeatBoardWarmupMs
+            : MinigameInputPacing.BoardWarmupMs;
+        if (!MinigameInputPacing.TryMarkWarmup(ref boardReadyUtc, warmupMs))
         {
             return;
         }
@@ -147,13 +187,10 @@ public unsafe class MiniCactpotModule : Module
             // 絕不在回應揭曉前改點別格。
             cell = pendingCell;
         }
-        else
+        else if (!TryGetSuggestedCell(board, out cell))
         {
-            cell = solver.SuggestCell(board);
-            if (cell < 0)
-            {
-                return;
-            }
+            // 求解還沒回來。求解跑在背景執行緒，這一幀就什麼都不做。
+            return;
         }
 
         if (!EzThrottler.Throttle(ClickThrottleKey, ClickThrottleMs))
@@ -166,18 +203,108 @@ public unsafe class MiniCactpotModule : Module
             pendingCell = cell;
             pendingCellRevealedCount = revealed;
             LastAction = $"翻開第 {cell + 1} 格（已翻 {revealed}/{MiniCactpotSolver.RevealTarget}）";
-            LogDebug($"Reveal cell {cell} (revealed {revealed})");
+            Log($"Reveal cell {cell} (revealed {revealed})");
         }
+    }
+
+    /// <summary>取得建議翻開的格子；沒有現成答案就開一次背景求解並回 false。
+    /// <para>🔴 原本的寫法是在 <c>EzThrottler.Throttle</c> **之前**直接呼叫
+    /// <c>solver.SuggestCell(board)</c>。首步求解實測約 30 ms 而且跑在 framework 執行緒上，
+    /// 又因為只有點擊成功才會設 <c>pendingCell</c>，只要點擊一直沒成功、或是正處在兩次點擊之間的
+    /// 節流窗內，就會**每一幀都重算一次** —— 800 ms 的節流窗等於連續數十幀各掉一次影格。</para>
+    /// <para>🔑 結果的版本號用**盤面本身**（9 格各 4 bit 編碼成 ulong），不是已翻開的格數：
+    /// 同一次進場會連續玩好幾張彩券，而每張新彩券都從「翻開 1 格」重新開始，
+    /// 光用格數當版本號會把上一張彩券的答案誤認成這一張的。盤面編碼是精確身分，
+    /// 背景結果回來時只要盤面已經變了就對不上，自動被忽略。</para>
+    /// <para>⚠️ 執行緒安全：同一時間只允許一個背景求解（<c>solveInFlight</c> 閘門），所以
+    /// <c>SuggestCell</c> 內部的記憶化字典不會被並行存取。選線階段的 <c>SuggestLane</c> 仍在
+    /// framework 執行緒上同步呼叫，兩者可能同時發生——目前安全，因為 <c>SuggestLane</c> 完全
+    /// 不碰那個字典（只用 static 的賠付表與線表）。**若日後要為 SuggestLane 加記憶化，
+    /// 必須連同這裡的執行緒模型一起改。**</para></summary>
+    private bool TryGetSuggestedCell(ReadOnlySpan<int> board, out int cell)
+    {
+        cell = -1;
+        var key = EncodeBoard(board);
+
+        lock (solveLock)
+        {
+            if (hasSolvedCell && solvedBoardKey == key)
+            {
+                cell = solvedCell;
+                return cell >= 0;
+            }
+
+            if (solveInFlight)
+            {
+                // 已經有一個求解在跑。就算它算的是別的盤面也不必取消——求解沒有副作用，
+                // 結果回來時會因為 key 對不上而被忽略，下一幀再開新的。
+                return false;
+            }
+
+            solveInFlight = true;
+        }
+
+        // Span 不能被 lambda 捕獲，先複製一份再送進背景執行緒。
+        var snapshot = board.ToArray();
+        _ = Task.Run(() => RunSolve(key, snapshot));
+        return false;
+    }
+
+    private void RunSolve(ulong key, int[] snapshot)
+    {
+        var result = -1;
+        try
+        {
+            result = solver.SuggestCell(snapshot);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, "[MiniCactpot] Background cell solve failed");
+        }
+        finally
+        {
+            lock (solveLock)
+            {
+                // 一律照 key 記錄。盤面若在求解期間變了，這筆結果就永遠對不上、等同被丟棄。
+                solvedBoardKey = key;
+                solvedCell = result;
+                hasSolvedCell = true;
+                solveInFlight = false;
+            }
+        }
+    }
+
+    /// <summary>把盤面編成 ulong 當版本號（每格 0..9 佔 4 bit）。</summary>
+    private static ulong EncodeBoard(ReadOnlySpan<int> board)
+    {
+        var key = 0ul;
+        for (var i = 0; i < MiniCactpotSolver.TotalCells; i++)
+        {
+            key |= (ulong)(uint)board[i] << (i * 4);
+        }
+
+        return key;
     }
 
     private void TickLaneStage(AddonLotteryDaily* addon, ReadOnlySpan<int> board)
     {
+        // 🔴 已確認就不再重送。原本沒有這道閂：只要盤面停在「翻開 4 格」——伺服器還沒回應、
+        // 或玩家自己把面板放著不動——每 800 ms 就會再送一次 Callback(2, lane)。
+        // 這個窗口只是為了在確認真的被吃掉時能救回來，正常一張彩券只會送出一次。
+        if (confirmedLane >= 0 &&
+            confirmedLaneUtc != null &&
+            (DateTime.UtcNow - confirmedLaneUtc.Value).TotalMilliseconds < LaneReconfirmMs)
+        {
+            return;
+        }
+
         if (!EzThrottler.Throttle(ClickThrottleKey, ClickThrottleMs))
         {
             return;
         }
 
-        var lane = solver.SuggestLane(board);
+        // 重送時沿用同一條線，絕不改變已經送出去的選擇（同 pendingCell 的原則）。
+        var lane = confirmedLane >= 0 ? confirmedLane : solver.SuggestLane(board);
         if (lane < 0)
         {
             return;
@@ -185,8 +312,11 @@ public unsafe class MiniCactpotModule : Module
 
         if (TryClickLane(addon, lane))
         {
+            var resend = confirmedLane >= 0;
+            confirmedLane = lane;
+            confirmedLaneUtc = DateTime.UtcNow;
             LastAction = $"選線並確認（UI 線 {lane}）";
-            LogDebug($"Confirm lane {lane}");
+            Log($"Confirm lane {lane}{(resend ? " (re-send)" : string.Empty)}");
         }
     }
 
@@ -203,6 +333,8 @@ public unsafe class MiniCactpotModule : Module
             return;
         }
 
+        // 這次進場已經完整跑過一張彩券＝版面確定建好了，下一張只需要短暖機。
+        boardLayoutSeen = true;
         LastAction = "領獎並關閉面板";
         Callback.Fire(&addon->AtkUnitBase, true, -1);
         addon->AtkUnitBase.Close(true);
@@ -299,6 +431,16 @@ public unsafe class MiniCactpotModule : Module
         closeArmedUtc = null;
         pendingCell = -1;
         pendingCellRevealedCount = -1;
+        confirmedLane = -1;
+        confirmedLaneUtc = null;
+
+        lock (solveLock)
+        {
+            // 進行中的求解不取消（沒有副作用）——它的結果會因為盤面 key 對不上而被忽略。
+            hasSolvedCell = false;
+            solvedCell = -1;
+            solvedBoardKey = 0;
+        }
     }
 
     private static AddonLotteryDaily* GetLotteryDailyAddon()

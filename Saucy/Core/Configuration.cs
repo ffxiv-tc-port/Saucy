@@ -70,6 +70,18 @@ public class Configuration : IPluginConfiguration
     /// 只在 MiniCactpot 模組啟用時生效。</summary>
     public bool MiniCactpotAutoPlayAgain { get; set; } = true;
 
+    /// <summary>仙人微彩：兩次點擊之間的最短間隔（毫秒）。
+    /// 🔴 金蝶遊樂園的自動化是伺服器看得見的行為，「看起來像人在操作」本身就有價值。
+    /// 下限刻意留在 <see cref="MiniCactpotMinClickIntervalMs"/>，明顯慢於同類外掛的 100 ms —— 不要為了快把節奏壓到極限。</summary>
+    public int MiniCactpotClickIntervalMs { get; set; } = 800;
+
+    /// <summary>仙人微彩：全部翻開後，等開獎動畫與派彩數字跑完再關窗的時間（毫秒）。</summary>
+    public int MiniCactpotCloseDelayMs { get; set; } = 1600;
+
+    public const int MiniCactpotMinClickIntervalMs = 400;
+    public const int MiniCactpotMaxClickIntervalMs = 5000;
+    public const int MiniCactpotMaxCloseDelayMs = 10000;
+
     /// <summary>孤樹無援（陸行鳥廣場伐木機台）自動遊玩設定。只在 OutOnALimb 模組啟用時生效。</summary>
     public OutOnALimb.LimbSettings OutOnALimb { get; set; } = new();
 

@@ -529,6 +529,37 @@ public unsafe partial class PluginUI
                 ImGui.SetTooltip("一張完成關窗後，自動在「要購買下一張彩票嗎」按確認。" +
                                  "只會按仙人微彩自己的購票確認框（長按式按鈕版面），其他對話框一律不碰。");
             }
+
+            ImGui.Dummy(new(0, 4));
+
+            var clickInterval = C.MiniCactpotClickIntervalMs;
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.SliderInt("點擊間隔（毫秒）##MiniCactpotClickInterval", ref clickInterval,
+                    Configuration.MiniCactpotMinClickIntervalMs, Configuration.MiniCactpotMaxClickIntervalMs))
+            {
+                C.MiniCactpotClickIntervalMs = clickInterval;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("每次翻格／選線之間至少間隔這麼久。\n" +
+                                 "下限刻意設在 400 毫秒：金蝶遊樂園的自動操作是伺服器看得見的行為，" +
+                                 "「看起來像人在操作」本身就有價值，不建議為了快而壓到極限。");
+            }
+
+            var closeDelay = C.MiniCactpotCloseDelayMs;
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.SliderInt("開獎後關窗延遲（毫秒）##MiniCactpotCloseDelay", ref closeDelay,
+                    0, Configuration.MiniCactpotMaxCloseDelayMs))
+            {
+                C.MiniCactpotCloseDelayMs = closeDelay;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("全部翻開後等這麼久再領獎關窗，讓開獎動畫與派彩數字跑完——" +
+                                 "設成 0 就會立刻關掉，你會看不到中了多少。");
+            }
         }
 
         ImGui.Dummy(new(0, 4));
