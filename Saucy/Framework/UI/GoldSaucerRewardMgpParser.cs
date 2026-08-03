@@ -105,7 +105,10 @@ internal static unsafe class GoldSaucerRewardMgpParser
             return;
         }
 
-        if (text.Contains("mgp", StringComparison.OrdinalIgnoreCase) &&
+        // 台服的 MGP 官方譯名是「金碟幣」（Addon 9506/9513/9519/9522「金碟幣持有數/上限」、
+        // 9525「0 金碟幣」）；沒有這一條時台服只能退回「抓最大的數字」的模糊解析。
+        if ((text.Contains("mgp", StringComparison.OrdinalIgnoreCase) ||
+             text.Contains("金碟幣", StringComparison.Ordinal)) &&
             TryParseMgpDigits(text, out var labeled) &&
             labeled > 0)
         {
