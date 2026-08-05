@@ -28,14 +28,22 @@ internal static class LimbMachine
     private static HashSet<string>? machineNames;
 
     /// <summary>附近是否有一台孤樹無援機台。取不到名稱資料時回 false（寧可不動作）。</summary>
-    internal static bool IsNearLimbMachine()
+    internal static bool IsNearLimbMachine() => TryFindNearbyMachine(out _);
+
+    /// <summary>找出附近那台孤樹無援機台。
+    ///
+    /// 🔴 回傳的 <see cref="IGameObject"/> **只在當幀有效**：它的 <c>Address</c> 是建構當下凍結的，
+    /// 呼叫端一律當幀用完就丟，絕不可以存起來跨幀再用。</summary>
+    internal static bool TryFindNearbyMachine(out IGameObject? machine)
     {
+        machine = null;
         var names = machineNames ??= BuildMachineNames();
         if (names.Count == 0)
         {
             return false;
         }
 
+        var bestDistance = float.MaxValue;
         foreach (var obj in Svc.Objects)
         {
             if (!IsCandidateKind(obj))
@@ -49,13 +57,15 @@ internal static class LimbMachine
                 continue;
             }
 
-            if (ObjectHelper.GetHorizontalEdgeDistance(obj) <= MaxDistance)
+            var distance = ObjectHelper.GetHorizontalEdgeDistance(obj);
+            if (distance <= MaxDistance && distance < bestDistance)
             {
-                return true;
+                bestDistance = distance;
+                machine = obj;
             }
         }
 
-        return false;
+        return machine != null;
     }
 
     private static bool IsCandidateKind(IGameObject obj) =>

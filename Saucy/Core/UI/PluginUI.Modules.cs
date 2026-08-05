@@ -579,13 +579,13 @@ public unsafe partial class PluginUI
             C.Save();
         }
 
-        ImGui.TextWrapped("啟用後，孤樹無援的機台畫面開著時會自動幫你停力量表、並依系統訊息回報的「手感」" +
-                          "推算最佳砍伐位置後揮斧。模組不會自己去找機台、不會自己互動、也不會自己開始新的一局——" +
-                          "走過去按下開始的永遠是你。");
+        ImGui.TextWrapped("啟用後，孤樹無援的機台畫面開著時會自動幫你停力量表、並依每一刀讓樹的量表掉多少" +
+                          "推算最佳砍伐位置後揮斧。除非你另外打開下面的「連續遊玩」並按下開始，" +
+                          "模組不會自己去找機台、不會自己互動、也不會自己開始新的一局。");
 
         ImGui.Dummy(new(0, 4));
         SaucyTheme.TextMuted("這是伺服器看得見的行為模式：自動出手沒有人類的反應延遲，連續遊玩時尤其明顯。" +
-                             "模組只讀取畫面上本來就顯示給你看的資料（機台面板欄位、指針角度、聊天欄的手感訊息），" +
+                             "模組只讀取畫面上本來就顯示給你看的資料（機台面板欄位、指針刻度、樹的量表），" +
                              "不讀寫遊戲封包、不修改遊戲記憶體，出手方式就是按下畫面上原本就有的按鈕。");
 
         if (enabled)
@@ -601,7 +601,9 @@ public unsafe partial class PluginUI
             }
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("第一階段力量表要停在哪一格。泰坦最快（獎勵最高）也最難停中，仙人掌怪最慢最好停。");
+                ImGui.SetTooltip("第一階段力量表要停在哪一格。泰坦最快（獎勵最高）也最難停中，仙人掌怪最慢最好停。\n" +
+                                 "三個名字對應的是「當下量到的三段寬度排名」（最窄＝泰坦），" +
+                                 "不是寫死的節點編號——伺服器每一局給的區間寬度可以不一樣。");
             }
 
             var tolerance = C.OutOnALimb.Tolerance;
@@ -614,8 +616,9 @@ public unsafe partial class PluginUI
 
             var requiredFps = RequiredFramerate(C.OutOnALimb.Difficulty, C.OutOnALimb.Tolerance);
             var currentFps = (int)ImGui.GetIO().Framerate;
-            SaucyTheme.TextMuted($"建議畫面更新率：{requiredFps} FPS（你目前 {currentFps} FPS）。" +
-                                 "模組是每幀去看指針轉到哪裡，更新率不夠就會按不準；把容許誤差放寬或降低難度可以降低需求。");
+            SaucyTheme.TextMuted($"參考畫面更新率：{requiredFps} FPS（你目前 {currentFps} FPS）。" +
+                                 "現在除了「這一幀夠不夠近」之外，還會判斷「兩幀之間有沒有掃過目標」，" +
+                                 "所以更新率不夠時不會像以前那樣整段掃過去都按不到；這個數字只是精準度的參考。");
 
             var autoPowerMeter = C.OutOnALimb.AutoPowerMeter;
             if (ImGui.Checkbox("自動停力量表##LimbAutoPowerMeter", ref autoPowerMeter))
@@ -651,11 +654,110 @@ public unsafe partial class PluginUI
                     C.Save();
                 }
             }
+
+            DrawOutOnALimbAutoReplay();
+
+            ImGui.Dummy(new(0, 4));
+            var logDiag = C.OutOnALimb.LogBoardDiagnostics;
+            if (ImGui.Checkbox("把機台面板欄位寫進 log##LimbDiag", ref logDiag))
+            {
+                C.OutOnALimb.LogBoardDiagnostics = logDiag;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("診斷用：每秒把機台面板的 AtkValue[0..15] 與指針刻度寫一行到 log（Information 等級）。" +
+                                 "只有要回報問題時才需要打開。");
+            }
         }
 
         ImGui.Dummy(new(0, 4));
         var limbModule = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.OutOnALimb.OutOnALimbModule>();
         SaucyTheme.TextMuted($"狀態：{(limbModule == null ? "模組未載入" : enabled ? limbModule.LastAction : "未啟用")}");
+        if (limbModule != null && enabled)
+        {
+            SaucyTheme.TextMuted($"解題器：{limbModule.SolverSummary}");
+        }
+    }
+
+    /// <summary>連續遊玩區塊。開關是設定、真正會動作的是「開始」按鈕——
+    /// 而且停止鈕永遠畫在列上（不藏在 tooltip 或折疊區裡），跑起來時一眼就找得到。</summary>
+    private static void DrawOutOnALimbAutoReplay()
+    {
+        ImGui.Dummy(new(0, 6));
+        ImGui.Separator();
+        ImGui.Dummy(new(0, 2));
+
+        var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.OutOnALimb.OutOnALimbModule>();
+        var running = module?.AutoReplayRunning == true;
+
+        var autoReplay = C.OutOnALimb.AutoReplay;
+        if (ImGui.Checkbox("允許連續遊玩##LimbAutoReplay", ref autoReplay))
+        {
+            C.OutOnALimb.AutoReplay = autoReplay;
+            C.Save();
+            if (!autoReplay)
+            {
+                module?.StopAutoReplay("設定已關閉");
+            }
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("一局結束後自動再跟機台開下一局，省掉中間的等待。\n" +
+                             "🔴 預設關閉，而且光是打開這個開關還不會動作——一定要按下面的「開始連續遊玩」。\n" +
+                             "這是設計成短時間、有人在旁邊看著的用法，不是掛機：跑滿設定的局數就會自己停。");
+        }
+
+        if (!autoReplay)
+        {
+            SaucyTheme.TextMuted("連續遊玩關閉中：一局結束後由你自己跟機台開下一局。");
+            return;
+        }
+
+        var maxGames = C.OutOnALimb.AutoReplayMaxGames;
+        ImGui.SetNextItemWidth(140f);
+        if (ImGui.SliderInt("最多自動幾局##LimbReplayCap", ref maxGames, 1, 20))
+        {
+            C.OutOnALimb.AutoReplayMaxGames = Math.Clamp(maxGames, 1, 20);
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("到達這個局數就自己停下來，要再跑得重新按一次「開始連續遊玩」。");
+        }
+
+        if (module == null)
+        {
+            SaucyTheme.TextMuted("模組未載入。");
+            return;
+        }
+
+        ImGui.Dummy(new(0, 2));
+        if (running)
+        {
+            using (ImRaii.PushColor(ImGuiCol.Button, SaucyTheme.TextErrorColor))
+            using (ImRaii.PushColor(ImGuiCol.ButtonHovered, SaucyTheme.TextErrorColor))
+            using (ImRaii.PushColor(ImGuiCol.ButtonActive, SaucyTheme.TextErrorColor))
+            {
+                if (ImGui.Button("■ 停止連續遊玩##LimbReplayStop", new(220f, 0f)))
+                {
+                    module.StopAutoReplay("使用者按下停止");
+                }
+            }
+
+            ImGui.SameLine();
+            SaucyTheme.TextWarning($"進行中：{module.AutoReplayGamesDone}/{Math.Max(1, C.OutOnALimb.AutoReplayMaxGames)} 局");
+        }
+        else
+        {
+            if (ImGui.Button("▶ 開始連續遊玩##LimbReplayStart", new(220f, 0f)))
+            {
+                module.StartAutoReplay();
+            }
+
+            ImGui.SameLine();
+            SaucyTheme.TextMuted("按下之後才會自己跟機台互動；站到機台旁邊再按。");
+        }
     }
 
     /// <summary>指針掃過目標所需的取樣率——容許誤差越窄、難度越高，指針停留在窗口內的時間越短。
