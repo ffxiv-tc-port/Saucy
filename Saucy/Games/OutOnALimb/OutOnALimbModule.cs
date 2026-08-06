@@ -80,6 +80,31 @@ public unsafe class OutOnALimbModule : Module
     private const int ReplayPromptDiagThrottleMs = 3000;
     private const int ReplayWaitDiagThrottleMs = 10000;
 
+    /// <summary>
+    /// 力量表「等到停得夠準」的放寬階梯（毫秒，從指針開始動算起）。
+    ///
+    /// 🔴 為什麼要有階梯：2026-08-06 實機 log 直接證明**單幀位移可以比目標格還寬**
+    /// （22:11:36 那一刀，上一幀 ≤249、這一幀 1303，一幀跨了 1054 刻度以上，
+    /// 而泰坦格只有 501 寬）。這種情況下「某一幀剛好落在格子裡」是機率事件，不是必然，
+    /// 所以要允許放掉幾趟等下一趟。
+    ///
+    /// 🔴 但**絕不能等到卡死**：每一局都花掉一枚金碟幣，不停表等於錢丟掉。
+    /// 所以階梯的終點是「不管落在哪一格都按下去」——失敗形式是**打到隔壁格**，不是不揮斧。
+    /// <list type="number">
+    /// <item>0–<see cref="PreciseWindowMs"/>：只有落在目標格、而且離兩邊界都有餘裕才按。</item>
+    /// <item>–<see cref="AnyInZoneMs"/>：落在目標格裡就按（不再要求餘裕）。</item>
+    /// <item>–<see cref="WidenZoneMs"/>：放寬到「目標格或次寬的那一格」。</item>
+    /// <item>之後：落在哪一格都按。</item>
+    /// </list>
+    /// ⚠️ 這幾個毫秒數是**取捨值不是實測常數**：訂太短會退化成舊行為（隨便按），
+    /// 訂太長則每局多站幾秒。實機 log 顯示一趟掃描約 200–300ms，所以 1500ms 大約是 5–7 趟。
+    /// </summary>
+    private const int PreciseWindowMs = 1500;
+
+    private const int AnyInZoneMs = 3000;
+
+    private const int WidenZoneMs = 4500;
+
     /// <summary>揮斧之後最多等多久量表變化。超過就放掉，讓聊天備援有機會補上。</summary>
     private static readonly TimeSpan GaugeWaitTimeout = TimeSpan.FromSeconds(6);
 
@@ -106,6 +131,25 @@ public unsafe class OutOnALimbModule : Module
     private int? lastBotanistCursor;
 
     private int? lastAimgCursor;
+
+    /// <summary>這一次力量表嘗試裡，指針**第一次真的動起來**的時刻（<see cref="Environment.TickCount64"/>）。
+    /// null＝指針還停在待命位置（實機是 0），這一輪的計時還沒開始。
+    ///
+    /// 🔴 為什麼需要：待命值 0 落在最窄那一格 <c>(-1, 500]</c> 的**裡面**。少了這個閘門，
+    /// 底下「等久了就放寬」的階梯會在指針根本還沒開始掃的時候就判定「在格子裡」而按下去。
+    /// 舊版沒有這個問題純粹是因為它的邊界餘裕剛好把 0 排除掉，那是巧合不是防護。</summary>
+    private long? aimgLiveSinceMs;
+
+    /// <summary>這一次嘗試裡看過的**最大單幀位移**（0–10000 刻度）。
+    /// 這是「為什麼停不準」的關鍵數字：它比目標格寬度大的時候，
+    /// 一趟掃過去根本不保證有任何一幀落在格子裡。</summary>
+    private int aimgMaxStep;
+
+    /// <summary>這一次嘗試裡指針動起來之後看過幾幀。診斷用。</summary>
+    private int aimgLiveFrames;
+
+    /// <summary>這一次嘗試已經退到第幾階（0＝還在要求精準）。只用來讓 log 在階梯前進時說一次話。</summary>
+    private int aimgRelaxStage;
 
     /// <summary>上一幀讀到的階段值。
     /// 🔴 **null 就是「不知道」，不可以代換成任何具體值。** 舊版寫 <c>ReadState(addon) ?? 0</c>，
@@ -249,6 +293,7 @@ public unsafe class OutOnALimbModule : Module
         idleGauge = null;
         idleGaugeChanges = 0;
         powerMeterClicked = false;
+        ResetAimgAttempt();
 
         // 離開機台畫面就把解題盤面清空。
         solver.Reset(Cfg.Step);
@@ -372,7 +417,26 @@ public unsafe class OutOnALimbModule : Module
     /// <summary>第一階段：力量表。指針掃進所選難度的那一格時按下停止鈕，一輪只按一次。
     ///
     /// 🔴 力量表 addon 與礦脈探索共用，所以動它之前要先確認面前那台真的是孤樹無援；
-    /// 認不出來就完全不碰（玩家自己停表，砍伐階段照樣會接手）。</summary>
+    /// 認不出來就完全不碰（玩家自己停表，砍伐階段照樣會接手）。
+    ///
+    /// 【2026-08-06 修正：點不到泰坦】使用者實測「Saucy 點不到泰坦」。實機 log 直接指出真因：
+    /// <code>
+    /// 21:15:35 power meter stopped on Titan at  793 (zone slot 2 = (-1, 500], ..., crossing)
+    /// 22:11:36 power meter stopped on Titan at 1303 (zone slot 2 = (-1, 500], ..., crossing)
+    /// </code>
+    /// 793 與 1303 **都不在** log 自己印出來的目標區間 <c>(-1, 500]</c> 裡。
+    /// 舊版的出手條件是「落在格子裡（含餘裕）**或** 兩幀之間跨過格子中心」，而後面那個條件
+    /// **完全沒有限制當幀已經衝過去多遠**——指針一幀能跨 1000 刻度以上，所以「跨過中心」
+    /// 成立的那一幀往往人已經在隔壁格了。這不是延遲，是判斷式本身少了一個條件。
+    ///
+    /// 📌 佐證「按下去的就是我們讀到的那個刻度、沒有額外延遲」：同一份 log 裡，
+    /// 唯一一次落在格子內的停表（22:13:27 at 401）之後，砍伐畫面的 <c>AtkValue[2]</c> 是 **375**；
+    /// 而 1303／3373／7581 那三局都是 **750**。落在格子內外會產生不同的後續狀態，
+    /// 代表遊戲採用的就是我們當幀讀到的位置。⇒ **不需要、也不應該加「提前量」**。
+    ///
+    /// 現在的出手條件改成連言：**當幀的指針必須真的落在目標格裡**（用遊戲自己的
+    /// <c>pos &gt; low &amp;&amp; pos &lt;= high</c> 判定），再加上一個會隨時間放寬的精準度要求。
+    /// </summary>
     private void RunPowerMeterPhase()
     {
         var addon = LimbBoard.TryGetAddon(LimbBoard.AimgAddon);
@@ -380,6 +444,7 @@ public unsafe class OutOnALimbModule : Module
         {
             powerMeterClicked = false;
             lastAimgCursor = null;
+            ResetAimgAttempt();
             return;
         }
 
@@ -413,7 +478,7 @@ public unsafe class OutOnALimbModule : Module
             return;
         }
 
-        if (!TryGetTargetZone(addon, out var zone, out var source))
+        if (!TryGetZonesBySize(addon, out var zones, out var source))
         {
             if (EzThrottler.Throttle(ZoneDiagThrottleKey, ZoneDiagThrottleMs))
             {
@@ -427,37 +492,126 @@ public unsafe class OutOnALimbModule : Module
             return;
         }
 
-        // 邊界留一點餘裕，免得剛好卡在兩格交界被判到隔壁那格。
-        var margin = Math.Clamp(zone.Width / 6, 1, 400);
-        var inside = cursor.Value > zone.LowExclusive + margin &&
-                     cursor.Value <= zone.HighInclusive - margin;
-        var crossed = HasCrossed(lastAimgCursor, cursor.Value, zone.Centre);
+        var wanted = Math.Clamp((int)Cfg.Difficulty, 0, zones.Length - 1);
+        var zone = zones[wanted];
+
+        // 追蹤指針速度。⚠️ 折返／重設造成的大跳躍不算位移（沿用 HasCrossed 的同一個門檻）。
+        if (lastAimgCursor != null)
+        {
+            var delta = Math.Abs(cursor.Value - lastAimgCursor.Value);
+            if (delta > 0 && delta <= LimbBoard.CursorScale / 4)
+            {
+                aimgMaxStep = Math.Max(aimgMaxStep, delta);
+                aimgLiveSinceMs ??= Environment.TickCount64;
+            }
+        }
+
         lastAimgCursor = cursor.Value;
 
-        if (!inside && !crossed)
+        // 🔴 指針還停在待命位置就完全不動作。待命值 0 落在最窄那一格裡面，
+        // 少了這一條，「等久了就放寬」會在遊戲根本還沒開始的時候按下去。
+        if (aimgLiveSinceMs == null)
         {
             return;
+        }
+
+        aimgLiveFrames++;
+        var waited = Environment.TickCount64 - aimgLiveSinceMs.Value;
+
+        // 放寬階梯。⚠️ 每前進一階都寫一行 Information，使用者才看得出「它在等，不是壞了」。
+        var stage = waited >= WidenZoneMs ? 3 : waited >= AnyInZoneMs ? 2 : waited >= PreciseWindowMs ? 1 : 0;
+        if (stage > aimgRelaxStage)
+        {
+            aimgRelaxStage = stage;
+            Svc.Log.Information($"[OutOnALimb] power meter still hunting {Cfg.Difficulty} after {waited}ms " +
+                                $"({aimgLiveFrames} frames, biggest one-frame step {aimgMaxStep} vs zone width " +
+                                $"{zone.Width}); relaxing to stage {stage} " +
+                                $"({DescribeRelaxStage(stage)})");
+            LastAction = $"力量表：等不到準點，已放寬到第 {stage} 階（{DescribeRelaxStage(stage)}）";
+        }
+
+        // 🔴 出手條件的第一條、也是修掉「點不到泰坦」的那一條：
+        //    **當幀的指針必須真的落在可接受的格子裡**，用的就是遊戲自己的判定式。
+        //    舊版的「跨過中心」沒有這層限制，所以會在已經衝到 793／1303 的那一幀按下去。
+        var acceptFrom = stage >= 3 ? zones.Length - 1 : stage >= 2 ? Math.Min(wanted + 1, zones.Length - 1) : wanted;
+        var landed = -1;
+        for (var i = wanted; i <= acceptFrom; i++)
+        {
+            if (zones[i].Contains(cursor.Value))
+            {
+                landed = i;
+                break;
+            }
+        }
+
+        if (landed < 0)
+        {
+            return;
+        }
+
+        var hit = zones[landed];
+
+        // 邊界留一點餘裕，免得剛好卡在兩格交界被判到隔壁那格。
+        // 📌 這現在只是**偏好**：第 0 階要求它，之後就放掉——寧可停得靠邊，也不要一直不停表。
+        if (stage == 0)
+        {
+            var margin = Math.Clamp(hit.Width / 6, 1, 400);
+            if (cursor.Value <= hit.LowExclusive + margin || cursor.Value > hit.HighInclusive - margin)
+            {
+                return;
+            }
         }
 
         if (TryClickButton(addon, LimbBoard.AimgStopButtonId(addon), AimgThrottleKey, AimgThrottleMs))
         {
             powerMeterClicked = true;
-            LastAction = $"力量表已停在 {Cfg.Difficulty}（刻度 {cursor.Value}）";
-            Svc.Log.Information($"[OutOnALimb] power meter stopped on {Cfg.Difficulty} at {cursor.Value} " +
-                                $"(zone slot {zone.Slot} = ({zone.LowExclusive}, {zone.HighInclusive}], " +
-                                $"width {zone.Width}, source {source}, {(crossed ? "crossing" : "inside")})");
+            var landedName = (LimbDifficulty)Math.Clamp(landed, 0, 2);
+            var onTarget = landed == wanted;
+            LastAction = onTarget
+                ? $"力量表已停在 {Cfg.Difficulty}（刻度 {cursor.Value}）"
+                : $"力量表停在 {landedName}（想要 {Cfg.Difficulty}，刻度 {cursor.Value}）";
+
+            // 📌 這一行是使用者驗收「有沒有修好」的唯一依據，所以它必須說出
+            //    **實際落在哪一格**，而不是只印我們想瞄哪一格。
+            //    舊版印「stopped on Titan at 1303」是在講一件不成立的事。
+            Svc.Log.Information($"[OutOnALimb] power meter stopped at {cursor.Value} -> landed in {landedName} " +
+                                $"(zone slot {hit.Slot} = ({hit.LowExclusive}, {hit.HighInclusive}], " +
+                                $"width {hit.Width}); wanted {Cfg.Difficulty}; " +
+                                $"{(onTarget ? "ON TARGET" : "MISSED, took a wider zone")}; " +
+                                $"source {source}, waited {waited}ms over {aimgLiveFrames} frames, " +
+                                $"biggest one-frame step {aimgMaxStep}, relax stage {stage}");
         }
     }
 
-    /// <summary>依設定的難度挑出要瞄的那一格。三格一律**依寬度由小到大**排序後才對應難度，
-    /// 所以不管伺服器把區間切成什麼樣子、也不管畫面上的區塊順序怎麼洗牌，
-    /// 「泰坦」永遠指最窄（最難停中、最快）的那一格。</summary>
-    private static bool TryGetTargetZone(AtkUnitBase* addon, out LimbZone zone, out string source)
+    private static string DescribeRelaxStage(int stage) => stage switch
     {
-        zone = default;
-        source = "none";
+        0 => "只收離邊界有餘裕的",
+        1 => "落在目標格裡就收",
+        2 => "目標格或次寬的那一格",
+        var _ => "落在哪一格都收"
+    };
 
-        LimbZone[] zones;
+    private void ResetAimgAttempt()
+    {
+        aimgLiveSinceMs = null;
+        aimgMaxStep = 0;
+        aimgLiveFrames = 0;
+        aimgRelaxStage = 0;
+    }
+
+    /// <summary>取得力量表的三格，**依寬度由小到大**排序。
+    /// 所以不管伺服器把區間切成什麼樣子、也不管畫面上的區塊順序怎麼洗牌，
+    /// 索引 0（泰坦）永遠指最窄（最難停中）的那一格、索引 2（仙人掌怪）永遠指最寬的。
+    ///
+    /// 📌 2026-08-06 這個排序被實機資料**正面驗證**過一次：
+    /// <c>AtkValue[4]=8500 / [5]=9500</c> 有兩種讀法（窄格在刻度低端 vs 高端），
+    /// 而 log 顯示停在 401 的那一局後續狀態（<c>botanist AtkValue[2]=375</c>）
+    /// 與停在 1303／3373／7581 的三局（都是 750）不同。
+    /// 只有「窄格在低端」這個讀法能讓 401 和 1303 落在不同格；高端那個讀法會把四個都算成同一格。
+    /// ⇒ 現行讀法成立，另一個讀法被推翻。</summary>
+    private static bool TryGetZonesBySize(AtkUnitBase* addon, out LimbZone[] zones, out string source)
+    {
+        source = "none";
         if (LimbBoard.TryGetPowerZones(addon, out zones))
         {
             source = "AtkValue[4]/[5]";
@@ -471,14 +625,7 @@ public unsafe class OutOnALimbModule : Module
             return false;
         }
 
-        if (zones.Length == 0)
-        {
-            return false;
-        }
-
-        var index = Math.Clamp((int)Cfg.Difficulty, 0, zones.Length - 1);
-        zone = zones[index];
-        return zone.Width > 0;
+        return zones.Length > 0 && zones[0].Width > 0;
     }
 
     /// <summary>兩幀之間指針有沒有跨過目標。低更新率下指針一幀可以跳很遠，
