@@ -21,6 +21,10 @@ jobs:
         run: |
           Invoke-WebRequest -Uri https://github.com/ffxiv-tc-port/DalamudPluginsTC/releases/download/dalamud-pin-v13.0.0.16/dalamud-api13-net9.zip -OutFile dalamud-pinned.zip
           Expand-Archive -Force dalamud-pinned.zip "$env:DALAMUD_HOME"
+          # ECommons.csproj 的 DalamudLibPath 在 Windows 上寫死 $(appdata)\xivlauncher\Addon\Hooks\dev\
+          # 且**不看 DALAMUD_HOME**(只有 Linux 分支才看)。子模組化之後不鋪這一份會得到假的編譯失敗。
+          # Artisan / AutoRetainer / Avarice / WrathCombo 的 workflow 用的是同一招。
+          Expand-Archive -Force dalamud-pinned.zip "$env:AppData\xivlauncher\Addon\Hooks\dev\"
         env:
           DALAMUD_HOME: ${{ github.workspace }}\dalamud
       - name: Compute version
