@@ -1,6 +1,7 @@
 using ECommons.Automation.UIInput;
 using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using Saucy.Framework;
 using System;
 namespace Saucy.TripleTriad;
 
@@ -9,7 +10,8 @@ internal static unsafe partial class TriadDeckSelectAutomation
     private static bool TryClickSelectButton(AtkUnitBase* addon, uint buttonId)
     {
         var button = addon->GetComponentButtonById(buttonId);
-        if (button == null || !button->IsEnabled || button->AtkResNode == null || !button->AtkResNode->IsVisible())
+        // ⚠️ IsEnabled 解的是 OwnerNode，AtkResNode 的檢查擋不到它 → 用 IsEnabledSafe。
+        if (button == null || !AddonButton.IsEnabledSafe(button) || button->AtkResNode == null || !button->AtkResNode->IsVisible())
         {
             return false;
         }
@@ -255,7 +257,8 @@ internal static unsafe partial class TriadDeckSelectAutomation
         }
 
         var button = node->GetAsAtkComponentButton();
-        if (button == null || !button->IsEnabled || button->AtkResNode == null || !button->AtkResNode->IsVisible())
+        // ⚠️ IsEnabled 解的是 OwnerNode，AtkResNode 的檢查擋不到它 → 用 IsEnabledSafe。
+        if (button == null || !AddonButton.IsEnabledSafe(button) || button->AtkResNode == null || !button->AtkResNode->IsVisible())
         {
             return false;
         }

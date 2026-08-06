@@ -797,7 +797,8 @@ public unsafe class OutOnALimbModule : Module
         }
 
         var button = addon->GetComponentButtonById(nodeId);
-        if (button == null || button->AtkResNode == null || !button->AtkResNode->IsVisible() || !button->IsEnabled)
+        // ⚠️ button->AtkResNode 與 IsEnabled 解的 OwnerNode 是兩個不同欄位，前者擋不到後者 → 用 IsEnabledSafe。
+        if (button == null || button->AtkResNode == null || !button->AtkResNode->IsVisible() || !AddonButton.IsEnabledSafe(button))
         {
             return false;
         }

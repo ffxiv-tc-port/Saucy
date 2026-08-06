@@ -656,7 +656,7 @@ public static unsafe class SelectYesnoHelper
             return false;
         }
 
-        if (forceEnable && !button->IsEnabled)
+        if (forceEnable && !AddonButton.IsEnabledSafe(button))
         {
             TryForceEnableButton(button);
         }
@@ -666,6 +666,13 @@ public static unsafe class SelectYesnoHelper
 
     private static void TryForceEnableButton(AtkComponentButton* button)
     {
+        // 🔴 OwnerNode 為 null 時下面的解參考會丟 AccessViolationException，
+        //    而 AVE 是 corrupted-state exception，底下的 try/catch 攔不到 —— 必須在這裡先擋。
+        if (button == null || button->AtkComponentBase.OwnerNode == null)
+        {
+            return;
+        }
+
         try
         {
             var flagsPtr = (ushort*)&button->AtkComponentBase.OwnerNode->AtkResNode.NodeFlags;
