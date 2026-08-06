@@ -3,6 +3,7 @@ using Dalamud.Game.Text.SeStringHandling;
 using ECommons.Automation.UIInput;
 using ECommons.GameHelpers;
 using ECommons.Throttlers;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using Saucy.Framework;
@@ -55,6 +56,8 @@ public unsafe class OutOnALimbModule : Module
     private const string ReplayYesThrottleKey = "Saucy.OutOnALimb.ReplayYes";
     private const string ReplayMenuThrottleKey = "Saucy.OutOnALimb.ReplayMenu";
     private const string ReplayInteractThrottleKey = "Saucy.OutOnALimb.ReplayInteract";
+    private const string ReplayPromptDiagThrottleKey = "Saucy.OutOnALimb.ReplayPromptDiag";
+    private const string ReplayWaitDiagThrottleKey = "Saucy.OutOnALimb.ReplayWaitDiag";
     private const string SwingsDiagThrottleKey = "Saucy.OutOnALimb.SwingsDiag";
     private const string StateDiagThrottleKey = "Saucy.OutOnALimb.StateDiag";
 
@@ -74,6 +77,8 @@ public unsafe class OutOnALimbModule : Module
     private const int StateDiagThrottleMs = 10000;
     private const int ReplayYesThrottleMs = 1500;
     private const int ReplayMenuThrottleMs = 1500;
+    private const int ReplayPromptDiagThrottleMs = 3000;
+    private const int ReplayWaitDiagThrottleMs = 10000;
 
     /// <summary>揮斧之後最多等多久量表變化。超過就放掉，讓聊天備援有機會補上。</summary>
     private static readonly TimeSpan GaugeWaitTimeout = TimeSpan.FromSeconds(6);
@@ -291,13 +296,34 @@ public unsafe class OutOnALimbModule : Module
                         : "等待孤樹無援機台畫面";
                 }
 
-                RunAutoReplayPhase();
+                RunAutoReplayPhase(allowInteract: true);
                 return;
             }
 
             DumpBoardDiagnostics();
             RunPowerMeterPhase();
             RunChoppingPhase();
+
+            // 🔴🔴 2026-08-06 使用者實測回報的真因就在這裡。
+            //
+            // 舊版把連續遊玩整段掛在 `!IsPlaying` 底下，而 `IsPlaying = 砍伐畫面開著 || 力量表畫面開著`。
+            // 實機 log（22:14:33 砍伐畫面關閉 → 22:14:34~22:14:43 力量表畫面持續回報
+            // `AtkValue[0]=1`、指針 0）證明**一局結束後力量表畫面會留在原地待命**，
+            // 機台的「要挑戰一下嗎」確認框就開在它上面。於是 `IsPlaying` 恆為 true，
+            // `RunAutoReplayPhase()` **在那個時機根本不會被呼叫** —— 不是確認框認不出來，
+            // 是整段程式碼從來沒有機會執行（整份 log 六次「開始連續遊玩」，
+            // 一次都沒有出現接受確認框的那行 Information）。
+            //
+            // ⚠️ 這裡刻意只在**砍伐畫面關著**時才跑，而且 `allowInteract: false`：
+            //   ・砍伐畫面開著時的確認框是「挑戰翻倍」，那由 HandleDoubleDownPrompt 依剩餘時間決定，
+            //     不能讓連續遊玩搶答（它只會一律按「是」）。用畫面狀態把兩者結構性地分開，
+            //     比只靠文字判斷可靠。
+            //   ・機台畫面還開著就去互動＝在遊戲進行中重新戳機台，所以互動路徑整條關掉，
+            //     這個時機只允許「回答已經跳出來的確認框」。
+            if (!LimbBoard.IsBotanistOpen)
+            {
+                RunAutoReplayPhase(allowInteract: false);
+            }
         }
         catch (Exception ex)
         {
@@ -782,7 +808,9 @@ public unsafe class OutOnALimbModule : Module
     /// 而且局數還沒到上限。任何一層不成立就完全不碰機台。
     /// 這裡不做任何「偵測到某某狀況就自動接手」的事——沒按開始就永遠不會有第一個動作。
     /// </summary>
-    private void RunAutoReplayPhase()
+    /// <param name="allowInteract">可不可以主動去戳機台。機台畫面還開著時一律 false——
+    /// 那個時機只准回答已經跳出來的確認框，不准發起新的互動。</param>
+    private void RunAutoReplayPhase(bool allowInteract)
     {
         if (!AutoReplayRunning)
         {
@@ -802,11 +830,6 @@ public unsafe class OutOnALimbModule : Module
             return;
         }
 
-        if (!Player.Interactable)
-        {
-            return;
-        }
-
         // 🔴 全程都要求「附近認得出一台孤樹無援機台」。認不出來就停——
         // 不會在別的機台前面亂按確認框，也不會在玩家走開之後繼續動作。
         // ⚠️ machine 只在這一幀有效，用完就丟，不存起來。
@@ -819,22 +842,7 @@ public unsafe class OutOnALimbModule : Module
         // 機台的「要挑戰一下嗎」確認框。挑戰翻倍那種提示不在這裡處理（它有自己的開關）。
         if (SelectYesnoHelper.TryGetVisible(out var yesno))
         {
-            if (!SelectYesnoHelper.IsArcadeYesno(yesno) ||
-                SelectYesnoHelper.IsArcadeDoubleDownYesno(yesno) ||
-                SelectYesnoHelper.IsBlockedSystemPrompt(yesno))
-            {
-                // 認不出來的確認框一律不碰，也不要在它開著的時候去戳機台。
-                return;
-            }
-
-            if (EzThrottler.Throttle(ReplayYesThrottleKey, ReplayYesThrottleMs))
-            {
-                SelectYesnoHelper.PressYes(yesno);
-                LastAction = $"連續遊玩：開始第 {AutoReplayGamesDone + 1} 局";
-                Svc.Log.Information($"[OutOnALimb] auto-replay accepted the arcade prompt " +
-                                    $"({AutoReplayGamesDone + 1}/{cap})");
-            }
-
+            HandleAutoReplayPrompt(yesno, cap);
             return;
         }
 
@@ -846,17 +854,154 @@ public unsafe class OutOnALimbModule : Module
             {
                 SelectStringHelper.TrySelectYesEntry(menu);
                 LastAction = "連續遊玩：選單已選「是」";
+                Svc.Log.Information($"[OutOnALimb] auto-replay selected the arcade start menu entry " +
+                                    $"({AutoReplayGamesDone}/{cap})");
+            }
+
+            return;
+        }
+
+        // 🔴 機台畫面還開著就絕不主動互動——那等於在遊戲進行中重新戳機台。
+        if (!allowInteract)
+        {
+            if (EzThrottler.Throttle(ReplayWaitDiagThrottleKey, ReplayWaitDiagThrottleMs))
+            {
+                Svc.Log.Information($"[OutOnALimb] auto-replay standing by: the machine screen is still open and " +
+                                    $"there is no prompt to answer ({AutoReplayGamesDone}/{cap})");
             }
 
             return;
         }
 
         // 什麼畫面都沒有 → 去跟機台互動。
+        // ⚠️ Player.Interactable 是「發起互動」的前提，不是「按畫面上的按鈕」的前提，
+        //    所以只擋這一條路徑（舊版擋在整個函式最前面，連回答確認框都被一起擋掉）。
+        if (!Player.Interactable)
+        {
+            return;
+        }
+
         if (ObjectHelper.TryInteractWithObject(machine, ReplayInteractThrottleKey))
         {
             LastAction = $"連續遊玩：正在跟機台互動（已完成 {AutoReplayGamesDone}/{cap} 局）";
         }
     }
+
+    /// <summary>
+    /// 連續遊玩看到確認框時的判定。
+    ///
+    /// 🔴 這是整條路徑上**唯一會花掉金碟幣**的動作（每局 1 枚），所以判定寫成**連言**：
+    /// 下面每一條都成立才按「是」，任何一條不成立就完全不碰。寧可不按，也不要按錯。
+    ///
+    /// 【為什麼不能只看 agent 歸屬】舊版的唯一條件是 <c>IsArcadeYesno</c>，也就是
+    /// 「這個 addon 的回呼登記在 GoldSaucerMiniGame agent 名下」。那個條件在**遊戲進行中**的
+    /// 翻倍提示上確實成立（實機 log 證實 <see cref="HandleDoubleDownPrompt"/> 一直有作用），
+    /// 但開場的遊玩確認框是不是同一個擁有者**沒有任何離線證據**——
+    /// <c>AddonCallbackEntry</c> 偏移 0 是 <c>EventInterface</c>／<c>AgentInterface</c> 的 union，
+    /// 事件腳本開的視窗登記的就不是 agent。所以這裡改成不依賴 agent 歸屬也能成立，
+    /// agent 歸屬降級成**診斷欄位**寫進 log。
+    ///
+    /// 【換上來的閘門一樣緊，而且是可離線證明的】
+    /// <list type="bullet">
+    /// <item>附近認得出孤樹無援機台（呼叫端已經要求，這裡不重複）；</item>
+    /// <item>確認框文字裡有**機台名稱**——執行期從 EObjName#2005423／Item#30425 讀，不寫死字串；</item>
+    /// <item>確認框文字命中 <see cref="LimbPrompt"/> 從 Addon#9321 拆出來的固定句。
+    ///   台服 1138 張表全掃證實「要挑戰一下嗎？」只有 9321 這一列有，
+    ///   而翻倍提示（9329／9333）寫的是「要<b>嘗試</b>挑戰一下嗎？」，兩者不會互相包含；</item>
+    /// <item>不是翻倍提示（<see cref="SelectYesnoHelper.LooksLikeArcadeDoubleDownPrompt"/>，
+    ///   純文字判定，不會因為放寬 agent 條件而一起失效）；</item>
+    /// <item>不是被封鎖的系統提示（傳送、捨棄、組隊邀請……）。</item>
+    /// </list>
+    /// </summary>
+    private void HandleAutoReplayPrompt(AddonSelectYesno* yesno, int cap)
+    {
+        var prompt = SelectYesnoHelper.GetPrompt(yesno);
+        var hasButtons = SelectYesnoHelper.HasYesnoButtons(yesno);
+        var blocked = SelectYesnoHelper.IsBlockedSystemPrompt(yesno);
+
+        // ⚠️ 兩支都問：LooksLike… 是純文字版（放寬 agent 條件之後唯一還有效的那支），
+        //    IsArcadeDoubleDownYesno 是原本的 agent＋文字版。任一成立就當成翻倍提示。
+        var doubleDown = SelectYesnoHelper.LooksLikeArcadeDoubleDownPrompt(yesno) ||
+                         SelectYesnoHelper.IsArcadeDoubleDownYesno(yesno);
+        var mentionsMachine = LimbMachine.PromptMentionsMachine(prompt);
+        var matchesTemplate = LimbPrompt.LooksLikePlayConfirm(prompt);
+
+        var accept = hasButtons && !blocked && !doubleDown && mentionsMachine && matchesTemplate;
+        if (!accept)
+        {
+            // 「為什麼沒按」必須看得見。使用者跑 LogLevel 2，所以寫 Information 不是 Debug。
+            if (EzThrottler.Throttle(ReplayPromptDiagThrottleKey, ReplayPromptDiagThrottleMs))
+            {
+                Svc.Log.Information($"[OutOnALimb] auto-replay left a yes/no prompt alone: " +
+                                    $"{DescribePromptGates(yesno, hasButtons, blocked, doubleDown, mentionsMachine, matchesTemplate)}");
+                LastAction = $"連續遊玩：看到確認框但認不出來，沒有動作（{DescribeRefusal(hasButtons, blocked, doubleDown, mentionsMachine, matchesTemplate)}）";
+            }
+
+            return;
+        }
+
+        if (!EzThrottler.Throttle(ReplayYesThrottleKey, ReplayYesThrottleMs))
+        {
+            return;
+        }
+
+        var pressed = SelectYesnoHelper.PressYes(yesno);
+        LastAction = pressed
+            ? $"連續遊玩：開始第 {AutoReplayGamesDone + 1} 局"
+            : "連續遊玩：認出確認框但按不下去";
+        Svc.Log.Information($"[OutOnALimb] auto-replay {(pressed ? "accepted" : "FAILED TO PRESS")} the arcade prompt " +
+                            $"({AutoReplayGamesDone + 1}/{cap}); " +
+                            $"{DescribePromptGates(yesno, hasButtons, blocked, doubleDown, mentionsMachine, matchesTemplate)}");
+    }
+
+    /// <summary>把每一層判定的結果攤平成一行。下次再卡住時，這一行要能直接指出是哪一層擋的。</summary>
+    private static string DescribePromptGates(
+        AddonSelectYesno* yesno,
+        bool hasButtons,
+        bool blocked,
+        bool doubleDown,
+        bool mentionsMachine,
+        bool matchesTemplate) =>
+        $"owner={AgentHelper.DescribeOwner(&yesno->AtkUnitBase)}, " +
+        $"arcadeAgent={SelectYesnoHelper.IsArcadeYesno(yesno)}, " +
+        $"buttons={hasButtons}, blockedSystemPrompt={blocked}, doubleDown={doubleDown}, " +
+        $"machineName={mentionsMachine}, template={matchesTemplate} " +
+        $"(fragments={LimbPrompt.Fragments.Length}), " +
+        $"prompt=\"{Flatten(SelectYesnoHelper.GetPrompt(yesno))}\"";
+
+    private static string DescribeRefusal(
+        bool hasButtons,
+        bool blocked,
+        bool doubleDown,
+        bool mentionsMachine,
+        bool matchesTemplate)
+    {
+        if (!hasButtons)
+        {
+            return "找不到是/否按鈕";
+        }
+
+        if (blocked)
+        {
+            return "是被封鎖的系統提示";
+        }
+
+        if (doubleDown)
+        {
+            return "是挑戰翻倍提示，交給續戰設定決定";
+        }
+
+        if (!mentionsMachine)
+        {
+            return "文字裡沒有孤樹無援的機台名稱";
+        }
+
+        return matchesTemplate ? "未知原因" : "文字不符合街機遊玩確認框的模板";
+    }
+
+    /// <summary>log 用：把多行文字壓成一行，免得一則診斷散成好幾行難以對齊時間戳。</summary>
+    private static string Flatten(string text) =>
+        string.IsNullOrEmpty(text) ? string.Empty : text.Replace("\r", string.Empty).Replace("\n", " ⏎ ");
 
     /// <summary>每一層都先驗指標再解參考；任何一層取不到就整個不動作。</summary>
     private static bool TryClickButton(AtkUnitBase* addon, uint nodeId, string throttleKey, int throttleMs)

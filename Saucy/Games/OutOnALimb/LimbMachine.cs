@@ -68,6 +68,35 @@ internal static class LimbMachine
         return machine != null;
     }
 
+    /// <summary>
+    /// 這段確認框文字裡有沒有出現孤樹無援的機台名稱。
+    ///
+    /// 台服的街機遊玩確認框是 Addon 9321 的模板，第一行就是**粗體的機台名**
+    /// （使用者回報的截圖第一行正是「孤樹無援」）。名稱一律從當前用戶端的資料表讀
+    /// （<see cref="BuildMachineNames"/>：EObjName#2005423／Item#30425），
+    /// **不寫死任何語言的字串**，所以換語言、改譯名都不會靜默失效。
+    ///
+    /// 讀不到名稱時回 false —— 那個方向是「不動作」，不是「亂按」。
+    /// </summary>
+    internal static bool PromptMentionsMachine(string? prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return false;
+        }
+
+        var names = machineNames ??= BuildMachineNames();
+        foreach (var name in names)
+        {
+            if (prompt.Contains(name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsCandidateKind(IGameObject obj) =>
         obj.ObjectKind is ObjectKind.EventObj or ObjectKind.Housing;
 

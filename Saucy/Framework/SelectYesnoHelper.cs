@@ -322,6 +322,33 @@ public static unsafe class SelectYesnoHelper
         return !string.IsNullOrWhiteSpace(text) && PromptContainsAny(text, ArcadeDoubleDownMarkers);
     }
 
+    /// <summary>
+    /// 純文字判定的「挑戰翻倍」提示——**刻意不看 agent 歸屬**。
+    ///
+    /// 🔴 為什麼要有第二支：<see cref="IsArcadeDoubleDownYesno"/> 的第一個條件是
+    /// <see cref="IsArcadeAddon"/>，所以「addon 不屬於 GoldSaucerMiniGame agent」時它會回 **false**。
+    /// 那在原本的用法裡沒問題（呼叫端本來就先要求 agent 歸屬），但只要有呼叫端放寬了 agent 條件，
+    /// 這個排除項就會跟著失效——**防護會隨著它保護的那個條件一起消失**，而且完全沒有徵兆。
+    /// 放寬 agent 條件的呼叫端一律改用這一支。
+    ///
+    /// 台服出處：Addon 9329／9333「挑戰翻倍可以有機會獲得更多的金碟幣……要嘗試挑戰一下嗎？」，
+    /// 兩列都含「翻倍」。（9333 多一行「剩餘時間：」，那就是孤樹無援砍完一棵樹之後的續戰提示。）
+    /// </summary>
+    public static bool LooksLikeArcadeDoubleDownPrompt(AddonSelectYesno* yesno)
+    {
+        if (yesno == null)
+        {
+            return false;
+        }
+
+        var text = GetPromptText(yesno);
+        return !string.IsNullOrWhiteSpace(text) && PromptContainsAny(text, ArcadeDoubleDownMarkers);
+    }
+
+    /// <summary>確認框的內文。給診斷與「用資料表文字比對」的呼叫端用。</summary>
+    public static string GetPrompt(AddonSelectYesno* yesno) =>
+        yesno == null ? string.Empty : GetPromptText(yesno) ?? string.Empty;
+
     public static bool IsArcadeAddon(AtkUnitBase* addon) =>
         AgentHelper.IsAddonOwnedBy(addon, AgentId.GoldSaucerMiniGame);
 
