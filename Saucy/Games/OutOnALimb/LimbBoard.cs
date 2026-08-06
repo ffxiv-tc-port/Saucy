@@ -21,10 +21,14 @@ namespace Saucy.OutOnALimb;
 ///   <c>AddonGoldSaucerGatheringMiniGameBase::OnRequestedUpdate</c> 取 <c>numberArrays[104]</c>
 ///   的 <c>IntArray[0]</c>，再以 <c>pos / 10000.0f</c> 算指針旋轉角
 ///   （除數 10000.0f 就在該函式的 rip 相對常數裡）。</item>
-/// <item><c>AtkValue[0]</c>＝階段。用戶端只處理 2–6 五個值，3＝輪到玩家（輸入解鎖）、
-///   4＝這一刀正在結算（輸入鎖住）。</item>
-/// <item><c>AtkValue[11]</c>＝寫進計數文字節點的整數；<c>AtkValue[12]</c>／<c>AtkValue[13]</c>
-///   ×100 後分別餵給量表元件的「目前值」與「最大值」。</item>
+/// <item><c>AtkValue[0]</c>＝階段。3＝輪到玩家（輸入解鎖）。
+///   🔴 **舊註解寫「砍伐迴圈是 3 ↔ 4」是錯的，而且是 2026-08-06「一直失敗」的主因。**
+///   台服 7.20 實機面板傾印顯示一刀的完整循環是 <c>3 →(4)→ 5 → 7 → 3</c>：
+///   5＝揮擊／結算，7＝結果顯示（<c>AtkValue[11]</c> 就是在這一格遞減），4 只在部分刀出現。
+///   ⇒ **不可以用「階段不在某個集合裡」推論「換了一棵樹」**——5 與 7 每一刀都會出現。</item>
+/// <item><c>AtkValue[11]</c>＝本輪剩餘揮擊次數（實機 10→1 單調遞減，換樹回到 10）。
+///   <c>AtkValue[12]</c>／<c>AtkValue[13]</c> ×100 後餵給量表元件的「目前值」與「最大值」，
+///   但**實機 21 刀全程都是 10**，見 <see cref="ReadGauge"/>。</item>
 /// <item>力量表的三段寬度＝<c>[AtkValue[4], AtkValue[5]-AtkValue[4], 10000-AtkValue[5]]</c>，
 ///   命中判定見 <see cref="TryGetPowerZones"/>。</item>
 /// </list>
@@ -76,13 +80,12 @@ internal static unsafe class LimbBoard
     /// <summary>力量表的停止按鈕——低編號節點組（<c>AtkValue[1] == 4</c>）。</summary>
     internal const uint AimgStopButtonIdLow = 9;
 
-    /// <summary>State 值：輪到玩家出手。</summary>
+    /// <summary>State 值：輪到玩家出手。這是唯一一個我們真的依賴的階段值——
+    /// 其餘階段的語意沒有離線證實過，所以判斷邏輯一律不靠它們。</summary>
     internal const uint StatePlayerTurn = 3;
 
-    /// <summary>State 值：這一刀正在結算，輸入被鎖住。</summary>
-    internal const uint StateSwingResolving = 4;
-
-    /// <summary>一棵新樹開始時的揮擊次數。</summary>
+    /// <summary>一棵新樹開始時的揮擊次數。⚠️ 只當**取不到實測值時**的後備：
+    /// 真正在用的是「本局看過的最大 <see cref="ReadSwingsLeft"/>」，這樣就算改版把 10 改掉也不會壞。</summary>
     internal const uint SwingsPerTree = 10;
 
     /// <summary>備援路徑用的區塊節點組：<c>{容器節點, 填色節點}</c>×3。
@@ -161,11 +164,18 @@ internal static unsafe class LimbBoard
 
     internal static uint? ReadSwingsLeft(AtkUnitBase* addon) => ReadUInt(addon, SwingsLeftIndex);
 
-    /// <summary>樹的量表目前值。一刀砍下去掉多少，就是這刀砍得多準——
-    /// 這是解題器的主要回饋來源。</summary>
+    /// <summary>樹的量表目前值（<c>AtkValue[12]</c>）。
+    ///
+    /// 🔴 **不要把它當主要回饋來源。** 2026-08-06 台服 7.20 實機面板傾印（21 刀）顯示
+    /// <c>[12]</c> 與 <c>[13]</c> **全程都是 10**，只有樹倒下那一刻掉到 0；
+    /// 同一段 log 裡 <c>[11]</c>（剩餘刀數）10→1 正常遞減。
+    /// ⇒ 它要嘛是「樹的血量，而沒手感的刀就是 0 傷害」，要嘛根本不是每刀變動的欄位；
+    /// 兩種解讀都指向同一個結論：**它一整棵樹都可能不動，不能拿來收斂。**
+    /// 現在只當補強訊號用（有動就採信、沒動也不影響），主要判據是四級手感。</summary>
     internal static int? ReadGauge(AtkUnitBase* addon) => ReadRawInt(addon, GaugeIndex);
 
-    /// <summary>樹的量表最大值。換樹時會跟著換，用來判斷「這是不是同一棵樹」。</summary>
+    /// <summary>樹的量表最大值（<c>AtkValue[13]</c>）。實機量到的是固定 10。
+    /// 只在「它真的變了」時當成換樹的補充訊號，主判據是揮擊計數器。</summary>
     internal static int? ReadGaugeMax(AtkUnitBase* addon) => ReadRawInt(addon, GaugeMaxIndex);
 
     /// <summary>機台剩餘秒數。AtkValue[15] 是 "分:秒" 字串；

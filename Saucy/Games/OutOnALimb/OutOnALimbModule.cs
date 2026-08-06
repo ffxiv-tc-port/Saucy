@@ -18,9 +18,15 @@ namespace Saucy.OutOnALimb;
 ///   ・階段／量表／剩餘次數／剩餘時間 → <c>MiniGameBotanist</c> 的 AtkValue
 ///   ・指針位置                       → <c>NumberArrayData[104].IntArray[0]</c>（遊戲自己讀的同一格）
 ///   ・力量表的三段區間               → <c>MiniGameAimg</c> 的 <c>AtkValue[4]/[5]</c>
-///   ・砍伐回饋                       → 樹的量表落差（主）／系統訊息的手感文字（備援）
+///   ・砍伐回饋                       → 系統訊息的四級手感（主）／樹的量表落差（補強）
 /// 沒有封包 detour、沒有 hook、沒有特徵碼、沒有寫入遊戲記憶體，出手只有「在對的時機按下
 /// 畫面上本來就有的按鈕」。
+///
+/// 【2026-08-06 重做】實機 log 顯示舊版每一刀都誤判成「換了新樹」而把解題盤面清空，
+/// 目標從頭到尾固定在 20；真因是「砍伐階段只有 3 與 4」這個假設是錯的（見
+/// <see cref="TrackTreeBoundary"/>）。同時把主回饋從實測不會動的量表改回四級手感。
+/// 判定的**形狀**參考了 DailyRoutines 的 <c>AutoOutOnALimb</c> 對外可見的行為
+/// （逐位置嘗試表＋四級結果收斂），實作是我們自己寫的——DR 未公開原始碼，只採用機制知識。
 ///
 /// 【動作範圍】預設只在機台畫面已經開著時才動作。「連續遊玩」是**明確的選擇加上明確的一次按鈕**：
 /// 設定要打開、面板上要按下開始、而且跑滿設定的局數就自己停。沒按開始就絕不會自己去碰機台。
@@ -50,6 +56,7 @@ public unsafe class OutOnALimbModule : Module
     private const string ReplayMenuThrottleKey = "Saucy.OutOnALimb.ReplayMenu";
     private const string ReplayInteractThrottleKey = "Saucy.OutOnALimb.ReplayInteract";
     private const string SwingsDiagThrottleKey = "Saucy.OutOnALimb.SwingsDiag";
+    private const string StateDiagThrottleKey = "Saucy.OutOnALimb.StateDiag";
 
     /// <summary>揮斧的最低間隔。
     /// 這只是安全下限，不是節奏來源——真正「一輪只砍一刀」是靠階段機（<c>AtkValue[0]</c> 3↔4）
@@ -64,6 +71,7 @@ public unsafe class OutOnALimbModule : Module
     private const int CursorDiagThrottleMs = 5000;
     private const int BoardDumpThrottleMs = 1000;
     private const int SwingsDiagThrottleMs = 10000;
+    private const int StateDiagThrottleMs = 10000;
     private const int ReplayYesThrottleMs = 1500;
     private const int ReplayMenuThrottleMs = 1500;
 
@@ -94,15 +102,31 @@ public unsafe class OutOnALimbModule : Module
 
     private int? lastAimgCursor;
 
-    private uint lastState;
-
-    /// <summary>這一輪有沒有離開過「砍伐迴圈」（狀態 3 ↔ 4）。
-    /// 樹與樹之間一定會經過別的階段，所以這是不必知道各狀態確切語意也成立的換樹判據。</summary>
-    private bool sawNonChoppingState;
+    /// <summary>上一幀讀到的階段值。
+    /// 🔴 **null 就是「不知道」，不可以代換成任何具體值。** 舊版寫 <c>ReadState(addon) ?? 0</c>，
+    /// 而 0 不在當時假設的砍伐狀態集合裡 → 讀不到的那一幀直接被當成「換了一棵樹」。</summary>
+    private uint? lastState;
 
     private int? lastGaugeMax;
     private int? lastGauge;
+
+    /// <summary>上一幀的剩餘揮擊次數。
+    /// 🔴 **每一幀都要更新**：樹邊界只在計數器回頭的那一瞬間看得見，
+    /// 只在「輪到玩家」那一幀取樣會整個錯過——實機案例是一刀就把樹砍倒時，
+    /// 前後兩次輪到玩家讀到的都是 10，中間那個 9 落在別的階段。</summary>
     private uint? lastSwingsLeft;
+
+    /// <summary>本局看過的最大剩餘揮擊次數，也就是「計數器全滿」等於多少。
+    /// 自我校準而不是寫死 10——改版把每棵樹的刀數改掉時不會靜默失準。</summary>
+    private uint maxSwingsSeen;
+
+    /// <summary>這一棵樹我們已經揮了幾刀。用來分辨「計數器全滿」是同一棵樹的第一刀，
+    /// 還是我們漏掉了一次換樹。</summary>
+    private int swingsRecordedThisTree;
+
+    /// <summary>這一棵樹裡量表有沒有動過。只為了在 log 裡誠實回報「量表這條路徑到底有沒有資料」。</summary>
+    private bool gaugeMovedThisTree;
+
     private bool powerMeterClicked;
     private bool botanistWasOpen;
 
@@ -132,21 +156,30 @@ public unsafe class OutOnALimbModule : Module
     /// <summary>這一輪連續遊玩已經打完幾局。</summary>
     public int AutoReplayGamesDone { get; private set; }
 
-    /// <summary>解題器目前學到什麼（給面板顯示）。</summary>
+    /// <summary>解題器目前學到什麼（給面板顯示）。
+    /// ⚠️ 「還不知道」本身要看得見，所以沒有資料時不會顯示成 0，而是講清楚是哪一種沒有。</summary>
     public string SolverSummary
     {
         get
         {
-            var best = solver.BestSample;
+            var best = solver.Best;
             if (best == null)
             {
-                return $"尚未量到任何量表落差（已試 {CountObserved()} 點）";
+                return "這棵樹還沒有任何回饋（尚未揮出第一刀，或回饋讀不到）";
             }
 
-            return $"目前最佳：刻度 {best.Value.Position}，量表落差 {best.Value.Damage}" +
-                   $"（已量到 {solver.DamageSampleCount} 點）";
+            var damage = best.Damage is > 0 ? $"、量表落差 {best.Damage}" : string.Empty;
+            return $"目前最佳：刻度 {best.Position}（{HitPowerText.Of(best.Power)}{damage}）" +
+                   $"，這棵樹已試 {solver.ObservedCount} 點、其中 {solver.ContactCount} 點有手感";
         }
     }
+
+    /// <summary>回饋來源的健康狀況。
+    /// 📌 「量表沒資料」是常態（台服 7.20 實測），但那件事必須在列上看得見而不是藏在 tooltip，
+    /// 否則使用者會以為解題器有兩條資料在跑。</summary>
+    public string FeedbackSummary =>
+        $"回饋來源：系統訊息手感 {(feedbackText == null ? "尚未建表" : $"{feedbackText.Count}/{FeedbackRows.Length} 句")}" +
+        $"；樹的量表 {(gaugeLooksPerSwing ? gaugeMovedThisTree ? "有在動" : "這棵樹還沒動過" : "已判定不是每刀變化，停用")}";
 
     private static LimbSettings Cfg => C.OutOnALimb;
 
@@ -193,20 +226,6 @@ public unsafe class OutOnALimbModule : Module
         AutoReplayRunning = false;
     }
 
-    private int CountObserved()
-    {
-        var count = 0;
-        foreach (var item in solver.Results)
-        {
-            if (item.IsObserved)
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
-
     private void ResetRoundState()
     {
         pendingCursor = null;
@@ -215,17 +234,40 @@ public unsafe class OutOnALimbModule : Module
         nextTarget = null;
         lastBotanistCursor = null;
         lastAimgCursor = null;
-        lastState = 0;
-        sawNonChoppingState = true;
+        lastState = null;
         lastGaugeMax = null;
         lastGauge = null;
         lastSwingsLeft = null;
+        maxSwingsSeen = 0;
+        swingsRecordedThisTree = 0;
+        gaugeMovedThisTree = false;
         idleGauge = null;
         idleGaugeChanges = 0;
         powerMeterClicked = false;
 
         // 離開機台畫面就把解題盤面清空。
         solver.Reset(Cfg.Step);
+    }
+
+    /// <summary>換了一棵新的樹：盤面清空、丟掉還在等回饋的那一刀（它屬於上一棵樹）。
+    /// <paramref name="reason"/> 會寫進 log —— 2026-08-06 那次就是靠「為什麼認定換樹」這個欄位
+    /// 才發現每一刀都在誤判，所以它必須一直留著。</summary>
+    private void StartNewTree(string reason, uint? swingsLeft, int? gauge, int? gaugeMax)
+    {
+        solver.Reset(Cfg.Step);
+        pendingCursor = null;
+        gaugeAtSwing = null;
+        pendingSinceUtc = null;
+        nextTarget = null;
+        swingsRecordedThisTree = 0;
+        gaugeMovedThisTree = false;
+        idleGauge = gauge;
+        idleGaugeChanges = 0;
+
+        Svc.Log.Information($"[OutOnALimb] new tree ({reason}), solver reset " +
+                            $"[swings={swingsLeft?.ToString() ?? "?"}/{maxSwingsSeen}, " +
+                            $"gauge={gauge?.ToString() ?? "?"}/{gaugeMax?.ToString() ?? "?"}, " +
+                            $"step={Cfg.Step}]");
     }
 
     private void OnUpdate(IFramework framework)
@@ -241,7 +283,7 @@ public unsafe class OutOnALimbModule : Module
 
             if (!LimbBoard.IsPlaying)
             {
-                if (lastState != 0 || pendingCursor != null || powerMeterClicked)
+                if (lastState != null || pendingCursor != null || powerMeterClicked)
                 {
                     ResetRoundState();
                     LastAction = AutoReplayRunning
@@ -445,16 +487,26 @@ public unsafe class OutOnALimbModule : Module
         }
 
         HandleDoubleDownPrompt(addon);
+
+        // 🔴 順序有意義：換樹判定必須跑在回饋收集之前。
+        // 換樹時還在等回饋的那一刀屬於**上一棵樹**，記到新盤面上就是把雜訊當成學習。
+        TrackTreeBoundary(addon);
         CollectGaugeFeedback(addon);
 
-        var state = LimbBoard.ReadState(addon) ?? 0;
-        if (state is not (LimbBoard.StatePlayerTurn or LimbBoard.StateSwingResolving))
+        var state = LimbBoard.ReadState(addon);
+        if (state == null)
         {
-            // 砍伐迴圈是 3 ↔ 4；出現別的階段就代表這一棵樹（或這一局）結束了。
-            sawNonChoppingState = true;
+            // 讀不到階段就什麼都不做，也**不要更新 lastState** ——
+            // 「不知道」不是一個階段，把它當成階段會製造假的階段轉換。
+            if (EzThrottler.Throttle(StateDiagThrottleKey, StateDiagThrottleMs))
+            {
+                Svc.Log.Information("[OutOnALimb] board state (AtkValue[0]) unreadable this frame; standing by");
+            }
+
+            return;
         }
 
-        if (state == LimbBoard.StatePlayerTurn)
+        if (state.Value == LimbBoard.StatePlayerTurn)
         {
             if (lastState != LimbBoard.StatePlayerTurn)
             {
@@ -467,69 +519,91 @@ public unsafe class OutOnALimbModule : Module
         lastState = state;
     }
 
-    /// <summary>輪到玩家的那一幀：先判斷是不是換了一棵新的樹，再算出這一刀要瞄哪裡。</summary>
+    /// <summary>
+    /// 每一幀判斷「是不是換了一棵新的樹」。
+    ///
+    /// 🔴 **這裡刻意完全不看階段值。** 舊版用「階段不在 {3,4} 裡」當判據，但實機面板傾印顯示
+    /// 一刀的循環是 <c>3 →(4)→ 5 → 7 → 3</c>——5 與 7 每一刀都會出現，於是**每一刀都被判成換樹**，
+    /// 解題器永遠回到初始狀態、目標從頭到尾固定在 20。那就是「比 DR 差太多」的主因。
+    ///
+    /// 現在只採信兩個單調性訊號：剩餘揮擊次數**回升**、以及量表上限改變。
+    /// 兩者都不需要知道任何階段值的語意，改版動了階段機也不會壞。
+    /// </summary>
+    private void TrackTreeBoundary(AtkUnitBase* addon)
+    {
+        var swingsLeft = LimbBoard.ReadSwingsLeft(addon);
+        var gaugeMax = LimbBoard.ReadGaugeMax(addon);
+        var gauge = LimbBoard.ReadGauge(addon);
+
+        if (swingsLeft != null && swingsLeft.Value > maxSwingsSeen)
+        {
+            maxSwingsSeen = swingsLeft.Value;
+        }
+
+        string? reason = null;
+        if (swingsLeft != null && lastSwingsLeft != null && swingsLeft.Value > lastSwingsLeft.Value)
+        {
+            reason = $"揮擊計數器回升 {lastSwingsLeft.Value}→{swingsLeft.Value}";
+        }
+        else if (gaugeMax != null && lastGaugeMax != null && gaugeMax.Value != lastGaugeMax.Value)
+        {
+            reason = $"量表上限改變 {lastGaugeMax.Value}→{gaugeMax.Value}";
+        }
+
+        if (reason != null)
+        {
+            StartNewTree(reason, swingsLeft, gauge, gaugeMax);
+        }
+
+        // 兩個訊號都讀不到就等於沒有樹邊界判據——這件事使用者必須看得到，不能靜默降級。
+        if (swingsLeft == null && gaugeMax == null &&
+            EzThrottler.Throttle(SwingsDiagThrottleKey, SwingsDiagThrottleMs))
+        {
+            Svc.Log.Information("[OutOnALimb] neither the swing counter (AtkValue[11]) nor the gauge max " +
+                                "(AtkValue[13]) is readable; tree boundaries cannot be detected, " +
+                                "the solver will keep learning across trees");
+            LastAction = "讀不到揮擊計數器，無法判斷換樹";
+        }
+
+        lastSwingsLeft = swingsLeft ?? lastSwingsLeft;
+        lastGaugeMax = gaugeMax ?? lastGaugeMax;
+    }
+
+    /// <summary>輪到玩家的那一幀：補一個只有在這個時機才成立的換樹判據，再算出這一刀要瞄哪裡。</summary>
     private void HandleTurnStart(AtkUnitBase* addon)
     {
         var gaugeMax = LimbBoard.ReadGaugeMax(addon);
         var gauge = LimbBoard.ReadGauge(addon);
         var swingsLeft = LimbBoard.ReadSwingsLeft(addon);
 
-        string? reason = null;
-        if (sawNonChoppingState)
+        // 🔑 「計數器全滿，但這棵樹我們已經砍過了」＝中間換過樹而我們沒看到計數器回頭。
+        // ⚠️ 這條**只能在輪到玩家的那一幀判**：計數器是在結果階段才遞減的，
+        //    剛揮完的那幾幀它還停在舊值，每幀判會把同一棵樹的第一刀誤判成換樹。
+        if (swingsLeft != null && maxSwingsSeen > 0 &&
+            swingsLeft.Value == maxSwingsSeen && swingsRecordedThisTree > 0)
         {
-            reason = "phase edge";
-        }
-        else if (gaugeMax != null && lastGaugeMax != null && gaugeMax != lastGaugeMax)
-        {
-            reason = "gauge max changed";
-        }
-        else if (gauge != null && lastGauge != null && gauge > lastGauge)
-        {
-            reason = "gauge refilled";
-        }
-        else if (swingsLeft != null && lastSwingsLeft != null && swingsLeft > lastSwingsLeft)
-        {
-            reason = "swing counter went up";
-        }
-        else if (swingsLeft == LimbBoard.SwingsPerTree && lastSwingsLeft != LimbBoard.SwingsPerTree)
-        {
-            reason = "swing counter back to full";
+            StartNewTree($"計數器已滿（{swingsLeft.Value}）但這棵樹已經砍過 {swingsRecordedThisTree} 刀",
+                         swingsLeft, gauge, gaugeMax);
         }
 
-        if (swingsLeft == null && gauge == null && EzThrottler.Throttle(SwingsDiagThrottleKey, SwingsDiagThrottleMs))
-        {
-            Svc.Log.Information("[OutOnALimb] neither the swing counter nor the tree gauge is readable; " +
-                                "tree boundaries fall back to the phase edge only");
-        }
-
-        if (reason != null)
-        {
-            solver.Reset(Cfg.Step);
-            pendingCursor = null;
-            gaugeAtSwing = null;
-            pendingSinceUtc = null;
-            idleGauge = gauge;
-            idleGaugeChanges = 0;
-            Svc.Log.Information($"[OutOnALimb] new tree ({reason}), solver reset " +
-                                $"[gauge={gauge?.ToString() ?? "?"}/{gaugeMax?.ToString() ?? "?"}, " +
-                                $"swings={swingsLeft?.ToString() ?? "?"}]");
-        }
-
-        sawNonChoppingState = false;
-        lastGaugeMax = gaugeMax ?? lastGaugeMax;
         lastGauge = gauge ?? lastGauge;
-        lastSwingsLeft = swingsLeft ?? lastSwingsLeft;
 
         nextTarget = solver.GetNextTargetCursorPos();
         lastBotanistCursor = null;
+
+        var best = solver.Best;
+        Svc.Log.Information($"[OutOnALimb] turn start: swings={swingsLeft?.ToString() ?? "?"}/{maxSwingsSeen}, " +
+                            $"tried={solver.ObservedCount} contact={solver.ContactCount}, " +
+                            $"best={(best == null ? "-" : $"{best.Position}({HitPowerText.Of(best.Power)})")}, " +
+                            $"target={nextTarget?.ToString() ?? "-"}");
     }
 
     /// <summary>
-    /// 主回饋來源：樹的量表在砍完之後掉了多少。
+    /// **補強**回饋：樹的量表在砍完之後掉了多少。
     ///
-    /// 這比比對聊天訊息可靠得多——不必猜頻道代碼、不會被聊天過濾器擋掉、
-    /// 而且是連續值（四級文字回饋只有四種可能，Addon#9709 與 #9713 甚至逐字相同）。
-    /// 量表讀不到就什麼都不做，聊天備援照樣有機會補上。
+    /// 📌 2026-08-06 之前這裡被寫成「主要回饋來源」，那是錯的：實機 21 刀裡 <c>AtkValue[12]</c>
+    /// 只動過 1 次（樹倒下那一刻），其餘 20 刀全程 10 不變。真正每刀都拿得到的是系統訊息的四級手感。
+    /// 所以這條路徑保留，但只當額外訊號——它有資料就採信，沒資料也不影響收斂。
     /// </summary>
     private void CollectGaugeFeedback(AtkUnitBase* addon)
     {
@@ -562,31 +636,25 @@ public unsafe class OutOnALimbModule : Module
 
         var cursor = pendingCursor.Value;
         var delta = gaugeAtSwing.Value - gauge.Value;
-        var magnitude = Math.Abs(delta);
         pendingCursor = null;
         gaugeAtSwing = null;
         pendingSinceUtc = null;
         lastGauge = gauge;
         idleGauge = gauge;
+        gaugeMovedThisTree = true;
 
-        // 量表方向沒有離線驗證過（可能是往下扣、也可能是往上累積），所以取絕對值；
-        // 但「一刀就吃掉半條以上」一定是換樹／重設而不是成績，直接丟掉。
-        var max = lastGaugeMax ?? LimbBoard.ReadGaugeMax(addon);
-        if (max is > 0 && magnitude > max.Value / 2)
+        // 📌 方向現在是實測的，不再是猜的：實機看到砍倒那一刀量表 10→0，
+        // 也就是**變小＝這一刀有傷害**。變大只可能是換了一棵樹（重新填滿），那不是成績。
+        if (delta <= 0)
         {
-            Svc.Log.Information($"[OutOnALimb] gauge jumped {delta} after swinging at {cursor} " +
-                                $"(max {max.Value}); treating it as a board change, not a result");
+            Svc.Log.Information($"[OutOnALimb] gauge went up by {-delta} after swinging at {cursor} " +
+                                $"(now {gauge.Value}); treating it as a board change, not a result");
             return;
         }
 
-        if (magnitude == 0)
-        {
-            return;
-        }
-
-        solver.Record(cursor, HitPower.Unobserved, magnitude);
-        LastAction = $"刻度 {cursor} 的量表落差：{magnitude}";
-        Svc.Log.Information($"[OutOnALimb] swing at {cursor} moved the gauge by {delta} (now {gauge.Value})");
+        solver.Record(cursor, HitPower.Unobserved, delta);
+        LastAction = $"刻度 {cursor} 的量表落差：{delta}";
+        Svc.Log.Information($"[OutOnALimb] swing at {cursor} moved the gauge by -{delta} (now {gauge.Value})");
     }
 
     /// <summary>沒有等待中的刀時盯著量表。它應該是靜止的——如果每幀都在跳，
@@ -661,10 +729,12 @@ public unsafe class OutOnALimbModule : Module
         pendingCursor = display;
         gaugeAtSwing = LimbBoard.ReadGauge(addon);
         pendingSinceUtc = DateTime.UtcNow;
+        swingsRecordedThisTree++;
         LastAction = $"揮斧於刻度 {display}（目標 {nextTarget.Value}）";
         Svc.Log.Information($"[OutOnALimb] swing at raw {cursor.Value} (display {display}, " +
                             $"target {nextTarget.Value}, {(crossed ? "crossing" : "inside")}, " +
-                            $"gauge {gaugeAtSwing?.ToString() ?? "?"})");
+                            $"gauge {gaugeAtSwing?.ToString() ?? "?"}, " +
+                            $"swing #{swingsRecordedThisTree} of this tree)");
         nextTarget = null;
     }
 
@@ -858,8 +928,9 @@ public unsafe class OutOnALimbModule : Module
             gaugeAtSwing = null;
             pendingSinceUtc = null;
             solver.Record(cursor, power);
-            LastAction = $"刻度 {cursor} 的手感：{power}";
-            Svc.Log.Information($"[OutOnALimb] hit result at {cursor}: {power} (chat type {(int)type})");
+            LastAction = $"刻度 {cursor} 的手感：{HitPowerText.Of(power)}";
+            Svc.Log.Information($"[OutOnALimb] hit result at {cursor}: {power} (chat type {(int)type}); " +
+                                $"board now tried={solver.ObservedCount} contact={solver.ContactCount}");
         }
         catch (Exception ex)
         {

@@ -18,10 +18,11 @@ public enum LimbDifficulty
 
 /// <summary>單次砍伐的「手感」回饋。遊戲以系統訊息回報（Addon 表 9710/9711/9712/9713），
 /// 值越大代表離最佳位置越近；<see cref="Unobserved"/> 代表這個位置還沒試過。
-/// 順序有意義——解題器用 &lt; 比較判斷「這次比上次差」。
+/// 順序有意義——解題器直接拿列舉值當分數比大小。
 ///
-/// 📌 這條路徑現在只是**備援**：主要回饋來自樹的量表變化（見 <see cref="HitResult.Damage"/>），
-/// 那是連續值、不必比對任何文字，也不會被聊天過濾器擋掉。</summary>
+/// 📌 **這是主要回饋來源**（2026-08-06 實機修正）。21 刀的實機 log 裡它 21/21 都拿得到，
+/// 而原本被當成主來源的量表落差 21 刀只動過 1 次。
+/// 這四級也正好對應 DailyRoutines 用的四級結果（Fail／Normal／Great／Perfect）。</summary>
 [Obfuscation(Exclude = true)]
 public enum HitPower
 {
@@ -39,12 +40,26 @@ public class HitResult(int position, HitPower power)
     public HitPower Power = power;
 
     /// <summary>在這個位置砍下去，樹的量表（<c>AtkValue[12]</c>）掉了多少。
-    /// null＝這個位置還沒量到量表變化（可能是還沒砍過，也可能是量表讀不到）。
-    /// 有值時一律優先於 <see cref="Power"/>：它是連續值，解析度遠高於四級文字回饋。</summary>
+    /// null＝這個位置沒量到量表變化。
+    /// ⚠️ 台服 7.20 實測這個欄位幾乎永遠是 null（見 <see cref="LimbBoard.ReadGauge"/>），
+    /// 所以它只是 <see cref="Power"/> 的**補強**，不是主要判據。</summary>
     public int? Damage;
 
     /// <summary>這個位置有沒有任何形式的觀測結果。</summary>
     public bool IsObserved => Damage != null || Power != HitPower.Unobserved;
+}
+
+/// <summary>手感等級的中文標籤（面板與 log 用）。</summary>
+internal static class HitPowerText
+{
+    internal static string Of(HitPower power) => power switch
+    {
+        HitPower.Nothing => "沒手感",
+        HitPower.Weak => "接觸到",
+        HitPower.Strong => "很接近",
+        HitPower.Maximum => "正中目標",
+        var _ => "未觀測"
+    };
 }
 
 /// <summary>力量表上的一格。座標一律是遊戲自己用的 0–10000 指針刻度，
@@ -73,7 +88,10 @@ public class LimbSettings
     /// 畫面更新率不夠高，也不會像以前那樣整個掃過頭都按不到。</summary>
     public int Tolerance { get; set; } = 2;
 
-    /// <summary>解題器把 0–100 的刻度盤切成幾格（步進值）。</summary>
+    /// <summary>粗掃時兩個取樣點的**最小間距**（0–100 顯示刻度）。
+    /// 📌 2026-08-06 起語意改了：舊版把它當成「盤面切成幾格」，收斂精度因此被它卡死；
+    /// 現在盤面一律是 0–100 逐格，這個值只決定「還沒摸到任何手感時，粗掃要撒多開」。
+    /// 一旦有手感，細修可以走到比這個值更細的刻度。預設值不變。</summary>
     public int Step { get; set; } = 10;
 
     /// <summary>是否自動停第一階段的力量表。⚠️ 力量表畫面與礦脈探索共用，

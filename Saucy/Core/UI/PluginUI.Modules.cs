@@ -579,8 +579,9 @@ public unsafe partial class PluginUI
             C.Save();
         }
 
-        ImGui.TextWrapped("啟用後，孤樹無援的機台畫面開著時會自動幫你停力量表、並依每一刀讓樹的量表掉多少" +
-                          "推算最佳砍伐位置後揮斧。除非你另外打開下面的「連續遊玩」並按下開始，" +
+        ImGui.TextWrapped("啟用後，孤樹無援的機台畫面開著時會自動幫你停力量表、並依每一刀的系統訊息手感" +
+                          "（沒手感／接觸到／很接近／正中目標）逐步收斂出最佳砍伐位置後揮斧。" +
+                          "除非你另外打開下面的「連續遊玩」並按下開始，" +
                           "模組不會自己去找機台、不會自己互動、也不會自己開始新的一局。");
 
         ImGui.Dummy(new(0, 4));
@@ -677,6 +678,10 @@ public unsafe partial class PluginUI
         if (limbModule != null && enabled)
         {
             SaucyTheme.TextMuted($"解題器：{limbModule.SolverSummary}");
+
+            // ⚠️ 回饋來源的健康狀況放在列上而不是 tooltip：
+            // 「解題器沒有資料可學」是使用者必須一眼看到的事，不是起疑才查的事。
+            SaucyTheme.TextMuted(limbModule.FeedbackSummary);
         }
     }
 

@@ -1,243 +1,331 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 namespace Saucy.OutOnALimb;
 
 /// <summary>
 /// 孤樹無援的「找最佳砍伐位置」解題器——純資料運算，不碰任何原生記憶體。
 ///
-/// 玩法：刻度盤上有一個隱藏的最佳位置，砍得越準、樹的量表掉得越多。
-/// 收斂用的訊號有兩種，優先順序如下：
+/// 玩法：刻度盤上有一個隱藏的最佳位置，砍得越準，系統訊息回報的「手感」越好。
+///
+/// 【這一版為什麼重做】2026-08-06 實機 log（21:14–21:20，共 21 刀）顯示舊版有三個問題：
 /// <list type="number">
-/// <item><b>量表落差</b>（<c>AtkValue[12]</c> 砍前砍後的差）——連續值，直接拿來爬山。
-///   這是主要來源。</item>
-/// <item><b>系統訊息的手感</b>（沒感覺／接觸到／很接近／正中）——只有四級，而且要靠比對
-///   聊天欄文字才拿得到。量表讀不到時的備援。</item>
+/// <item>盤面每一刀都被重設，所以永遠停在初始猜測，目標從頭到尾固定在 20。</item>
+/// <item>舊版把「量表落差」當主要回饋，但實測 <c>AtkValue[12]</c> 全程不動
+///   （見 <see cref="LimbBoard.ReadGauge"/> 的實測註記），那條路徑等於沒有資料。
+///   真正每一刀都拿得到的是**四級手感**（系統訊息）。</item>
+/// <item>沒有手感時舊版是**隨機**挑一個沒試過的位置，等於把有限的 10 刀丟掉。</item>
 /// </list>
-/// 兩種都沒有時就退化成盲掃，行為與舊版相同（不會亂按，只是收斂得慢）。
+///
+/// 【機制參考】判定的形狀參考了 DailyRoutines 的 <c>AutoOutOnALimb</c> 對外可見的行為與資料結構
+/// （它維護一個 <c>int[100]</c> 的逐位置嘗試表、並以四級結果 Fail／Normal／Great／Perfect 收斂），
+/// 但**程式碼是我們自己寫的**：DR 未公開原始碼，我們只採用「怎麼做」的知識，沒有沿用它的實作。
+/// 對應關係：DR 的四級結果＝我們的 <see cref="HitPower"/>
+/// （Addon#9710–9713 的四句手感文字），DR 的逐位置表＝這裡的 <see cref="board"/>。
+///
+/// 【與舊版的差別】盤面改成**整個 0–100 逐格**（跟 DR 的 <c>int[100]</c> 同解析度），
+/// 設定裡的「步進值」不再是盤面格數，而是**粗掃時的最小間距**——
+/// 一旦有手感就可以在比步進值更細的刻度上收斂。
 /// </summary>
 internal class LimbSolver
 {
-    /// <summary>粗掃用的三個起始點（0–100 顯示刻度）。</summary>
-    private static readonly int[] StartingPoints = [20, 50, 80];
+    internal const int MinPosition = 0;
+    internal const int MaxPosition = 100;
+    private const int PositionCount = MaxPosition - MinPosition + 1;
 
-    private readonly List<HitResult> results = [];
+    /// <summary>逐格盤面。<c>null</c>＝這一格還沒試過。</summary>
+    private readonly HitResult?[] board = new HitResult?[PositionCount];
 
-    private int minIndex;
-    private bool recordMinIndex;
+    /// <summary>粗掃時兩個取樣點之間的最小間距（0–100 顯示刻度）。由設定的「步進值」來。</summary>
+    private int coarseStep = 10;
 
-    internal IReadOnlyList<HitResult> Results => results;
+    internal int ObservedCount { get; private set; }
 
-    internal int MinIndex => minIndex;
+    /// <summary>已經量到量表落差的位置數。UI 用來顯示「量表這條路徑到底有沒有資料」。</summary>
+    internal int DamageSampleCount { get; private set; }
 
-    /// <summary>已經量到量表落差的位置數。UI 用來顯示「解題器到底有沒有在學東西」。</summary>
-    internal int DamageSampleCount => results.Count(x => x.Damage != null);
+    /// <summary>有手感（Weak 以上，或量表真的掉了）的位置數。0＝還在盲掃階段。</summary>
+    internal int ContactCount { get; private set; }
 
-    /// <summary>目前量到的最大落差與它的位置；一次都沒量到就回 null。</summary>
-    internal (int Position, int Damage)? BestSample
+    /// <summary>目前分數最高的那一格；一刀都還沒記錄就回 null。</summary>
+    internal HitResult? Best
     {
         get
         {
             HitResult? best = null;
-            foreach (var item in results)
+            foreach (var item in board)
             {
-                if (item.Damage == null)
-                {
-                    continue;
-                }
-
-                if (best == null || item.Damage.Value > best.Damage!.Value)
+                if (item != null && (best == null || Compare(item, best) > 0))
                 {
                     best = item;
                 }
             }
 
-            return best == null ? null : (best.Position, best.Damage!.Value);
+            return best;
         }
     }
 
-    /// <summary>新的一棵樹：依步進值重建整個刻度盤。</summary>
+    /// <summary>新的一棵樹：整個盤面清空。</summary>
     internal void Reset(int step)
     {
-        // step 由設定來，夾住下限避免 0 或負數造成無限迴圈／空清單。
-        var safeStep = Math.Clamp(step, 1, 100);
-        results.Clear();
-        for (var i = 0; i <= 100; i += safeStep)
-        {
-            results.Add(new(i, HitPower.Unobserved));
-        }
-
-        minIndex = 0;
-        recordMinIndex = false;
+        // step 由設定來，夾住上下限：0／負數會讓粗掃永遠選同一格，過大則整個盤面只剩兩個候選。
+        coarseStep = Math.Clamp(step, 1, 50);
+        Array.Clear(board, 0, board.Length);
+        ObservedCount = 0;
+        DamageSampleCount = 0;
+        ContactCount = 0;
     }
 
     /// <summary>記錄一次砍伐結果。<paramref name="cursor"/> 是**當時實際按下去的刻度**
     /// （0–100 顯示刻度），不是回報抵達當下的指針位置（指針還在轉）。</summary>
-    /// <param name="damage">樹的量表掉了多少。null＝這次沒量到（會退回用 <paramref name="power"/>）。</param>
+    /// <param name="power">系統訊息的四級手感。<see cref="HitPower.Unobserved"/>＝這次沒讀到手感。</param>
+    /// <param name="damage">樹的量表掉了多少。null＝這次沒量到（實測台服 7.20 幾乎總是 null）。</param>
     internal void Record(int cursor, HitPower power, int? damage = null)
     {
-        var item = GetClosestResultPoint(cursor);
-        if (item == null)
+        var index = ToIndex(cursor);
+        if (index < 0)
         {
             return;
         }
+
+        var item = board[index];
+        if (item == null)
+        {
+            item = new(index, HitPower.Unobserved);
+            board[index] = item;
+            ObservedCount++;
+        }
+
+        var hadDamage = item.Damage != null;
+        var hadContact = HasContact(item);
 
         if (damage is > 0)
         {
-            // 同一個位置量到第二次就取較大值：量表落差本身沒有隨機性，
-            // 但「換樹瞬間剛好結算」之類的干擾只會讓它偏小。
+            // 同一格量到第二次就取較大值：量表落差本身沒有隨機性，
+            // 會讓它偏小的只有「換樹瞬間剛好結算」這類干擾。
             item.Damage = item.Damage == null ? damage : Math.Max(item.Damage.Value, damage.Value);
+            if (!hadDamage)
+            {
+                DamageSampleCount++;
+            }
         }
 
-        if (power == HitPower.Unobserved)
+        if (power != HitPower.Unobserved && power > item.Power)
         {
-            return;
+            item.Power = power;
         }
 
-        if (recordMinIndex)
+        if (!hadContact && HasContact(item))
         {
-            recordMinIndex = false;
-            minIndex = Math.Max(0, results.IndexOf(item));
+            ContactCount++;
         }
-
-        // 比上一次記錄還差，代表方向走反了：解除收斂範圍，重新全域搜尋。
-        if (power < item.Power)
-        {
-            minIndex = 0;
-            recordMinIndex = false;
-        }
-
-        item.Power = power;
     }
 
-    /// <summary>算出下一次要瞄準的刻度；沒有任何可選位置時回 null（呼叫端就不出手）。</summary>
+    /// <summary>算出下一次要瞄準的刻度；盤面全滿且毫無資訊時回目前最佳（呼叫端照樣出手）。</summary>
     internal int? GetNextTargetCursorPos()
     {
-        if (results.Count == 0)
+        var best = Best;
+
+        // 還沒有任何觀測 → 從正中央開始，之後靠最大間隙往兩邊二分。
+        if (best == null)
+        {
+            return NextProbe(coarseStep) ?? NextProbe(1) ?? (MinPosition + MaxPosition) / 2;
+        }
+
+        // 正中目標：就是這一格，繼續砍它。
+        if (best.Power == HitPower.Maximum)
+        {
+            return best.Position;
+        }
+
+        // 已經有手感 → 在最佳點附近細修。先在一個粗掃格內找，找不到再放寬。
+        if (HasContact(best))
+        {
+            foreach (var reach in new[] { coarseStep, coarseStep * 2, PositionCount })
+            {
+                var refine = RefineAround(best.Position, reach);
+                if (refine != null)
+                {
+                    return refine;
+                }
+            }
+
+            // 附近全試過了，最佳點就是目前所知最好的位置。
+            return best.Position;
+        }
+
+        // 全部都是「沒手感」→ 繼續粗掃。
+        // 🔴 粗掃間距用完之後**不可以退回「重砍目前最佳點」**：那一點也是「沒手感」，
+        // 再砍一次得不到任何新資訊，等於把剩下的刀數丟掉（離線模擬抓到 555 次這種空轉）。
+        // 正解是把最小間距縮到 1 繼續補洞——隱藏的最佳點一定就在還沒問過的縫隙裡。
+        return NextProbe(coarseStep) ?? NextProbe(1) ?? best.Position;
+    }
+
+    /// <summary>
+    /// 在 <paramref name="centre"/> 附近挑一個還沒試過的刻度。
+    ///
+    /// 收斂假設：分數是「與隱藏最佳點的距離」的遞減函數，所以**分數比 centre 差的位置就是邊界**，
+    /// 最佳點一定落在左右兩個邊界之間。做法是取「較寬的那一側未探索區間」的中點——
+    /// 每問一次區間就折半，而且完全不需要知道各級手感對應多少刻度的半徑
+    /// （那是遊戲內部常數，離線推不出來，寫死就是下次改版靜默失準）。
+    /// </summary>
+    private int? RefineAround(int centre, int reach)
+    {
+        var centreScore = Score(board[centre]);
+
+        // 邊界＝離 centre 最近、分數比它差的已試位置；沒有的話就用 reach 夾住。
+        var low = Math.Max(MinPosition - 1, centre - reach - 1);
+        for (var i = centre - 1; i >= MinPosition; i--)
+        {
+            if (board[i] != null && Score(board[i]) < centreScore)
+            {
+                low = Math.Max(low, i);
+                break;
+            }
+        }
+
+        var high = Math.Min(MaxPosition + 1, centre + reach + 1);
+        for (var i = centre + 1; i <= MaxPosition; i++)
+        {
+            if (board[i] != null && Score(board[i]) < centreScore)
+            {
+                high = Math.Min(high, i);
+                break;
+            }
+        }
+
+        var leftCandidate = NearestUntried(low + 1, centre - 1, (low + 1 + centre - 1) / 2);
+        var rightCandidate = NearestUntried(centre + 1, high - 1, (centre + 1 + high - 1) / 2);
+
+        if (leftCandidate == null)
+        {
+            return rightCandidate;
+        }
+
+        if (rightCandidate == null)
+        {
+            return leftCandidate;
+        }
+
+        // 兩側都還有空間時先問比較寬的那一側——資訊量比較大。
+        var leftWidth = centre - low;
+        var rightWidth = high - centre;
+        return rightWidth > leftWidth ? rightCandidate : leftCandidate;
+    }
+
+    /// <summary>在 <c>[from, to]</c> 裡找一個沒試過的刻度，優先靠近 <paramref name="preferred"/>。</summary>
+    private int? NearestUntried(int from, int to, int preferred)
+    {
+        if (from > to)
         {
             return null;
         }
 
-        var byDamage = GetNextTargetFromDamage();
-        if (byDamage != null)
-        {
-            return byDamage;
-        }
-
-        return GetNextTargetFromChatFeedback();
-    }
-
-    /// <summary>量表落差路徑：對最好的那一點做局部爬山，鄰居都量過了就一直打它。</summary>
-    private int? GetNextTargetFromDamage()
-    {
-        var bestIndex = -1;
-        for (var i = 0; i < results.Count; i++)
-        {
-            if (results[i].Damage == null)
-            {
-                continue;
-            }
-
-            if (bestIndex < 0 || results[i].Damage!.Value > results[bestIndex].Damage!.Value)
-            {
-                bestIndex = i;
-            }
-        }
-
-        if (bestIndex < 0)
+        from = Math.Max(from, MinPosition);
+        to = Math.Min(to, MaxPosition);
+        if (from > to)
         {
             return null;
         }
 
-        // 先把最佳點的左右鄰居補齊——爬山要有梯度才知道往哪走。
-        foreach (var neighbour in new[] { bestIndex - 1, bestIndex + 1 })
+        preferred = Math.Clamp(preferred, from, to);
+        for (var offset = 0; offset <= to - from; offset++)
         {
-            var candidate = SafeAt(neighbour);
-            if (candidate is { Damage: null })
+            foreach (var candidate in new[] { preferred - offset, preferred + offset })
             {
-                return candidate.Position;
-            }
-        }
-
-        // 只量到一兩點就直接固定下來太容易卡在局部極大值；先把三個粗掃點掃完。
-        if (DamageSampleCount < StartingPoints.Length)
-        {
-            foreach (var start in StartingPoints)
-            {
-                var candidate = GetClosestResultPoint(start);
-                if (candidate is { Damage: null })
+                if (candidate >= from && candidate <= to && board[candidate] == null)
                 {
-                    return candidate.Position;
+                    return candidate;
                 }
             }
         }
 
-        return results[bestIndex].Position;
+        return null;
     }
 
-    /// <summary>舊的四級手感路徑。量表讀不到時的備援，行為與改版前相同。</summary>
-    private int? GetNextTargetFromChatFeedback()
+    /// <summary>
+    /// 粗掃：挑「離所有已試位置最遠」的那一格（最大間隙），而不是舊版的**隨機**挑。
+    ///
+    /// 空盤面時最大間隙落在正中央，接著是兩端、再來是四等分點……
+    /// 等於自動做出一輪二分掃描，用同樣的刀數換到更均勻的覆蓋。
+    /// </summary>
+    /// <param name="minSpacing">候選點離最近取樣點至少要多遠。
+    /// 呼叫端先用設定的步進值撒開，撒不下去了再用 1 補洞——
+    /// **絕不要在還有沒試過的格子時回 null 讓呼叫端去重砍舊位置**。</param>
+    private int? NextProbe(int minSpacing)
     {
-        var start = Math.Clamp(minIndex, 0, results.Count - 1);
+        int? bestCandidate = null;
+        var bestDistance = -1;
+        var anyObserved = ObservedCount > 0;
 
-        for (var i = start; i < results.Count; i++)
+        for (var position = MinPosition; position <= MaxPosition; position++)
         {
-            if (results[i].Power == HitPower.Strong)
-            {
-                return results[i].Position;
-            }
-        }
-
-        for (var i = start; i < results.Count; i++)
-        {
-            if (results[i].Power != HitPower.Weak)
+            if (board[position] != null)
             {
                 continue;
             }
 
-            var prev = SafeAt(i - 1);
-            var next = SafeAt(i + 1);
-            if (prev != null && prev.Power == HitPower.Unobserved && i - 1 >= start)
+            int distance;
+            if (anyObserved)
             {
-                return prev.Position;
-            }
-
-            if (next != null && next.Power == HitPower.Unobserved)
-            {
-                return next.Position;
-            }
-        }
-
-        var pendingStartingPoints = StartingPoints.Where(z => !IsStartingPointChecked(z)).ToArray();
-        if (pendingStartingPoints.Length > 0)
-        {
-            var target = GetClosestResultPoint(pendingStartingPoints[0]);
-            if (target != null)
-            {
-                if (pendingStartingPoints.Length != StartingPoints.Length)
+                distance = int.MaxValue;
+                for (var i = MinPosition; i <= MaxPosition; i++)
                 {
-                    recordMinIndex = true;
-                }
+                    if (board[i] == null)
+                    {
+                        continue;
+                    }
 
-                return target.Position;
+                    distance = Math.Min(distance, Math.Abs(i - position));
+                }
+            }
+            else
+            {
+                // 空盤面：離中央越近越好，這樣第一刀落在正中央。
+                distance = MaxPosition - Math.Abs(position - ((MinPosition + MaxPosition) / 2));
+            }
+
+            if (distance > bestDistance)
+            {
+                bestDistance = distance;
+                bestCandidate = position;
             }
         }
 
-        minIndex = 0;
-        var unobserved = results.Where(x => !x.IsObserved).ToArray();
-        return unobserved.Length == 0 ? null : unobserved[Random.Shared.Next(unobserved.Length)].Position;
+        // 已經有觀測、而且連「離最近取樣點 minSpacing 以上」的候選都沒有了 → 這個間距掃完了。
+        if (anyObserved && bestDistance < Math.Max(1, minSpacing))
+        {
+            return null;
+        }
+
+        return bestCandidate;
     }
 
-    /// <summary>索引兩軸都驗（下界與上界），越界回 null。</summary>
-    private HitResult? SafeAt(int index) =>
-        index < 0 || index >= results.Count ? null : results[index];
+    private static int ToIndex(int cursor) =>
+        cursor < MinPosition || cursor > MaxPosition ? -1 : cursor - MinPosition;
 
-    private HitResult? GetClosestResultPoint(int point) =>
-        results.Count == 0 ? null : results.OrderBy(x => Math.Abs(point - x.Position)).First();
-
-    private bool IsStartingPointChecked(int position)
+    /// <summary>一格的分數。手感是主軸；量表真的掉過就至少算「接觸到」——
+    /// 量表會動就代表這一刀確實砍在樹上。</summary>
+    private static int Score(HitResult? item)
     {
-        var item = GetClosestResultPoint(position);
-        return item == null || item.IsObserved;
+        if (item == null)
+        {
+            return -1;
+        }
+
+        var score = (int)item.Power;
+        if (item.Damage is > 0 && score < (int)HitPower.Weak)
+        {
+            score = (int)HitPower.Weak;
+        }
+
+        return score;
+    }
+
+    private static bool HasContact(HitResult item) => Score(item) >= (int)HitPower.Weak;
+
+    /// <summary>先比分數，同分再比量表落差。</summary>
+    private static int Compare(HitResult a, HitResult b)
+    {
+        var byScore = Score(a).CompareTo(Score(b));
+        return byScore != 0 ? byScore : (a.Damage ?? 0).CompareTo(b.Damage ?? 0);
     }
 }
