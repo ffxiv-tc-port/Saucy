@@ -119,9 +119,24 @@ internal static unsafe class PreciseMovement
     /// <summary>Same computation as BossModReborn's Camera.Update() (BossMod/Framework/Camera.cs) —
     /// derives the camera's horizontal facing angle from the active render camera's view matrix,
     /// without needing a per-frame Update() driver of our own.</summary>
+    /// <summary>
+    /// CameraManager.GetActiveCamera() is a ClientStructs <c>[MemberFunction]</c>, and
+    /// CameraManager.Instance() just forwards to Control.Instance(), a <c>[StaticAddress]</c>. When
+    /// either signature stops resolving they <b>throw</b> InvalidOperationException (InteropGenerator's
+    /// ThrowHelper.ThrowNullAddress) rather than returning null - so a null check on Instance() was
+    /// never a guard against a broken signature. This is reached from the RMIWalk detour, so a stale
+    /// signature would mean a managed exception thrown inside a detour on every frame. Check the
+    /// resolved addresses up front and skip the whole camera path instead.
+    /// </summary>
+    private static bool CameraApiResolved
+        => FFXIVClientStructs.FFXIV.Client.Game.Control.Control.Addresses.Instance.Value != 0
+        && FFXIVClientStructs.FFXIV.Client.Game.Control.CameraManager.Addresses.GetActiveCamera.Value != 0;
+
     private static float GetCameraAzimuth()
     {
-        var cameraManager = FFXIVClientStructs.FFXIV.Client.Game.Control.CameraManager.Instance();
+        var cameraManager = CameraApiResolved
+            ? FFXIVClientStructs.FFXIV.Client.Game.Control.CameraManager.Instance()
+            : null;
         var camera = cameraManager != null ? cameraManager->GetActiveCamera() : null;
         var renderCamera = camera != null ? camera->SceneCamera.RenderCamera : null;
         if (renderCamera == null)
@@ -135,9 +150,49 @@ internal static unsafe class PreciseMovement
         return MathF.Atan2(view.M13, view.M33) + MathF.PI;
     }
 
+    // fail-closed: a detour is a managed function the *native* code calls directly, so a managed
+    // exception escaping it unwinds through native frames that have no handler for it. The override
+    // logic therefore runs inside a try, and the degraded behaviour is "don't override" - Original has
+    // already run, so the player's own movement input passes through intact.
+    // NOTE: this does NOT protect against AccessViolationException (corrupted-state, uncatchable in
+    // .NET Core). What it catches is managed exceptions - most importantly the
+    // InvalidOperationException that ClientStructs' [StaticAddress]/[MemberFunction] members throw
+    // when their signature stops resolving after a game patch.
+    private static long detourErrors;
+    private static DateTime lastDetourErrorLog = DateTime.MinValue;
+
+    public static long DetourErrors => detourErrors;
+
+    private static void OnDetourError(Exception ex)
+    {
+        ++detourErrors;
+        // this runs per frame - never log unthrottled. Information (not Debug) because reporting
+        // users run at LogLevel 2.
+        var now = DateTime.UtcNow;
+        if (now - lastDetourErrorLog < TimeSpan.FromSeconds(30))
+        {
+            return;
+        }
+
+        lastDetourErrorLog = now;
+        Svc.Log.Information($"[Saucy] PreciseMovement 覆寫時發生例外，本次不覆寫、讓遊戲原本的移動輸入通過（累計 {detourErrors} 次）：{ex}");
+    }
+
     private static void RmiWalkDetour(nint self, float* sumLeft, float* sumForward, float* sumTurnLeft, byte* haveBackwardOrStrafe, byte* a6, byte bAdditiveUnk)
     {
         hook!.Original(self, sumLeft, sumForward, sumTurnLeft, haveBackwardOrStrafe, a6, bAdditiveUnk);
+        try
+        {
+            ApplyOverride(self, sumLeft, sumForward, bAdditiveUnk);
+        }
+        catch (Exception ex)
+        {
+            OnDetourError(ex);
+        }
+    }
+
+    private static void ApplyOverride(nint self, float* sumLeft, float* sumForward, byte bAdditiveUnk)
+    {
         TotalCalls++;
 
         // BossModReborn only treats a call as the "real" input-gathering one when bAdditiveUnk==0
