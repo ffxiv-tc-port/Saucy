@@ -686,7 +686,7 @@ internal static class TriadOptimizedDeckCacheStore
             return string.Empty;
         }
 
-        var world = Svc.Data.GetExcelSheet<World>()?.GetRow(homeWorldRowId);
+        var world = Svc.Data.GetExcelSheet<World>()?.GetRowOrDefault(homeWorldRowId);
         return world?.Name.ToString() ?? string.Empty;
     }
 
