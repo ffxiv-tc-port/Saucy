@@ -37,6 +37,25 @@ internal class LimbSolver
     /// <summary>粗掃時兩個取樣點之間的最小間距（0–100 顯示刻度）。由設定的「步進值」來。</summary>
     private int coarseStep = 10;
 
+    /// <summary>粗掃候選範圍往內縮的上限（0–100 顯示刻度）。
+    ///
+    /// 🔴 為什麼要內縮：**端點的資訊效率只有一半。** 最佳點的感應範圍是雙側的——
+    /// 探刻度 50 能感應到 50 兩側的最佳點，探刻度 100 卻只能感應到左半邊，右半邊在界外。
+    /// 舊版的最大間隙法第二刀時 0 與 100 並列最遠，於是把第二、第三刀都花在端點上，
+    /// 序列是 <c>50 → 0 → 100 → 25 → 75</c>（使用者實測回報「50 100 1 這種策略不太對」）。
+    ///
+    /// ⚠️ 但**純二分（完全避開端點）會漏球**：最佳點落在極端位置時整局碰不到，
+    /// 離線量測顯示感應半徑 5 時漏 12 個位置、半徑 8 時漏 5 個，比舊版還糟。
+    /// 正解是「保留最大間隙法，但把候選範圍內縮一個感應半徑」——
+    /// 端點區域改由**內側那一點的感應範圍**覆蓋，所以一個都不會漏。
+    ///
+    /// 📌 真實感應半徑是未知的遊戲常數（離線推不出來），所以內縮量取
+    /// <c>coarseStep / 2</c>——粗掃間距本來就隱含「半徑約等於間距的一半」這個假設，
+    /// 兩者一致才自洽。再夾一個上限 5，免得使用者把步進值調很大時
+    /// 反而讓兩端一大片在刀數用完之前都掃不到（那才是真的回退）。
+    /// 預設步進值 10 ⇒ 內縮 5，正好是離線量測出來最穩的那個值。</summary>
+    private const int CoarseInsetLimit = 5;
+
     internal int ObservedCount { get; private set; }
 
     /// <summary>已經量到量表落差的位置數。UI 用來顯示「量表這條路徑到底有沒有資料」。</summary>
@@ -127,7 +146,7 @@ internal class LimbSolver
         // 還沒有任何觀測 → 從正中央開始，之後靠最大間隙往兩邊二分。
         if (best == null)
         {
-            return NextProbe(coarseStep) ?? NextProbe(1) ?? (MinPosition + MaxPosition) / 2;
+            return ScanProbe() ?? ((MinPosition + MaxPosition) / 2);
         }
 
         // 正中目標：就是這一格，繼續砍它。
@@ -156,7 +175,23 @@ internal class LimbSolver
         // 🔴 粗掃間距用完之後**不可以退回「重砍目前最佳點」**：那一點也是「沒手感」，
         // 再砍一次得不到任何新資訊，等於把剩下的刀數丟掉（離線模擬抓到 555 次這種空轉）。
         // 正解是把最小間距縮到 1 繼續補洞——隱藏的最佳點一定就在還沒問過的縫隙裡。
-        return NextProbe(coarseStep) ?? NextProbe(1) ?? best.Position;
+        return ScanProbe() ?? best.Position;
+    }
+
+    /// <summary>粗掃的完整順序：先在內縮過的範圍裡撒開、撒不下去了在內縮範圍裡補洞，
+    /// **內縮範圍整個問完之後才去碰兩端**。
+    ///
+    /// 🔴 最後兩層（<c>inset 0</c>）不是裝飾：少了它們，內縮範圍問完時就會回 null，
+    /// 呼叫端只好退回「重砍目前最佳點」＝空轉，而且 <c>[0, inset)</c> 與
+    /// <c>(100-inset, 100]</c> 會變成**永遠打不到的死區**。內縮是「先問資訊量大的地方」，
+    /// 不是「把兩端劃掉」。</summary>
+    private int? ScanProbe()
+    {
+        var inset = Math.Clamp(coarseStep / 2, 0, CoarseInsetLimit);
+        return NextProbe(coarseStep, inset)
+               ?? NextProbe(1, inset)
+               ?? NextProbe(coarseStep, 0)
+               ?? NextProbe(1, 0);
     }
 
     /// <summary>
@@ -250,13 +285,24 @@ internal class LimbSolver
     /// <param name="minSpacing">候選點離最近取樣點至少要多遠。
     /// 呼叫端先用設定的步進值撒開，撒不下去了再用 1 補洞——
     /// **絕不要在還有沒試過的格子時回 null 讓呼叫端去重砍舊位置**。</param>
-    private int? NextProbe(int minSpacing)
+    /// <param name="inset">候選範圍兩端各往內縮幾格（見 <see cref="CoarseInsetLimit"/>）。
+    /// ⚠️ 只縮**候選**範圍；算距離時仍然要看整個盤面上所有已試過的點，
+    /// 否則會把端點附近已經問過的資訊當成沒問過。</param>
+    private int? NextProbe(int minSpacing, int inset)
     {
         int? bestCandidate = null;
         var bestDistance = -1;
         var anyObserved = ObservedCount > 0;
 
-        for (var position = MinPosition; position <= MaxPosition; position++)
+        var from = MinPosition + Math.Max(0, inset);
+        var to = MaxPosition - Math.Max(0, inset);
+        if (from > to)
+        {
+            from = MinPosition;
+            to = MaxPosition;
+        }
+
+        for (var position = from; position <= to; position++)
         {
             if (board[position] != null)
             {
