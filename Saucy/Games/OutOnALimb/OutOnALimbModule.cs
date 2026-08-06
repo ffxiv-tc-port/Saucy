@@ -533,14 +533,27 @@ public unsafe class OutOnALimbModule : Module
         // 🔴 出手條件的第一條、也是修掉「點不到泰坦」的那一條：
         //    **當幀的指針必須真的落在可接受的格子裡**，用的就是遊戲自己的判定式。
         //    舊版的「跨過中心」沒有這層限制，所以會在已經衝到 793／1303 的那一幀按下去。
-        var acceptFrom = stage >= 3 ? zones.Length - 1 : stage >= 2 ? Math.Min(wanted + 1, zones.Length - 1) : wanted;
+        // 先看目標格，再往寬的方向放。⚠️ 順序有意義：命中目標格永遠優先。
+        var acceptTo = stage >= 3 ? zones.Length - 1 : stage >= 2 ? Math.Min(wanted + 1, zones.Length - 1) : wanted;
         var landed = -1;
-        for (var i = wanted; i <= acceptFrom; i++)
+        for (var i = wanted; i <= acceptTo && landed < 0; i++)
         {
             if (zones[i].Contains(cursor.Value))
             {
                 landed = i;
-                break;
+            }
+        }
+
+        // 最後一階是「落在哪一格都收」，所以也要收**比目標更窄**的那些格
+        // （想要魔界花卻掃到泰坦格時就是這一段在收）。少了它，最後一階名不副實。
+        if (landed < 0 && stage >= 3)
+        {
+            for (var i = 0; i < zones.Length && landed < 0; i++)
+            {
+                if (zones[i].Contains(cursor.Value))
+                {
+                    landed = i;
+                }
             }
         }
 
