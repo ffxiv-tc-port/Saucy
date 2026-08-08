@@ -9,9 +9,11 @@ namespace Saucy.OutOnALimb;
 /// 【這一版為什麼重做】2026-08-06 實機 log（21:14–21:20，共 21 刀）顯示舊版有三個問題：
 /// <list type="number">
 /// <item>盤面每一刀都被重設，所以永遠停在初始猜測，目標從頭到尾固定在 20。</item>
-/// <item>舊版把「量表落差」當主要回饋，但實測 <c>AtkValue[12]</c> 全程不動
-///   （見 <see cref="LimbBoard.ReadGauge"/> 的實測註記），那條路徑等於沒有資料。
-///   真正每一刀都拿得到的是**四級手感**（系統訊息）。</item>
+/// <item>舊版把「量表落差」當主要回饋，但那一段實測 <c>AtkValue[12]</c> 全程不動，
+///   於是改用每一刀都拿得到的**四級手感**（系統訊息）。
+///   📌 2026-08-07 更正：量表不動是**上一項那個 bug 的果**（每刀都砍在同一處、全無手感＝0 傷害），
+///   不是欄位沒用；修好之後它每刀都在動（見 <see cref="LimbBoard.ReadGauge"/>）。
+///   四級手感仍是主判據——盲掃階段砍不中就沒有傷害可量，手感卻一定會到。</item>
 /// <item>沒有手感時舊版是**隨機**挑一個沒試過的位置，等於把有限的 10 刀丟掉。</item>
 /// </list>
 ///
@@ -63,6 +65,15 @@ internal class LimbSolver
 
     /// <summary>有手感（Weak 以上，或量表真的掉了）的位置數。0＝還在盲掃階段。</summary>
     internal int ContactCount { get; private set; }
+
+    /// <summary>這一格已經有觀測結果了嗎。
+    /// ⚠️ 呼叫端要在 <see cref="Record"/> **之前**問，否則問到的是這一刀自己記進去的結果。
+    /// 📌 目前只有呼叫端的診斷在用（判斷「這一刀有沒有拿到新資訊」），解題器自己不看它。</summary>
+    internal bool IsObserved(int cursor)
+    {
+        var index = ToIndex(cursor);
+        return index >= 0 && board[index] != null;
+    }
 
     /// <summary>目前分數最高的那一格；一刀都還沒記錄就回 null。</summary>
     internal HitResult? Best
@@ -246,7 +257,15 @@ internal class LimbSolver
         return rightWidth > leftWidth ? rightCandidate : leftCandidate;
     }
 
-    /// <summary>在 <c>[from, to]</c> 裡找一個沒試過的刻度，優先靠近 <paramref name="preferred"/>。</summary>
+    /// <summary>在 <c>[from, to]</c> 裡找一個沒試過的刻度，優先靠近 <paramref name="preferred"/>。
+    ///
+    /// 🔑 兩趟：**第一趟只收左右鄰居也沒試過的格子。** 因為斧頭實際落點會偏 ±1 格
+    /// （見 <see cref="blocked"/> 的實機分布），挑一個緊貼著已知格的位置時，
+    /// 偏一格就直接落回那個已知格＝這一刀零收穫。要求鄰居也是空的，
+    /// 就算偏了一格也還是踩在沒問過的位置上，資訊不會白拿。
+    ///
+    /// 第二趟放掉這個要求（盤面後期本來就沒有孤立的空格了），行為與舊版相同，
+    /// 所以這只是**排序偏好**，不會讓原本找得到的候選變成找不到。</summary>
     private int? NearestUntried(int from, int to, int preferred)
     {
         if (from > to)
@@ -262,19 +281,34 @@ internal class LimbSolver
         }
 
         preferred = Math.Clamp(preferred, from, to);
-        for (var offset = 0; offset <= to - from; offset++)
+        return Sweep(true) ?? Sweep(false);
+
+        int? Sweep(bool requireRoom)
         {
-            foreach (var candidate in new[] { preferred - offset, preferred + offset })
+            for (var offset = 0; offset <= to - from; offset++)
             {
-                if (candidate >= from && candidate <= to && board[candidate] == null)
+                foreach (var candidate in new[] { preferred - offset, preferred + offset })
                 {
-                    return candidate;
+                    if (candidate < from || candidate > to || board[candidate] != null)
+                    {
+                        continue;
+                    }
+
+                    if (!requireRoom || HasUntriedNeighbours(candidate))
+                    {
+                        return candidate;
+                    }
                 }
             }
-        }
 
-        return null;
+            return null;
+        }
     }
+
+    /// <summary>左右各一格是不是也還沒試過（盤面外的那一側視為沒問題）。</summary>
+    private bool HasUntriedNeighbours(int index) =>
+        (index <= MinPosition || board[index - 1] == null) &&
+        (index >= MaxPosition || board[index + 1] == null);
 
     /// <summary>
     /// 粗掃：挑「離所有已試位置最遠」的那一格（最大間隙），而不是舊版的**隨機**挑。

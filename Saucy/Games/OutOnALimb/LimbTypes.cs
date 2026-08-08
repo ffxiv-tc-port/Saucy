@@ -41,8 +41,11 @@ public class HitResult(int position, HitPower power)
 
     /// <summary>在這個位置砍下去，樹的量表（<c>AtkValue[12]</c>）掉了多少。
     /// null＝這個位置沒量到量表變化。
-    /// ⚠️ 台服 7.20 實測這個欄位幾乎永遠是 null（見 <see cref="LimbBoard.ReadGauge"/>），
-    /// 所以它只是 <see cref="Power"/> 的**補強**，不是主要判據。</summary>
+    /// 📌 2026-08-07 更正：舊註解寫「台服 7.20 實測幾乎永遠是 null」是**從壞掉的版本量到的**——
+    /// 那時每一刀都沒手感、沒手感就是 0 傷害。解題器修好之後量表確實每刀在動
+    /// （見 <see cref="LimbBoard.ReadGauge"/>）。
+    /// ⚠️ 但它仍然只是 <see cref="Power"/> 的**補強**：盲掃階段砍不中就沒有傷害可量，
+    /// 而四級手感每一刀都會到。</summary>
     public int? Damage;
 
     /// <summary>這個位置有沒有任何形式的觀測結果。</summary>

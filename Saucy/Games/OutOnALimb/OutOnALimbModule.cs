@@ -176,6 +176,10 @@ public unsafe class OutOnALimbModule : Module
     /// <summary>這一棵樹裡量表有沒有動過。只為了在 log 裡誠實回報「量表這條路徑到底有沒有資料」。</summary>
     private bool gaugeMovedThisTree;
 
+    /// <summary>這一棵樹裡有幾刀是「零收穫」——落點偏掉、而且偏到的那一格早就試過了。
+    /// 純計量，不參與任何判斷；它是「這台機器的指針對你的畫面更新率來說太快了」的直接徵兆。</summary>
+    private int wastedSwingsThisTree;
+
     private bool powerMeterClicked;
     private bool botanistWasOpen;
 
@@ -218,14 +222,19 @@ public unsafe class OutOnALimbModule : Module
             }
 
             var damage = best.Damage is > 0 ? $"、量表落差 {best.Damage}" : string.Empty;
+
+            // 📌 「落點偏掉而且沒拿到新資訊」的刀數要在列上看得見：它是「這台機器的指針
+            //    對你的畫面更新率來說太快了」的直接徵兆，使用者看到它變多就知道
+            //    該把容許誤差放寬、或改停比較寬的那一格。
+            var missed = wastedSwingsThisTree > 0 ? $"、{wastedSwingsThisTree} 刀落點偏掉沒拿到新資訊" : string.Empty;
             return $"目前最佳：刻度 {best.Position}（{HitPowerText.Of(best.Power)}{damage}）" +
-                   $"，這棵樹已試 {solver.ObservedCount} 點、其中 {solver.ContactCount} 點有手感";
+                   $"，這棵樹已試 {solver.ObservedCount} 點、其中 {solver.ContactCount} 點有手感{missed}";
         }
     }
 
     /// <summary>回饋來源的健康狀況。
-    /// 📌 「量表沒資料」是常態（台服 7.20 實測），但那件事必須在列上看得見而不是藏在 tooltip，
-    /// 否則使用者會以為解題器有兩條資料在跑。</summary>
+    /// 📌 這件事必須在列上看得見而不是藏在 tooltip，否則使用者會以為解題器有兩條資料在跑。
+    /// ⚠️ 「這棵樹還沒動過」在盲掃階段是**正常的**（沒砍中就沒有傷害可量），不代表壞掉。</summary>
     public string FeedbackSummary =>
         $"回饋來源：系統訊息手感 {(feedbackText == null ? "尚未建表" : $"{feedbackText.Count}/{FeedbackRows.Length} 句")}" +
         $"；樹的量表 {(gaugeLooksPerSwing ? gaugeMovedThisTree ? "有在動" : "這棵樹還沒動過" : "已判定不是每刀變化，停用")}";
@@ -290,6 +299,7 @@ public unsafe class OutOnALimbModule : Module
         maxSwingsSeen = 0;
         swingsRecordedThisTree = 0;
         gaugeMovedThisTree = false;
+        wastedSwingsThisTree = 0;
         idleGauge = null;
         idleGaugeChanges = 0;
         powerMeterClicked = false;
@@ -311,6 +321,7 @@ public unsafe class OutOnALimbModule : Module
         nextTarget = null;
         swingsRecordedThisTree = 0;
         gaugeMovedThisTree = false;
+        wastedSwingsThisTree = 0;
         idleGauge = gauge;
         idleGaugeChanges = 0;
 
@@ -779,7 +790,8 @@ public unsafe class OutOnALimbModule : Module
 
         var best = solver.Best;
         Svc.Log.Information($"[OutOnALimb] turn start: swings={swingsLeft?.ToString() ?? "?"}/{maxSwingsSeen}, " +
-                            $"tried={solver.ObservedCount} contact={solver.ContactCount}, " +
+                            $"tried={solver.ObservedCount} contact={solver.ContactCount} " +
+                            $"wasted={wastedSwingsThisTree}, " +
                             $"best={(best == null ? "-" : $"{best.Position}({HitPowerText.Of(best.Power)})")}, " +
                             $"target={nextTarget?.ToString() ?? "-"}");
     }
@@ -790,6 +802,11 @@ public unsafe class OutOnALimbModule : Module
     /// 📌 2026-08-06 之前這裡被寫成「主要回饋來源」，那是錯的：實機 21 刀裡 <c>AtkValue[12]</c>
     /// 只動過 1 次（樹倒下那一刻），其餘 20 刀全程 10 不變。真正每刀都拿得到的是系統訊息的四級手感。
     /// 所以這條路徑保留，但只當額外訊號——它有資料就採信，沒資料也不影響收斂。
+    ///
+    /// 📌 2026-08-07 補：那 21 刀「量表不動」的原因是**解題器壞掉、每刀都沒手感**，
+    /// 而沒手感就是 0 傷害。修好之後量表每刀都在動（10→0／10→6／6→5 都實際量到）。
+    /// 結論沒有變（手感仍是主判據，因為盲掃階段砍不中就沒有傷害可量），但**理由變了**：
+    /// 這條路徑比原本以為的有用，不要因為舊註解就把它當死路。
     /// </summary>
     private void CollectGaugeFeedback(AtkUnitBase* addon)
     {
@@ -912,15 +929,43 @@ public unsafe class OutOnALimbModule : Module
         }
 
         var display = LimbBoard.ToDisplayScale(cursor.Value);
+        var requested = nextTarget.Value;
+
+        // 🔴 落點與目標不是同一件事，而且偏差是**系統性的**：
+        // 2026-08-06 實機 50 刀量到 -1 格 26 次、0 格 18 次、+1 格 6 次。
+        // 落到隔壁格本身可以接受（資訊差不多），但如果那個隔壁格**已經試過了**，
+        // 這一刀就是零收穫。真正的對策在解題器那邊（挑候選時優先選左右鄰居也沒試過的格子，
+        // 見 <see cref="LimbSolver"/> 的 NearestUntried）；這裡只負責**量**，不做決策。
+        //
+        // 🔴 這裡刻意**不**去把打不到的目標標成「以後不要挑」。離線量測（tools/limbsim 閘門⑥
+        // 與變體比較）顯示那樣做只會讓重複要求變少、命中率**反而略降**，
+        // 在感應半徑最小（只有正中才算命中）的假設下降得最明顯——
+        // 因為那等於把一個可能就是最佳點的格子丟掉。**症狀改善、結果變差的典型。**
+        //
+        // ⚠️ 這個判斷必須在 solver.Record 之前做，否則問到的是這一刀自己剛記進去的結果。
+        var wasted = display != requested && solver.IsObserved(display);
+        if (wasted)
+        {
+            wastedSwingsThisTree++;
+        }
+
         pendingCursor = display;
         gaugeAtSwing = LimbBoard.ReadGauge(addon);
         pendingSinceUtc = DateTime.UtcNow;
         swingsRecordedThisTree++;
-        LastAction = $"揮斧於刻度 {display}（目標 {nextTarget.Value}）";
+        LastAction = $"揮斧於刻度 {display}（目標 {requested}）";
+
+        // 📌 `aimOffset` 是下一次實跑要拿來裁決「要不要動出手時機」的唯一依據：
+        //    現在的出手條件是「第一個落進容許窗的影格」，所以落點會偏向掃描方向的後方。
+        //    要判斷值不值得改，需要的是這個偏差在不同機台速度（AtkValue[2]＝375／750）下的分布，
+        //    那件事離線推不出來。⇒ 先把它印出來，不要憑推論改出手時機。
         Svc.Log.Information($"[OutOnALimb] swing at raw {cursor.Value} (display {display}, " +
-                            $"target {nextTarget.Value}, {(crossed ? "crossing" : "inside")}, " +
+                            $"target {requested}, aimOffset {display - requested:+0;-0;0} ticks " +
+                            $"/ {cursor.Value - LimbBoard.ToRawScale(requested):+0;-0;0} raw, " +
+                            $"{(crossed ? "crossing" : "inside")}, " +
                             $"gauge {gaugeAtSwing?.ToString() ?? "?"}, " +
-                            $"swing #{swingsRecordedThisTree} of this tree)");
+                            $"swing #{swingsRecordedThisTree} of this tree" +
+                            $"{(wasted ? $"; NO NEW INFO (cell {display} was already known; {wastedSwingsThisTree} such swings this tree)" : string.Empty)})");
         nextTarget = null;
     }
 
