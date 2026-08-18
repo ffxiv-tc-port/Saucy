@@ -178,9 +178,37 @@ internal static unsafe class PreciseMovement
         Svc.Log.Information($"[Saucy] PreciseMovement 覆寫時發生例外，本次不覆寫、讓遊戲原本的移動輸入通過（累計 {detourErrors} 次）：{ex}");
     }
 
+    /// <summary>Throttled note that the RMIWalk hook vanished mid-call. Uses the same 30 second
+    /// throttle window as <see cref="OnDetourError"/> so a teardown race can never flood the log.</summary>
+    private static void OnDetourHookGone()
+    {
+        var now = DateTime.UtcNow;
+        if (now - lastDetourErrorLog < TimeSpan.FromSeconds(30))
+        {
+            return;
+        }
+
+        lastDetourErrorLog = now;
+        Svc.Log.Information("[Saucy] PreciseMovement 的 RMIWalk hook 已在呼叫途中被卸載，本次不呼叫原始函式也不覆寫移動。");
+    }
+
     private static void RmiWalkDetour(nint self, float* sumLeft, float* sumForward, float* sumTurnLeft, byte* haveBackwardOrStrafe, byte* a6, byte bAdditiveUnk)
     {
-        hook!.OriginalDisposeSafe(self, sumLeft, sumForward, sumTurnLeft, haveBackwardOrStrafe, a6, bAdditiveUnk);
+        // Shutdown() sets the hook field back to null while this detour may still be executing
+        // (in-flight call). The `!` only silences the compiler - at run time it is still a bare
+        // dereference, and a null field throws NullReferenceException straight back into native
+        // game code with the original never called. Snapshot once and use only the local.
+        var h = hook;
+        if (h == null)
+        {
+            // Bail out completely rather than only skipping the original: without the original
+            // call the game has not sampled movement input this frame, so sumLeft/sumForward
+            // still hold stale values and ApplyOverride must not act on them.
+            OnDetourHookGone();
+            return;
+        }
+
+        h.OriginalDisposeSafe(self, sumLeft, sumForward, sumTurnLeft, haveBackwardOrStrafe, a6, bAdditiveUnk);
         try
         {
             ApplyOverride(self, sumLeft, sumForward, bAdditiveUnk);
