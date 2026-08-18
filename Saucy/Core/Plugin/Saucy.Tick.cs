@@ -39,7 +39,7 @@ public sealed partial class Saucy
 
             if (C.UseSimmedDeck && TriadRun.ShouldBuildOptimizedDeck())
             {
-                TriadRun.SyncDeckOptimizerPauseForVnavmesh();
+                TriadRun.SyncDeckOptimizerBackgroundPause();
                 TriadDeckOptimizerJobs.Tick();
                 if (!Vnavmesh.ShouldDeferDeckOptimizerWork())
                 {

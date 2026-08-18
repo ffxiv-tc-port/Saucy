@@ -21,6 +21,10 @@ public class Configuration : IPluginConfiguration
 
     public bool AlwaysBuildOptimizedDeck { get; set; } = true;
 
+    public bool SkipOptimizedDeckForBeatenOrCompletedNpcs { get; set; } = false;
+
+    public bool PauseOptimizedDeckBuildWhileQuestionable { get; set; } = false;
+
     public bool UseCachedOptimizedDeckIfAvailable { get; set; } = false;
     public bool ShowOptimizerChatSpam { get; set; } = true;
 
