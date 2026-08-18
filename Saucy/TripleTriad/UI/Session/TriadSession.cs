@@ -1,4 +1,5 @@
 #nullable disable
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 using System.Collections.Generic;
@@ -141,7 +142,16 @@ public partial class TriadSession
 
         if (CountSimmableProfileDecks() == 0)
         {
-            return DescribeMissingSimmableDecks();
+            var missing = DescribeMissingSimmableDecks() ?? "No usable decks".Loc();
+            lock (_preGameLock)
+            {
+                if (ResolveSelectableDeckIndexLocked(-1, true) >= 0)
+                {
+                    return missing;
+                }
+            }
+
+            return "?? — using game recommended".Loc(missing);
         }
 
         if (ShouldBuildOptimizedDeck())
