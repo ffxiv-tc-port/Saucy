@@ -424,7 +424,7 @@ internal static unsafe class MultiAreaRouteExecutor
             return false;
         }
 
-        if (Svc.Targets.Target?.DataId != step.ObjectDataId)
+        if (Svc.Targets.Target?.BaseId != step.ObjectDataId)
         {
             Svc.Targets.Target = target;
             return false;
@@ -497,7 +497,7 @@ internal static unsafe class MultiAreaRouteExecutor
 
     private static IGameObject? FindObject(uint dataId) =>
         Svc.Objects
-            .Where(o => o.IsTargetable && o.DataId == dataId)
+            .Where(o => o.IsTargetable && o.BaseId == dataId)
             .OrderBy(o => Vector3.Distance(Player.Position, o.Position))
             .FirstOrDefault();
 

@@ -119,7 +119,7 @@ internal static class LeapOfFaithRecorder
                     continue;
                 }
 
-                objects.Add(new RecordedObject(elapsed, obj.DataId, obj.ObjectKind, obj.Name.TextValue, obj.Position, dist));
+                objects.Add(new RecordedObject(elapsed, obj.BaseId, obj.ObjectKind, obj.Name.TextValue, obj.Position, dist));
             }
         }
     }

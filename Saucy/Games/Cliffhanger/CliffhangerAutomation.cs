@@ -693,7 +693,7 @@ internal static unsafe class CliffhangerAutomation
                 continue;
             }
 
-            if (obj.DataId == ChickDataId)
+            if (obj.BaseId == ChickDataId)
             {
                 var dist = Vector3.Distance(obj.Position, playerPos);
                 if (dist < nearestChickDist)
@@ -702,7 +702,7 @@ internal static unsafe class CliffhangerAutomation
                     nearestChickDist = dist;
                 }
             }
-            else if (obj.DataId == BombDataId)
+            else if (obj.BaseId == BombDataId)
             {
                 // A bomb that already exploded/died shouldn't keep showing an avoid marker or
                 // blast circle — IsDead is on the base IGameObject interface so this works

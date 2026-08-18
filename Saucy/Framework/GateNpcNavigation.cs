@@ -66,7 +66,7 @@ internal static class GateNpcNavigation
         spot.X = target.Position.X;
         spot.Y = target.Position.Y;
         spot.Z = target.Position.Z;
-        spot.DataId = target.DataId;
+        spot.DataId = target.BaseId;
         spot.NpcName = target.Name.TextValue;
         C.Save();
 
@@ -75,7 +75,7 @@ internal static class GateNpcNavigation
         // (position/navigation still work) but auto-interact will silently never fire, which is
         // exactly what happened to WindBlows' NPC spot ("暴風倖存者 不會和報名NPC互動"). Flag it
         // immediately instead of letting it fail quietly later.
-        message = target.DataId == 0
+        message = target.BaseId == 0
             ? $"已記錄「{spot.NpcName}」的位置，但這個目標沒有有效的 DataId——導航會正常走到附近，但自動互動不會生效，請確認鎖定的是正確的 NPC。"
             : $"已記錄「{spot.NpcName}」的位置。";
         return true;
