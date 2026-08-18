@@ -9,19 +9,34 @@ public static unsafe class AgentHelper
 {
     public static bool IsActive(AgentId agentId)
     {
-        var agent = AgentModule.Instance()->GetAgentByInternalId(agentId);
+        // AgentModule.Instance() 走 UIModule，UI 尚未建立時回 null（CS 手寫實作）。
+        // 判空形式照本檔 TryGetOwnerAgentId 的既有慣例。
+        var agentModule = AgentModule.Instance();
+        if (agentModule == null)
+        {
+            return false;
+        }
+
+        var agent = agentModule->GetAgentByInternalId(agentId);
         return agent != null && agent->IsAgentActive();
     }
 
     public static bool IsAddonOwnedBy(AtkUnitBase* addon, AgentId agentId)
     {
-        if (addon == null ||
-            !RaptureAtkModule.Instance()->AddonCallbackMapping.TryGetValue(addon->Id, out var callbackEntry, false))
+        var atkModule = RaptureAtkModule.Instance();
+        if (addon == null || atkModule == null ||
+            !atkModule->AddonCallbackMapping.TryGetValue(addon->Id, out var callbackEntry, false))
         {
             return false;
         }
 
-        var agent = AgentModule.Instance()->GetAgentByInternalId(agentId);
+        var agentModule = AgentModule.Instance();
+        if (agentModule == null)
+        {
+            return false;
+        }
+
+        var agent = agentModule->GetAgentByInternalId(agentId);
         return agent == callbackEntry.AgentInterface;
     }
 
