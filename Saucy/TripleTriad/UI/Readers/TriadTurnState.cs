@@ -32,9 +32,16 @@ internal static class TriadTurnState
         " хід"
     ];
 
+    /// <remarks>
+    /// 🔴 <c>AtkValuesCount</c> 與 <c>AtkValues</c> 是兩個獨立欄位:長度對得上**不代表**指標
+    /// 已經配置好(setup 與拆解途中兩者的更新沒有原子性)。只驗長度是半套守衛,
+    /// 指標為 null 時 <c>AtkValues[23]</c> 是從位址 0x170 讀 ＝ AccessViolationException,
+    /// 而 AVE 在 .NET Core 是 corrupted-state exception,<c>try</c>/<c>catch</c> 攔不到。
+    /// 讀不到一律回 <see langword="false"/>(＝「還不是我的回合」),與既有失敗語意相同。
+    /// </remarks>
     public static unsafe bool ReadIsPlayerTurn(AtkUnitBase* unit)
     {
-        if (unit == null || unit->AtkValuesCount <= PlayerTurnAtkValueIndex)
+        if (unit == null || unit->AtkValues == null || unit->AtkValuesCount <= PlayerTurnAtkValueIndex)
         {
             return false;
         }
