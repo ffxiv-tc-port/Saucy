@@ -40,6 +40,13 @@ internal static unsafe class GoldSaucerRewardMgpParser
     private static void TryParseFromUldManager(AtkUnitBase* baseNode, ref int mgp)
     {
         ref var uld = ref baseNode->UldManager;
+        // 🔴 NodeListCount 非 0 不保證 NodeList 已配置（元件還在載入時就是 null）——
+        //    上界之外還要判指標，否則索引到的是野位址，AccessViolation 攔不到。
+        if (uld.NodeList is null)
+        {
+            return;
+        }
+
         for (var i = 0; i < uld.NodeListCount; i++)
         {
             var node = uld.NodeList[i];
@@ -56,6 +63,11 @@ internal static unsafe class GoldSaucerRewardMgpParser
             }
 
             ref var innerUld = ref component->UldManager;
+            if (innerUld.NodeList is null)
+            {
+                continue;
+            }
+
             for (var j = 0; j < innerUld.NodeListCount; j++)
             {
                 var innerNode = innerUld.NodeList[j];
@@ -72,6 +84,11 @@ internal static unsafe class GoldSaucerRewardMgpParser
                 }
 
                 ref var deepestUld = ref innerComponent->UldManager;
+                if (deepestUld.NodeList is null)
+                {
+                    continue;
+                }
+
                 for (var k = 0; k < deepestUld.NodeListCount; k++)
                 {
                     var deepestNode = deepestUld.NodeList[k];
