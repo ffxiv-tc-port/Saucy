@@ -27,8 +27,6 @@ public unsafe class UIReaderTriadCardList : IUIReader
         NodesNotReady
     }
 
-    private nint cachedAddonAgentPtr;
-
     public UIStateTriadCardList cachedState = new();
     private int lastNotifiedCardId = -1;
     public Action<UIStateTriadCardList>? OnUIStateChanged;
@@ -50,22 +48,20 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     public void OnAddonLost()
     {
-        cachedAddonAgentPtr = nint.Zero;
         ClearPendingNavigation();
         SetStatus(Status.AddonNotFound);
     }
 
     public void OnAddonShown(nint addonPtr)
     {
-        cachedAddonAgentPtr = (addonPtr != nint.Zero) ? Svc.GameGui.FindAgentInterface(addonPtr) : nint.Zero;
-
-        if (cachedAddonAgentPtr == nint.Zero)
-        {
-            cachedAddonAgentPtr = LoadFailsafeAgent();
 #if DEBUG
-            Svc.Log.Info($"using agentPtr from failsafe: {(ulong)cachedAddonAgentPtr:X}");
-#endif
+        // agent 指標本身已不再快取(見 ResolveAgent),這裡只保留原本「走了 failsafe 路徑」的診斷。
+        nint shownAgentPtr = (addonPtr != nint.Zero) ? Svc.GameGui.FindAgentInterface(addonPtr) : nint.Zero;
+        if (shownAgentPtr == nint.Zero)
+        {
+            Svc.Log.Info($"using agentPtr from failsafe: {(ulong)LoadFailsafeAgent():X}");
         }
+#endif
 
         if (addonPtr != nint.Zero)
         {
@@ -113,11 +109,9 @@ public unsafe class UIReaderTriadCardList : IUIReader
         var newCardIndex = (byte)addon->SelectedCardIndex;
         var newFilterMode = CardListFilterMapping.ToCollectionFilter(addon->FilterMode);
 
-        AgentGoldSaucer* agent = null;
-        if (cachedAddonAgentPtr != nint.Zero)
-        {
-            agent = (AgentGoldSaucer*)cachedAddonAgentPtr;
-        }
+        // 🔴 每次使用時重新取得,不沿用任何跨幀保存的 agent 指標(見 ResolveAgent)。
+        // 取不到時是 null,ReadSelectedCardId 的 agent 參數本來就允許 null。
+        var agent = ResolveAgent(addonPtr);
 
         var displayCardId = TriadCardListSelectionReader.TryParseCardIdFromDisplayLabel(addon);
         var gameSelectedCardId = TriadCardListSelectionReader.ReadSelectedCardId(addon, newFilterMode, agent, displayCardId);
@@ -241,7 +235,15 @@ public unsafe class UIReaderTriadCardList : IUIReader
         var addonPtr = ResolveAddonPtr();
         OnAddonShown(addonPtr);
 
-        if (addonPtr == nint.Zero || cachedAddonAgentPtr == nint.Zero)
+        if (addonPtr == nint.Zero)
+        {
+            return false;
+        }
+
+        // 🔴 每次使用時重新取得,不沿用跨幀快取(見 ResolveAgent)。
+        // 判斷點刻意留在就緒閘門之前,與原本「agent 指標為 0 就直接 return false」的順序一致。
+        var agent = ResolveAgent(addonPtr);
+        if (agent == null)
         {
             return false;
         }
@@ -252,7 +254,6 @@ public unsafe class UIReaderTriadCardList : IUIReader
             return false;
         }
 
-        var agent = (AgentGoldSaucer*)cachedAddonAgentPtr;
         var filterMode = CardListFilterMapping.ToCollectionFilter(addon->FilterMode);
         var displayCardId = TriadCardListSelectionReader.TryParseCardIdFromDisplayLabel(addon);
         pendingNavSourceCardId = TriadCardListSelectionReader.ReadSelectedCardId(addon, filterMode, agent, displayCardId);
@@ -329,9 +330,12 @@ public unsafe class UIReaderTriadCardList : IUIReader
         }
 
         var addon = (AddonGSInfoCardList*)addonPtr;
-        if (cachedAddonAgentPtr != nint.Zero)
+
+        // 🔴 這裡是「寫」不是「讀」:寫到一個過期的 agent 位址不會擲例外也不會有任何徵兆,
+        // 所以更不能用快取指標。每次重查。
+        var agent = ResolveAgent(addonPtr);
+        if (agent != null)
         {
-            var agent = (AgentGoldSaucer*)cachedAddonAgentPtr;
             agent->EditDeckSelectedPage = pendingNavPage;
             agent->EditDeckSelectedCardIndex = pendingNavCell;
         }
@@ -507,6 +511,40 @@ public unsafe class UIReaderTriadCardList : IUIReader
         }
 
         return nint.Zero;
+    }
+
+    /// <summary>
+    /// 每次使用時重新取得金碟遊樂場 agent,取不到回 <c>null</c>。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 這個方法取代了原本的 <c>cachedAddonAgentPtr</c> 欄位。原本的做法是在 OnAddonShown
+    /// 解析一次就存進欄位,之後 OnAddonUpdate / SetPageAndGridView / TickPendingCardNavigation
+    /// 全部沿用那份快取 —— 那就是「跨幀保存原生指標」:存下去那一刻起就再也不會重新解析,
+    /// 而且欄位只有 OnAddonLost 會清,addon 在兩次 shown/lost 之間被換掉、agent module 重建、
+    /// 或當初 FindAgentInterface 回的是別的 addon 的 agent,快取都不會知道。
+    /// <para>
+    /// 🔴 這裡的用途包含<b>寫入</b>(EditDeckSelectedPage / EditDeckSelectedCardIndex),
+    /// 寫到過期位址不會擲例外、也不會有任何徵兆;而 AccessViolationException 在 .NET Core 是
+    /// corrupted-state exception,try/catch 一樣攔不到。所以只能靠「每次重查」,不能靠例外隔離。
+    /// </para>
+    /// <para>
+    /// 🔑 保存的是<b>身分</b>不是位址:當幀的 addon 指標(由 GetAddonByName 重查而來)與
+    /// <see cref="AgentId.GoldSaucer" />。解析順序刻意與原本的 OnAddonShown 一致 ——
+    /// 先問 addon 對應的 agent,失敗才退到 agent module 的 failsafe 查詢。
+    /// </para>
+    /// </remarks>
+    private static AgentGoldSaucer* ResolveAgent(nint addonPtr)
+    {
+        // ⚠️ 型別要寫死 nint:FindAgentInterface 回的是 AgentInterfacePtr,與 nint 互為隱含轉換,
+        // 用 var 接會是 CS0172(條件運算式型別無法判定)。
+        nint agentPtr = (addonPtr != nint.Zero) ? Svc.GameGui.FindAgentInterface(addonPtr) : nint.Zero;
+
+        if (agentPtr == nint.Zero)
+        {
+            agentPtr = LoadFailsafeAgent();
+        }
+
+        return (AgentGoldSaucer*)agentPtr;
     }
 
     public static nint LoadFailsafeAgent()
