@@ -86,6 +86,15 @@ public class Configuration : IPluginConfiguration
     public const int MiniCactpotMaxClickIntervalMs = 5000;
     public const int MiniCactpotMaxCloseDelayMs = 10000;
 
+    /// <summary>仙人仙彩：號碼來源。false（預設）＝每次隨機、true＝固定使用
+    /// <see cref="JumboCactpotFixedNumber"/>。只在 JumboCactpot 模組啟用時生效。</summary>
+    public bool JumboCactpotUseFixedNumber { get; set; } = false;
+
+    /// <summary>仙人仙彩：固定號碼（0000-9999）。</summary>
+    public int JumboCactpotFixedNumber { get; set; } = 0;
+
+    public const int JumboCactpotMaxNumber = 9999;
+
     /// <summary>孤樹無援（陸行鳥廣場伐木機台）自動遊玩設定。只在 OutOnALimb 模組啟用時生效。</summary>
     public OutOnALimb.LimbSettings OutOnALimb { get; set; } = new();
 

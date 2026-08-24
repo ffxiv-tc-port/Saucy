@@ -570,6 +570,61 @@ public unsafe partial class PluginUI
         SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
     }
 
+    private static void DrawJumboCactpotPanel()
+    {
+        DrawPanelHeader("Jumbo Cactpot".Loc(), "Weekly lottery".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.JumboCactpot);
+        if (ImGui.Checkbox("啟用##JumboCactpot", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.JumboCactpot, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後，開啟仙人仙彩（每週彩券）的購票面板時會自動填入號碼並叫出購買確認框。" +
+                          "未啟用時不註冊任何監聽，手動購票不會被搶操作。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var useFixed = C.JumboCactpotUseFixedNumber;
+            if (ImGui.Checkbox("使用固定號碼##JumboCactpotUseFixed", ref useFixed))
+            {
+                C.JumboCactpotUseFixedNumber = useFixed;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("不勾＝每張都重新隨機（0000-9999，含兩端）。\n" +
+                                 "勾起來＝每張都用你指定的同一組號碼。");
+            }
+
+            if (useFixed)
+            {
+                var fixedNumber = C.JumboCactpotFixedNumber;
+                ImGui.SetNextItemWidth(220);
+                if (ImGui.InputInt("固定號碼##JumboCactpotFixedNumber", ref fixedNumber))
+                {
+                    C.JumboCactpotFixedNumber = Math.Clamp(fixedNumber, 0, Configuration.JumboCactpotMaxNumber);
+                    C.Save();
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("0000 到 9999，超出範圍會自動夾回。");
+                }
+
+                SaucyTheme.TextMuted($"目前號碼：{Math.Clamp(C.JumboCactpotFixedNumber, 0, Configuration.JumboCactpotMaxNumber):D4}");
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("每一張的購買確認（花費金碟幣）永遠由你自己按下——模組只負責把號碼填好、把確認框叫出來。" +
+                             "每週三張的做法是照常在 NPC 選單選「購買彩券」，每開一次面板模組就幫你填一次號碼；" +
+                             "模組不會自己找 NPC、不會自己點對話選單，也不會在買完一張後自己開下一張。");
+
+        var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.JumboCactpot.JumboCactpotModule>();
+        SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
+    }
+
     /// <summary>力量表難度下拉選單的顯示名稱——三個成員本身是怪物名(泰坦/毛爾波爾/仙人掌怪)，
     /// 沿用本檔既有註解與提示文字裡已經在用的譯名，不是新創。</summary>
     private static readonly Dictionary<global::Saucy.OutOnALimb.LimbDifficulty, string> LimbDifficultyNames = new()
