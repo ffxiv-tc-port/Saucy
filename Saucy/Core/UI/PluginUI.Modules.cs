@@ -11,6 +11,7 @@ using Saucy.IPC;
 using Saucy.LeapOfFaith;
 using Saucy.OtherGames;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 namespace Saucy;
 
@@ -569,6 +570,15 @@ public unsafe partial class PluginUI
         SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
     }
 
+    /// <summary>力量表難度下拉選單的顯示名稱——三個成員本身是怪物名(泰坦/毛爾波爾/仙人掌怪)，
+    /// 沿用本檔既有註解與提示文字裡已經在用的譯名，不是新創。</summary>
+    private static readonly Dictionary<global::Saucy.OutOnALimb.LimbDifficulty, string> LimbDifficultyNames = new()
+    {
+        [global::Saucy.OutOnALimb.LimbDifficulty.Titan] = "Titan".Loc(),
+        [global::Saucy.OutOnALimb.LimbDifficulty.Morbol] = "Morbol".Loc(),
+        [global::Saucy.OutOnALimb.LimbDifficulty.Cactuar] = "Cactuar".Loc(),
+    };
+
     private static void DrawOutOnALimbPanel()
     {
         DrawPanelHeader("Out on a Limb".Loc(), "Chocobo Square logging machine".Loc());
@@ -595,7 +605,7 @@ public unsafe partial class PluginUI
 
             var difficulty = C.OutOnALimb.Difficulty;
             ImGui.SetNextItemWidth(140f);
-            if (ImGuiEx.EnumCombo("力量表目標##LimbDifficulty", ref difficulty))
+            if (ImGuiEx.EnumCombo("力量表目標##LimbDifficulty", ref difficulty, names: LimbDifficultyNames))
             {
                 C.OutOnALimb.Difficulty = difficulty;
                 C.Save();
