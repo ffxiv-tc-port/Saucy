@@ -10,4 +10,5 @@ public static class ModuleNames
     public const string MiniCactpot = "MiniCactpotModule";
     public const string JumboCactpot = "JumboCactpotModule";
     public const string OutOnALimb = "OutOnALimbModule";
+    public const string SellDuplicateCards = "SellDuplicateCardsModule";
 }

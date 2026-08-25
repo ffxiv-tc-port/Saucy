@@ -33,6 +33,7 @@ public unsafe partial class PluginUI : Window
         "Navigation",
         "Triple Triad",
         "Mini Cactpot",
+        "快速賣重複卡",
         "Stats",
         "About",
         "Debug",
@@ -186,6 +187,7 @@ public unsafe partial class PluginUI : Window
         NavSelectable("Mini Cactpot".Loc(), NavItem.MiniCactpot);
         NavSelectable("Jumbo Cactpot".Loc(), NavItem.JumboCactpot);
         NavSelectable("Out on a Limb".Loc(), NavItem.OutOnALimb);
+        NavSelectable("快速賣重複卡".Loc(), NavItem.SellCards);
         NavSelectable("Navigation".Loc(), NavItem.Navigation);
 
         ImGui.Dummy(new(0, 6));
@@ -237,6 +239,7 @@ public unsafe partial class PluginUI : Window
             case NavItem.MiniCactpot: DrawMiniCactpotPanel(); break;
             case NavItem.JumboCactpot: DrawJumboCactpotPanel(); break;
             case NavItem.OutOnALimb: DrawOutOnALimbPanel(); break;
+            case NavItem.SellCards: DrawSellCardsPanel(); break;
             case NavItem.GateSchedule: DrawGateSchedulePanel(); break;
             case NavItem.Navigation: DrawNavigationPanel(); break;
             case NavItem.Stats: DrawStatsTab(); break;
@@ -827,6 +830,7 @@ public unsafe partial class PluginUI : Window
         MiniCactpot,
         JumboCactpot,
         OutOnALimb,
+        SellCards,
         GateSchedule,
         Navigation,
         Stats,

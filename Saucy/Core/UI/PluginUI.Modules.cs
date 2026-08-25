@@ -845,6 +845,45 @@ public unsafe partial class PluginUI
         return table[index];
     }
 
+    private static void DrawSellCardsPanel()
+    {
+        DrawPanelHeader("快速賣重複卡", "九宮幻卡交換 MGP 輔助");
+        var enabled = C.IsModuleEnabled(ModuleNames.SellDuplicateCards);
+        if (ImGui.Checkbox("啟用##SellCards", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.SellDuplicateCards, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後，開啟九宮幻卡的「幻卡交換」視窗時，會另外顯示一個小視窗，把你持有重複、" +
+                          "可換 MGP 的卡整理出來（依單張 MGP 價值排序，並標出目前用於牌組的卡）。" +
+                          "未啟用時不會顯示任何東西。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var keep = C.SellCardsKeepAtLeast;
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.SliderInt("每種卡至少保留##SellCardsKeepAtLeast", ref keep, 0, Configuration.SellCardsMaxKeepAtLeast))
+            {
+                C.SellCardsKeepAtLeast = Math.Clamp(keep, 0, Configuration.SellCardsMaxKeepAtLeast);
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("保底值：只有持有數超過這個張數的卡才會被列為「可賣」，\n" +
+                                 "確保每種卡（含牌組用的那張）至少留下這麼多張。預設 1。");
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("🔴 這個模組只顯示，不會替你賣卡：選取、交換、確認三步全部由你在遊戲原生視窗自己按下。" +
+                             "不注入按鈕、不送 callback、不發封包——只讀取交換視窗上本來就顯示給你看的卡片清單。");
+
+        var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.SellCards.SellDuplicateCardsModule>();
+        SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
+    }
+
     private static BannerInfo BuildBannerInfo()
     {
         var im = InventoryManager.Instance();

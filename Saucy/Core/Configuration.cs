@@ -95,6 +95,12 @@ public class Configuration : IPluginConfiguration
 
     public const int JumboCactpotMaxNumber = 9999;
 
+    /// <summary>重複幻卡交換：安全線。只有持有數超過這個值的卡才會被列為「可賣」，
+    /// 確保每種卡（含牌組用的那張）至少留這麼多張。預設 1。只在 SellDuplicateCards 模組啟用時生效。</summary>
+    public int SellCardsKeepAtLeast { get; set; } = 1;
+
+    public const int SellCardsMaxKeepAtLeast = 10;
+
     /// <summary>孤樹無援（陸行鳥廣場伐木機台）自動遊玩設定。只在 OutOnALimb 模組啟用時生效。</summary>
     public OutOnALimb.LimbSettings OutOnALimb { get; set; } = new();
 
