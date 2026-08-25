@@ -162,8 +162,8 @@ public unsafe class SellDuplicateCardsModule : Module
     {
         ImGui.SetNextWindowSize(new Vector2(420f, 360f), ImGuiCond.FirstUseEver);
         // ⚠️ ImGui.Begin 必須無條件配對 ImGui.End（與 BeginTable/BeginChild 的規則相反）。
-        // 這個視窗可被玩家收合，收合時 Begin 回 false，因此不能用 ImGuiScopes.Window（它只在
-        // Begin 成功時才 End），改成手動 try/finally 保證 End 一定被呼叫。
+        // 這個視窗可被玩家收合，收合時 Begin 回 false，此處以手動 try/finally 保證 End 一定被呼叫；
+        // ImGuiScopes.Window 現已無條件 End、兩者等價，此處維持手動寫法不動。
         var open = ImGui.Begin("重複幻卡 · 可換 MGP 一覽###SaucySellCards", ImGuiWindowFlags.None);
         try
         {
