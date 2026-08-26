@@ -108,6 +108,18 @@ internal static class TriadCacheSettingsUi
 
     private static void DrawClearButton()
     {
+        if (ImGui.Button("Refresh".Loc()))
+        {
+            TriadOptimizedDeckCacheStore.InvalidateCharacterCacheViews();
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Rescan cached decks from disk.".Loc());
+        }
+
+        ImGui.SameLine();
+
         var ctrlHeld = ImGui.GetIO().KeyCtrl;
         using var clearDisabled = ImRaii.Disabled(!ctrlHeld);
         if (ImGui.Button("Clear deck cache for this character".Loc()))
