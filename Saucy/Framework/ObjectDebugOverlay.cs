@@ -67,7 +67,7 @@ internal static class ObjectDebugOverlay
             // a glance without doing the subtraction by hand.
             var relativeY = obj.Position.Y - playerPos.Y;
             var label =
-                $"DataId {obj.DataId}  {obj.ObjectKind}\n" +
+                $"DataId {obj.BaseId}  {obj.ObjectKind}\n" +
                 $"({obj.Position.X:F1}, {obj.Position.Y:F1}, {obj.Position.Z:F1})  ΔY {relativeY:+0.0;-0.0}\n" +
                 $"{dist:F1}m";
 

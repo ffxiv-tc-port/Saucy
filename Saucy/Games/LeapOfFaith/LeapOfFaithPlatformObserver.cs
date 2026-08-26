@@ -323,7 +323,7 @@ internal static class LeapOfFaithPlatformObserver
                 continue;
             }
 
-            if ((obj.DataId == LeapOfFaithAutomation.FinishDataId || LeapOfFaithAutomation.CactuarDataIds.Contains(obj.DataId)) &&
+            if ((obj.BaseId == LeapOfFaithAutomation.FinishDataId || LeapOfFaithAutomation.CactuarDataIds.Contains(obj.BaseId)) &&
                 Vector3.Distance(obj.Position, pos) < CactuarOrFinishProximity)
             {
                 return true;

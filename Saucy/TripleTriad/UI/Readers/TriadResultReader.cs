@@ -1,13 +1,12 @@
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using System.Linq;
+using Saucy.Framework.UI;
+using Saucy.TripleTriad.Utils;
+
 namespace Saucy.TripleTriad.UI;
 
 internal static unsafe class TriadResultReader
 {
-    private const int CompactRootChildCount = 8;
     private const int ExpandedRootChildCount = 10;
-    private const int CompactMgpRewardIndex = 7;
-    private const int ExpandedMgpRewardIndex = 8;
     private const int ResultFlagsIndex = 9;
 
     public static void Read(AddonTripleTriadResult* addon, UIStateTriadResults state)
@@ -24,13 +23,7 @@ internal static unsafe class TriadResultReader
             return;
         }
 
-        TryReadMgpReward(nodeArrL0, state);
-
-        if (state.numMGP < 0 &&
-            GoldSaucerRewardMgpParser.TryParseFromAddon(&addon->AtkUnitBase, out var fallbackMgp))
-        {
-            state.numMGP = fallbackMgp;
-        }
+        TryReadMgpReward(nodeArrL0, baseNode, state);
 
         if (!TryReadResultFlags(nodeArrL0, ResultFlagsIndex, ExpandedRootChildCount, state))
         {
@@ -44,16 +37,28 @@ internal static unsafe class TriadResultReader
         }
     }
 
-    private static void TryReadMgpReward(AtkResNode*[] nodeArrL0, UIStateTriadResults state)
+    private static void TryReadMgpReward(AtkResNode*[] nodeArrL0, AtkUnitBase* baseNode, UIStateTriadResults state)
     {
-        var rewardsNode = nodeArrL0.Length == CompactRootChildCount
-            ? GUINodeUtils.PickNode(nodeArrL0, CompactMgpRewardIndex, CompactRootChildCount)
-            : GUINodeUtils.PickNode(nodeArrL0, ExpandedMgpRewardIndex, ExpandedRootChildCount);
-        if (rewardsNode == null)
+        var rewardsNode = TriadResultLayoutHelper.TryGetRewardsPanel(nodeArrL0);
+        if (rewardsNode is not null)
         {
-            return;
+            TryReadMgpRewardStructured(rewardsNode, state);
+            if (state.numMGP < 0 &&
+                GoldSaucerRewardMgpParser.TryParseFromVisibleTree(rewardsNode, out var rewardsMgp))
+            {
+                state.numMGP = rewardsMgp;
+            }
         }
 
+        if (state.numMGP < 0 &&
+            GoldSaucerRewardMgpParser.TryParseFromAddon(baseNode, out var fallbackMgp))
+        {
+            state.numMGP = fallbackMgp;
+        }
+    }
+
+    private static void TryReadMgpRewardStructured(AtkResNode* rewardsNode, UIStateTriadResults state)
+    {
         var nodeArrRewards0 = GUINodeUtils.GetImmediateChildNodes(rewardsNode);
         if (nodeArrRewards0 == null)
         {
@@ -69,10 +74,9 @@ internal static unsafe class TriadResultReader
             }
 
             var nodeCoinsC = GUINodeUtils.PickChildNode(nodeCoinsB, 1, 2);
-            var descCoins = GUINodeUtils.GetNodeText(nodeCoinsC);
-            if (!string.IsNullOrEmpty(descCoins) &&
-                int.TryParse(new string([.. descCoins.Where(char.IsDigit)]), out state.numMGP))
+            if (GoldSaucerRewardMgpParser.TryParseMgpDigits(GUINodeUtils.GetNodeText(nodeCoinsC), out var mgpValue))
             {
+                state.numMGP = mgpValue;
                 return;
             }
         }

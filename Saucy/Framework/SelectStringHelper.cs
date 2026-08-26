@@ -432,7 +432,11 @@ public static unsafe class SelectStringHelper
                text.Contains("triad", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("triade", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("triplo", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("トリプル", StringComparison.OrdinalIgnoreCase);
+               text.Contains("トリプル", StringComparison.OrdinalIgnoreCase) ||
+               // 台服：選單項目是「幻卡挑戰」（Addon 9160/9173/9179/9184/9224），
+               // 對局室相關則是「九宮幻卡」（Addon 9529/9991/10800）。
+               // 少了這一條，台服用戶端在 NPC 選單裡永遠找不到幻卡項目（靜默失效）。
+               text.Contains("幻卡", StringComparison.Ordinal);
     }
 
     private static bool IsTriadListEntryIcon(uint iconId) =>

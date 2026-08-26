@@ -12,6 +12,7 @@ public sealed partial class Saucy
         {
             SubscriptionManager.Subscribe();
             GateNpcNavigation.TickManualInteract();
+            Framework.GoldSaucer.GoldSaucerNavigator.Tick();
             UpdateGateAutoOpen();
             GateScheduleAutomation.Tick();
             TriadOptimizedDeckCacheStore.TickCharacter();
@@ -38,7 +39,7 @@ public sealed partial class Saucy
 
             if (C.UseSimmedDeck && TriadRun.ShouldBuildOptimizedDeck())
             {
-                TriadRun.SyncDeckOptimizerPauseForVnavmesh();
+                TriadRun.SyncDeckOptimizerBackgroundPause();
                 TriadDeckOptimizerJobs.Tick();
                 if (!Vnavmesh.ShouldDeferDeckOptimizerWork())
                 {

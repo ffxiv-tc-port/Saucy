@@ -419,17 +419,9 @@ public partial class TriadSession
             }
         }
 
-        if (IsProfileDeckComplete(deckId))
-        {
-            return true;
-        }
-
-        if (IsProfileDeckSelectable(deckId))
-        {
-            return true;
-        }
-
-        return false;
+        // 已命名但沒湊滿牌的卡組不能上場：選了也不會開局，
+        // 遊戲會一直停在選卡組畫面直到 30 秒計時器跑完。
+        return IsProfileDeckComplete(deckId);
     }
 
     private bool IsProfileDeckSelectable(int deckId)

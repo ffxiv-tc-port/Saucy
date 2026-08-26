@@ -21,6 +21,10 @@ public class Configuration : IPluginConfiguration
 
     public bool AlwaysBuildOptimizedDeck { get; set; } = true;
 
+    public bool SkipOptimizedDeckForBeatenOrCompletedNpcs { get; set; } = false;
+
+    public bool PauseOptimizedDeckBuildWhileQuestionable { get; set; } = false;
+
     public bool UseCachedOptimizedDeckIfAvailable { get; set; } = false;
     public bool ShowOptimizerChatSpam { get; set; } = true;
 
@@ -65,6 +69,40 @@ public class Configuration : IPluginConfiguration
     public GoldSaucerGateSettings GoldSaucerGates { get; set; } = new();
 
     public bool PauseForAutoRetainer { get; set; }
+
+    /// <summary>仙人微彩：一張完成關窗後自動確認「購買下一張」，把當日彩券一次完成。
+    /// 只在 MiniCactpot 模組啟用時生效。</summary>
+    public bool MiniCactpotAutoPlayAgain { get; set; } = true;
+
+    /// <summary>仙人微彩：兩次點擊之間的最短間隔（毫秒）。
+    /// 🔴 金蝶遊樂園的自動化是伺服器看得見的行為，「看起來像人在操作」本身就有價值。
+    /// 下限刻意留在 <see cref="MiniCactpotMinClickIntervalMs"/>，明顯慢於同類外掛的 100 ms —— 不要為了快把節奏壓到極限。</summary>
+    public int MiniCactpotClickIntervalMs { get; set; } = 800;
+
+    /// <summary>仙人微彩：全部翻開後，等開獎動畫與派彩數字跑完再關窗的時間（毫秒）。</summary>
+    public int MiniCactpotCloseDelayMs { get; set; } = 1600;
+
+    public const int MiniCactpotMinClickIntervalMs = 400;
+    public const int MiniCactpotMaxClickIntervalMs = 5000;
+    public const int MiniCactpotMaxCloseDelayMs = 10000;
+
+    /// <summary>仙人仙彩：號碼來源。false（預設）＝每次隨機、true＝固定使用
+    /// <see cref="JumboCactpotFixedNumber"/>。只在 JumboCactpot 模組啟用時生效。</summary>
+    public bool JumboCactpotUseFixedNumber { get; set; } = false;
+
+    /// <summary>仙人仙彩：固定號碼（0000-9999）。</summary>
+    public int JumboCactpotFixedNumber { get; set; } = 0;
+
+    public const int JumboCactpotMaxNumber = 9999;
+
+    /// <summary>重複幻卡交換：安全線。只有持有數超過這個值的卡才會被列為「可賣」，
+    /// 確保每種卡（含牌組用的那張）至少留這麼多張。預設 1。只在 SellDuplicateCards 模組啟用時生效。</summary>
+    public int SellCardsKeepAtLeast { get; set; } = 1;
+
+    public const int SellCardsMaxKeepAtLeast = 10;
+
+    /// <summary>孤樹無援（陸行鳥廣場伐木機台）自動遊玩設定。只在 OutOnALimb 模組啟用時生效。</summary>
+    public OutOnALimb.LimbSettings OutOnALimb { get; set; } = new();
 
     public int Version { get; set; }
 

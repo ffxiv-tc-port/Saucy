@@ -2,6 +2,7 @@ using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.ClientState.Conditions;
 using Saucy.Framework;
+using AgentId = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId;
 namespace Saucy.TripleTriad;
 
 internal static unsafe class TriadDialogueSkip
@@ -218,7 +219,24 @@ internal static unsafe class TriadDialogueSkip
         TriadNpcGate.IsInDialogueFlow() ||
         (TriadRunSession.ModuleEnabled && TriadTargetNpc.FromWorldTarget() != null);
 
-    private static bool IsGoldSaucerMinigameOccupied() => false;
+    /// <summary>玩家是否正身處金蝶遊樂園的街機小遊戲中——是的話幻卡對話自動化整個讓開，
+    /// 不要跟另一個小遊戲模組搶著按確認框。
+    /// <para>⚠️ 這個函式原本是 <c>=&gt; false</c> 的空殼（2026-07-01 cbfd349 移除街機模組時
+    /// 拆一半留下的殘骸），名字宣稱一個判斷、實作卻是無條件常數，三個呼叫端全部靜默失效。
+    /// 孤樹無援模組加回來之後這個判斷重新有了意義，所以補回真正的實作。</para>
+    /// <para>🔑 刻意設計成兩邊都不會壞：<c>IsAgentActive()</c> 在台服用戶端到底是
+    /// 「機台介面開著」還是「人在金蝶遊樂園就一直是 true」**無法離線證明**，
+    /// 所以額外要求「畫面上沒有任何幻卡 UI、且幻卡 agent 不在作用中」才算被佔用。
+    /// 即使前一個假設完全錯誤，只要幻卡流程正在跑，自動化仍然照常運作、不會整個停擺。</para></summary>
+    private static bool IsGoldSaucerMinigameOccupied()
+    {
+        if (!AgentHelper.IsActive(AgentId.GoldSaucerMiniGame))
+        {
+            return false;
+        }
+
+        return !IsTriadSessionUiVisible() && !AgentHelper.IsActive(AgentId.TrippleTriad);
+    }
 
     private static bool IsTriadSessionUiVisible() =>
         uiReaderPrep.HasMatchRequestUI ||

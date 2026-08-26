@@ -38,8 +38,8 @@ internal static unsafe class LeapOfFaithDetection
     {
         foreach (var obj in Svc.Objects)
         {
-            if (obj != null && (obj.DataId == LeapOfFaithAutomation.FinishDataId ||
-                                 Array.IndexOf(LeapOfFaithAutomation.CactuarDataIds, obj.DataId) >= 0))
+            if (obj != null && (obj.BaseId == LeapOfFaithAutomation.FinishDataId ||
+                                 Array.IndexOf(LeapOfFaithAutomation.CactuarDataIds, obj.BaseId) >= 0))
             {
                 return true;
             }
@@ -446,13 +446,13 @@ internal static unsafe class LeapOfFaithAutomation
 
             var dist = Vector3.Distance(obj.Position, playerPos);
 
-            if (obj.DataId == FinishDataId)
+            if (obj.BaseId == FinishDataId)
             {
                 finish = obj;
                 continue;
             }
 
-            if (CactuarDataIds.Contains(obj.DataId) && dist < nearestCactuarDist)
+            if (CactuarDataIds.Contains(obj.BaseId) && dist < nearestCactuarDist)
             {
                 nearestCactuar = obj;
                 nearestCactuarDist = dist;

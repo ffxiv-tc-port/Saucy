@@ -22,7 +22,8 @@ internal static unsafe class TriadPrepDeckSelectReader
 
     private static bool TryReadDeckListAt(AtkUnitBase* baseNode, UIStateTriadPrep state, bool scanCardTextures)
     {
-        var nodeA = baseNode->UldManager.NodeListCount >= DeckListNodeIndex + 1
+        // 🔴 NodeListCount 非 0 不保證 NodeList 已配置——上界之外還要判指標。
+        var nodeA = baseNode->UldManager.NodeList != null && baseNode->UldManager.NodeListCount >= DeckListNodeIndex + 1
             ? baseNode->UldManager.NodeList[DeckListNodeIndex]
             : null;
         if (nodeA == null || (int)nodeA->Type <= 1000)
@@ -31,6 +32,11 @@ internal static unsafe class TriadPrepDeckSelectReader
         }
 
         var compNodeA = (AtkComponentNode*)nodeA;
+        if (compNodeA->Component == null || compNodeA->Component->UldManager.NodeList == null)
+        {
+            return false;
+        }
+
         var rowCount = compNodeA->Component->UldManager.NodeListCount;
         if (rowCount <= 0)
         {
@@ -69,6 +75,12 @@ internal static unsafe class TriadPrepDeckSelectReader
 
     private static void TryReadGenericDeckLists(AtkUnitBase* baseNode, UIStateTriadPrep state, bool scanCardTextures)
     {
+        // 🔴 NodeListCount 非 0 不保證 NodeList 已配置——上界之外還要判指標。
+        if (baseNode->UldManager.NodeList == null)
+        {
+            return;
+        }
+
         for (var listIdx = 0; listIdx < baseNode->UldManager.NodeListCount; listIdx++)
         {
             var nodeA = baseNode->UldManager.NodeList[listIdx];
@@ -78,6 +90,11 @@ internal static unsafe class TriadPrepDeckSelectReader
             }
 
             var compNodeA = (AtkComponentNode*)nodeA;
+            if (compNodeA->Component == null || compNodeA->Component->UldManager.NodeList == null)
+            {
+                continue;
+            }
+
             var rowCount = compNodeA->Component->UldManager.NodeListCount;
             if (rowCount <= 0)
             {

@@ -33,9 +33,23 @@ internal static class GateNpcNavigation
     // would try to walk the player back toward this GATE's recorded spot from ANYWHERE, including
     // right after a coordinator teleport dropped them somewhere else entirely for a different
     // activity ("他在傳送後一直往上一個活動NPC跑"). An Event Coordinator teleport always drops the
-    // player right next to the next GATE's registration NPC, so 5m is enough to catch "yes, I'm
+    // player right next to the next GATE's registration NPC, so the cap only has to catch "yes, I'm
     // actually here" while still rejecting every other unrelated recorded spot.
-    private const float MaxTriggerDistance = 5f;
+    //
+    // ⚠️ This used to be 5y, which made "自動導航至報名點" effectively dead: the interact itself
+    // already fires at CloseRange (3y), so the auto-navigate could only ever walk the player the two
+    // yalms between 5y and 3y. In practice the toggle looked like it did nothing.
+    //
+    // 25y instead, chosen from the actual spacing between the recorded venues rather than picked out
+    // of the air: the closest DISTINCT pair of registration NPCs is Air Force One (-57.9, -65.4) and
+    // Cliffhanger's first spot (-17.3, -83.2), 44y apart on the horizontal plane. 25y therefore still
+    // cannot reach a neighbouring venue (so the "walks back to the previous activity" report stays
+    // fixed) while giving the toggle a genuinely useful approach distance.
+    //
+    // Wind Blows and Slice is Right share one position (77.6/77.9, -69.8 — 0.3y apart) and so are
+    // mutually reachable at ANY radius including the old 5y; they are kept apart by GateDirector.
+    // IsInGate plus each GATE's own enable toggle, not by this distance.
+    private const float MaxTriggerDistance = 25f;
 
     private static readonly Dictionary<Module.GateType, bool> owners = [];
 
@@ -52,7 +66,7 @@ internal static class GateNpcNavigation
         spot.X = target.Position.X;
         spot.Y = target.Position.Y;
         spot.Z = target.Position.Z;
-        spot.DataId = target.DataId;
+        spot.DataId = target.BaseId;
         spot.NpcName = target.Name.TextValue;
         C.Save();
 
@@ -61,7 +75,7 @@ internal static class GateNpcNavigation
         // (position/navigation still work) but auto-interact will silently never fire, which is
         // exactly what happened to WindBlows' NPC spot ("暴風倖存者 不會和報名NPC互動"). Flag it
         // immediately instead of letting it fail quietly later.
-        message = target.DataId == 0
+        message = target.BaseId == 0
             ? $"已記錄「{spot.NpcName}」的位置，但這個目標沒有有效的 DataId——導航會正常走到附近，但自動互動不會生效，請確認鎖定的是正確的 NPC。"
             : $"已記錄「{spot.NpcName}」的位置。";
         return true;
@@ -218,18 +232,11 @@ internal static class GateNpcNavigation
         }
     }
 
-    /// <summary>One-shot manual trigger for the "立即移動" button — starts walking toward a
-    /// recorded spot right away instead of waiting for the auto-navigate toggle's normal
-    /// conditions (module enabled, not already in the GATE, etc.).</summary>
-    public static bool TryMoveNow(GateNpcSpot spot)
-    {
-        if (!spot.Recorded || !Vnavmesh.IsInstalled)
-        {
-            return false;
-        }
-
-        return Vnavmesh.TryMoveTo(new Vector3(spot.X, spot.Y, spot.Z), false, CloseRange);
-    }
+    // The old one-shot "立即移動" helper lived here. It issued a single Vnavmesh.TryMoveTo and
+    // returned a bool that every caller discarded, so it silently did nothing whenever vnavmesh was
+    // missing or the navmesh was still building, and never reported arrival. Replaced by
+    // GoldSaucerNavigator.StartRecordedSpot, which waits for the mesh, reports success/failure, and
+    // can be cancelled — do not reintroduce a fire-and-forget version here.
 
     // ObjectHelper.TryInteractWithObject needs to be called across MULTIPLE ticks — the first call
     // only sets the target, a later throttled call actually fires the interact (see its own comment

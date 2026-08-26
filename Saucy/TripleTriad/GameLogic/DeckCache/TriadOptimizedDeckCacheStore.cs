@@ -652,7 +652,7 @@ internal static class TriadOptimizedDeckCacheStore
 
         file.ContentId = activeContentId;
         file.CharacterName = LocalPlayerCharacterName;
-        file.HomeWorldRowId = Svc.ClientState.LocalPlayer?.HomeWorld.RowId ?? 0;
+        file.HomeWorldRowId = Svc.Objects.LocalPlayer?.HomeWorld.RowId ?? 0;
     }
 
     private static string ResolveCharacterDisplayName(
@@ -670,7 +670,7 @@ internal static class TriadOptimizedDeckCacheStore
 
         if (isCurrentCharacter && LocalPlayerStateIsLoaded && LocalPlayerContentId == contentId)
         {
-            var worldName = Svc.ClientState.LocalPlayer?.HomeWorld.ValueNullable?.Name.ToString();
+            var worldName = Svc.Objects.LocalPlayer?.HomeWorld.ValueNullable?.Name.ToString();
             return string.IsNullOrEmpty(worldName)
                 ? LocalPlayerCharacterName
                 : $"{LocalPlayerCharacterName} @ {worldName}";
@@ -686,7 +686,7 @@ internal static class TriadOptimizedDeckCacheStore
             return string.Empty;
         }
 
-        var world = Svc.Data.GetExcelSheet<World>()?.GetRow(homeWorldRowId);
+        var world = Svc.Data.GetExcelSheet<World>()?.GetRowOrDefault(homeWorldRowId);
         return world?.Name.ToString() ?? string.Empty;
     }
 

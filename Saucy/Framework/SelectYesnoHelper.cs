@@ -80,7 +80,42 @@ public static unsafe class SelectYesnoHelper
         "upon release",
         "under release",
         "libération",
-        "freigabe"
+        "freigabe",
+
+        // 台服（繁體中文）用戶端的對應詞。上面 29 個項目全是英/法/德/日文，唯一的非拉丁字元
+        // 是片假名「テレポ」——在台服用戶端 IsBlockedSystemPrompt() 因此恆為 false，
+        // IsSafeMinigameYesno()／IsRouteSafeYesno()／IsTriadYesno() 的系統提示防護整條靜默失效
+        // （尤其 MultiAreaRouteExecutor 跨區移動時會自動按下確認框）。
+        // 每個詞都對照 exd-tc/7.20 的官方文本，括號內為出處列號。
+        "乙太之光",   // aetheryte：Addon 8511「乙太之光」、8507「沒有可以顯示的乙太之光。」、
+                      // EObjName 2004968「簡易乙太之光」
+        "傳送",       // teleport：Addon 108/109「確定要傳送嗎？」、111「要傳送到返回點嗎？」、
+                      // 3217「確定要傳送到「」嗎？」、1800「要接受前往「」的傳送邀請嗎？」、
+                      // 166「收到了發動的傳送，要隨同前往「」嗎？」。
+                      // 同時涵蓋 aethernet：2720/2723「都市傳送網」、2735「傳送網」皆含「傳送」
+                      // （台服沒有「乙太網」這個詞，全 EXD 零命中）。
+        "傳喚鈴",     // summoning bell：Item 7064「傳喚鈴」、EObjName 2000072/2000401、
+                      // Addon 8451「美容師傳喚鈴」
+        "捨棄",       // discard：Addon 91「捨棄」、110「確定要捨棄×嗎？」、153、8346「捨棄任務道具。」
+        "回歸點",     // home point / return home：Addon 194「即將返回「」的回歸點。」、3789「返回回歸點」
+        "返回點",     // 同一概念的另一組官方用字（死亡返回）：Addon 111「目前返回點：」、608
+        "邀請",       // party invitation / invite：Addon 170「入隊邀請」、121/787「組隊邀請」、
+                      // 8542「團隊邀請」、172「通訊貝邀請」
+        "回收"        // upon / under release：幻卡回收（把幻卡換成金碟幣，不可逆）
+                      // Addon 9510「幻卡回收」、9513/9517/9518「回收…」、9520「回收」
+    ];
+
+    /// <summary>街機「挑戰翻倍」提示的關鍵字。只在確認 addon 屬於 GoldSaucerMiniGame agent 之後
+    /// 才比對，所以可以用比較寬的詞。台服出處：Addon 9329/9333「挑戰翻倍…要嘗試挑戰一下嗎？」。</summary>
+    private static readonly string[] ArcadeDoubleDownMarkers =
+    [
+        "double down",
+        "double or nothing",
+        "double your",
+        "doubler",
+        "verdoppeln",
+        "ダブルアップ",
+        "翻倍"
     ];
 
     public static bool IsArmed => armedUntilUtc != null && DateTime.UtcNow < armedUntilUtc;
@@ -140,6 +175,12 @@ public static unsafe class SelectYesnoHelper
         return !string.IsNullOrWhiteSpace(prompt) && PromptContainsAny(prompt, BlockedSystemPromptMarkers);
     }
 
+    /// <summary>購票長按鈕版面（Yes=11、No=12 HoldButton）——彩券「花費 MGP 購買」類確認框
+    /// 專用的版面；一般是/否框（8/11）不會有可見的節點 12。用來把「購買下一張彩券」跟同樣
+    /// 掛在彩券 agent 底下的一般確認框（例如中止遊玩）區分開。</summary>
+    public static bool IsTicketPurchaseLayout(AddonSelectYesno* yesno) =>
+        yesno != null && IsComponentNodeVisible(yesno, TicketPurchaseNoButtonNodeId);
+
     public static bool IsArcadeYesno(AddonSelectYesno* yesno) =>
         yesno != null && IsArcadeAddon(&yesno->AtkUnitBase) && HasYesnoButtons(yesno);
 
@@ -173,7 +214,13 @@ public static unsafe class SelectYesnoHelper
             return false;
         }
 
-        if (!text.Contains("Cuff", StringComparison.OrdinalIgnoreCase))
+        // 機台名稱閘門。台服的街機確認框是 Addon 9321 的模板「**<機台名>** … 要挑戰一下嗎？
+        // 需要金碟幣：N」，機台名在執行期由 EObjName 代入，所以要比對的是台服機台名。
+        // 「重擊伽美什」＝EObjName 2005029；台服四台街機分別是 2004804「怪物投籃」(Monster Toss)、
+        // 2005035「強襲水晶塔」(Crystal Tower Striker)、2005036「莫古抓球機」(The Moogle's Paw)、
+        // 2005029「重擊伽美什」——以排除法即 Cuff-a-Cur（打擊型機台）。
+        if (!text.Contains("Cuff", StringComparison.OrdinalIgnoreCase) &&
+            !text.Contains("伽美什", StringComparison.Ordinal))
         {
             return false;
         }
@@ -189,7 +236,9 @@ public static unsafe class SelectYesnoHelper
                text.Contains("round", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("jouer", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("spielen", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("プレイ", StringComparison.OrdinalIgnoreCase);
+               text.Contains("プレイ", StringComparison.OrdinalIgnoreCase) ||
+               // 台服：Addon 9321「要挑戰一下嗎？」為街機遊玩確認框的固定句式。
+               text.Contains("挑戰", StringComparison.Ordinal);
     }
 
     public static bool IsTriadYesNoPrompt(AddonSelectYesno* yesno)
@@ -211,7 +260,11 @@ public static unsafe class SelectYesnoHelper
             "triade",
             "triplo",
             "トリプル",
-            "三重幻卡"
+            // ⚠️「三重幻卡」在台服 EXD 是零命中（那是簡中服的譯名），這個項目一直是死碼。
+            // 台服官方用字是「幻卡」／「九宮幻卡」：Addon 9160/9173/9179/9184「幻卡挑戰」、
+            // 9529/9991「九宮幻卡」、9757「確定要用此卡組進行對局嗎？」。
+            // 只影響「這是不是幻卡提示」的分類（IsTriadYesno 走的是 agent 歸屬，不受此處影響）。
+            "幻卡"
         ]);
     }
 
@@ -249,7 +302,52 @@ public static unsafe class SelectYesnoHelper
     public static bool HasYesnoButtons(AddonSelectYesno* yesno) =>
         yesno != null && (TryResolveYesNoButtons(yesno, out _, out _) || TryResolveYesButton(yesno, out _));
 
-    public static bool IsArcadeDoubleDownYesno(AddonSelectYesno* yesno) => false;
+    /// <summary>街機的「挑戰翻倍」確認框——把已經贏到的金碟幣再押一次的提示
+    /// （Addon 9329/9333：「挑戰翻倍可以有機會獲得更多的金碟幣，但是失敗的話則會什麼都得不到。
+    /// 要嘗試挑戰一下嗎？」）。這跟一般的「要不要玩一局」確認框性質完全不同，
+    /// 絕不可以被當成「安全的小遊戲是/否框」自動按下：要不要續戰必須由各模組依自己的條件決定
+    /// （孤樹無援模組就是自己讀剩餘秒數判斷後才呼叫 PressYes/PressNo）。
+    /// <para>⚠️ 2026-07-01 的 cbfd349 移除街機模組時把這個函式砍成 <c>=&gt; false</c>，
+    /// 但函式名與兩個呼叫端（IsSafeMinigameYesno、IsTriadYesNoPrompt）都留著 ——
+    /// 名字宣稱一個判斷、實作卻是無條件常數，任何照名字信任它的人都不會得到徵兆。
+    /// 這裡把它補回真正的判斷。</para></summary>
+    public static bool IsArcadeDoubleDownYesno(AddonSelectYesno* yesno)
+    {
+        if (yesno == null || !IsArcadeAddon(&yesno->AtkUnitBase))
+        {
+            return false;
+        }
+
+        var text = GetPromptText(yesno);
+        return !string.IsNullOrWhiteSpace(text) && PromptContainsAny(text, ArcadeDoubleDownMarkers);
+    }
+
+    /// <summary>
+    /// 純文字判定的「挑戰翻倍」提示——**刻意不看 agent 歸屬**。
+    ///
+    /// 🔴 為什麼要有第二支：<see cref="IsArcadeDoubleDownYesno"/> 的第一個條件是
+    /// <see cref="IsArcadeAddon"/>，所以「addon 不屬於 GoldSaucerMiniGame agent」時它會回 **false**。
+    /// 那在原本的用法裡沒問題（呼叫端本來就先要求 agent 歸屬），但只要有呼叫端放寬了 agent 條件，
+    /// 這個排除項就會跟著失效——**防護會隨著它保護的那個條件一起消失**，而且完全沒有徵兆。
+    /// 放寬 agent 條件的呼叫端一律改用這一支。
+    ///
+    /// 台服出處：Addon 9329／9333「挑戰翻倍可以有機會獲得更多的金碟幣……要嘗試挑戰一下嗎？」，
+    /// 兩列都含「翻倍」。（9333 多一行「剩餘時間：」，那就是孤樹無援砍完一棵樹之後的續戰提示。）
+    /// </summary>
+    public static bool LooksLikeArcadeDoubleDownPrompt(AddonSelectYesno* yesno)
+    {
+        if (yesno == null)
+        {
+            return false;
+        }
+
+        var text = GetPromptText(yesno);
+        return !string.IsNullOrWhiteSpace(text) && PromptContainsAny(text, ArcadeDoubleDownMarkers);
+    }
+
+    /// <summary>確認框的內文。給診斷與「用資料表文字比對」的呼叫端用。</summary>
+    public static string GetPrompt(AddonSelectYesno* yesno) =>
+        yesno == null ? string.Empty : GetPromptText(yesno) ?? string.Empty;
 
     public static bool IsArcadeAddon(AtkUnitBase* addon) =>
         AgentHelper.IsAddonOwnedBy(addon, AgentId.GoldSaucerMiniGame);
@@ -585,7 +683,7 @@ public static unsafe class SelectYesnoHelper
             return false;
         }
 
-        if (forceEnable && !button->IsEnabled)
+        if (forceEnable && !AddonButton.IsEnabledSafe(button))
         {
             TryForceEnableButton(button);
         }
@@ -595,6 +693,13 @@ public static unsafe class SelectYesnoHelper
 
     private static void TryForceEnableButton(AtkComponentButton* button)
     {
+        // 🔴 OwnerNode 為 null 時下面的解參考會丟 AccessViolationException，
+        //    而 AVE 是 corrupted-state exception，底下的 try/catch 攔不到 —— 必須在這裡先擋。
+        if (button == null || button->AtkComponentBase.OwnerNode == null)
+        {
+            return;
+        }
+
         try
         {
             var flagsPtr = (ushort*)&button->AtkComponentBase.OwnerNode->AtkResNode.NodeFlags;

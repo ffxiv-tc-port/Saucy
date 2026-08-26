@@ -44,11 +44,14 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- 3.0.1.15 (2025-09-15) is the newest ECommons published before yanmucorp's Dalamud hit
-             the real 13.0.0.6 pin (2025-09-16) - matches the API13 Dalamud.Bindings.ImGui/
-             AtkUnitBasePtr surface without pulling in newer members (e.g. IPlayerState) that only
-             exist in later API levels. -->
-        <PackageReference Include="ECommons" Version="3.0.1.15"/>
+        <!-- ECommons 走本 org 的 fork 子模組(BaseVersion 仍是 3.0.1.15,只換來源不換版本號)。
+             上游 NuGet 3.0.1.15 的 AddonMaster/ClickHelper 沒有 OwnerNode 判空,而 Saucy 是全艦隊
+             唯一真的呼叫那段碼的未加固出貨者(AddonMaster 12 處 + ClickHelper),所以必須吃 fork。
+             🔴 這裡是 ProjectReference 而不是 PackageReference:PunishLib 遞移宣告的
+             ECommons NuGet 3.0.1.10(未加固)會被這個 ProjectReference 蓋掉
+             (Artisan/AutoRetainer/Avarice/WrathCombo 四個 repo 已出貨證實同樣組態)。
+             ⚠️ 不要把 PackageReference 加回來共存——「兩者並存時 project 一定贏」沒有證據。 -->
+        <ProjectReference Include="..\ECommons\ECommons\ECommons.csproj"/>
         <PackageReference Include="NAudio" Version="2.3.0"/>
         <PackageReference Include="NAudio.Lame" Version="2.1.0"/>
         <ProjectReference Include="..\PunishLib\PunishLib\PunishLib.csproj"/>

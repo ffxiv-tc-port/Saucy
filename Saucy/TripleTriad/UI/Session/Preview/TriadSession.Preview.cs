@@ -1,4 +1,5 @@
 #nullable disable
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 using System.Collections.Generic;
@@ -144,6 +145,12 @@ public partial class TriadSession
             return;
         }
 
+        if (C.PauseOptimizedDeckBuildWhileQuestionable && Questionable.IsQuestingNow())
+        {
+            lastWorldTargetOptimizerNpcId = -1;
+            return;
+        }
+
         var npc = TriadTargetNpc.FromWorldTarget();
         if (npc == null)
         {
@@ -158,6 +165,12 @@ public partial class TriadSession
 
         if (Vnavmesh.ShouldDeferHeavyWork())
         {
+            return;
+        }
+
+        if (ShouldSkipBackgroundOptimizedDeckBuild(npc))
+        {
+            lastWorldTargetOptimizerNpcId = npc.Id;
             return;
         }
 
@@ -420,13 +433,13 @@ public partial class TriadSession
     {
         if (profileGS == null || profileGS.HasErrors)
         {
-            return "No usable decks";
+            return "No usable decks".Loc();
         }
 
         var profileDecks = profileGS.GetPlayerDecks();
         if (profileDecks == null)
         {
-            return "No usable decks";
+            return "No usable decks".Loc();
         }
 
         var hasNamedDeck = false;
@@ -457,11 +470,11 @@ public partial class TriadSession
 
         if (!hasNamedDeck)
         {
-            return "No usable decks";
+            return "No usable decks".Loc();
         }
 
         return hasCompleteCardIds
-            ? "No decks with 5 cards"
-            : "Could not read profile decks";
+            ? "Profile decks aren't simmable".Loc()
+            : "No complete profile decks".Loc();
     }
 }

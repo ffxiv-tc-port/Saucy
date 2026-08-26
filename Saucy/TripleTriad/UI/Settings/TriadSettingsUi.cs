@@ -94,6 +94,30 @@ internal static class TriadSettingsUi
         DrawDeckOptimizerMaxThreadsSlider();
         DrawDeckOptimizerTimeoutSlider();
 
+        var skipBeatenOrCompleted = C.SkipOptimizedDeckForBeatenOrCompletedNpcs;
+        if (ImGui.Checkbox("Skip beaten or completed NPCs".Loc(), ref skipBeatenOrCompleted))
+        {
+            C.SkipOptimizedDeckForBeatenOrCompletedNpcs = skipBeatenOrCompleted;
+            C.Save();
+        }
+
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker(
+            ("Don't start a background deck build when you target an NPC you've already beaten " +
+            "or whose cards you already own. Still builds at match prep if you challenge them.").Loc());
+
+        var pauseForQuestionable = C.PauseOptimizedDeckBuildWhileQuestionable;
+        if (ImGui.Checkbox("Pause while Questionable is running".Loc(), ref pauseForQuestionable))
+        {
+            C.PauseOptimizedDeckBuildWhileQuestionable = pauseForQuestionable;
+            C.Save();
+        }
+
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker(
+            ("Pauses background deck builds while Questionable (/qst) is questing. " +
+            "Match prep still builds if you challenge an NPC.").Loc());
+
         TriadDeckOptimizerStatusUi.DrawInline();
     }
 
@@ -105,6 +129,10 @@ internal static class TriadSettingsUi
         if (ImGui.SliderInt("Optimizer threads (0 = all)".Loc(), ref threads, 0, maxCores, threads == 0 ? "All".Loc() : "%d"))
         {
             C.DeckOptimizerMaxThreads = Configuration.ClampDeckOptimizerMaxThreads(threads);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
             C.Save();
         }
 
@@ -129,6 +157,10 @@ internal static class TriadSettingsUi
         if (ImGui.SliderInt("Optimizer timeout (min)".Loc(), ref timeout, 1, 15, "%d min".Loc()))
         {
             C.DeckOptimizerTimeoutMinutes = Math.Clamp(timeout, 1, 15);
+        }
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
             C.Save();
         }
 
@@ -171,7 +203,8 @@ internal static class TriadSettingsUi
 
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "Picks a deck at deck select. Default: highest opening win % among your profile decks.".Loc());
+            ("Picks a deck at deck select. Default: highest opening win % among your profile decks. " +
+             "If none of those decks have 5 cards, Saucy uses the game's Recommended button.").Loc());
 
         if (C.UseSimmedDeck)
         {

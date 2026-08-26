@@ -117,7 +117,7 @@ public static unsafe class AirForceAutomation
             const float MaxBelowPlayerY = 15f;
 
             var bombs = Svc.Objects.OfType<IEventObj>()
-                .Where(x => x.DataId == BombDataId && Player.Position.Y - x.Position.Y < MaxBelowPlayerY)
+                .Where(x => x.BaseId == BombDataId && Player.Position.Y - x.Position.Y < MaxBelowPlayerY)
                 .Select(x => (Screen: Svc.GameGui.WorldToScreen(x.Position, out var s) ? s : (System.Numerics.Vector2?)null, Dist: Player.DistanceTo(x)))
                 .Where(b => b.Screen.HasValue)
                 .Select(b => (Screen: b.Screen!.Value, Dist: b.Dist, AvoidRadius: Math.Clamp(
@@ -135,7 +135,7 @@ public static unsafe class AirForceAutomation
             // just isn't the right one here. Confirmed via live diagnostic (LogEventStateChanges)
             // showing 0 across every known target at every distance. Dropped the ==1 gate entirely
             // and just treat all known non-excluded targets as shootable when in view.
-            foreach (var x in Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
+            foreach (var x in Svc.Objects.OfType<IEventObj>().Where(x => x.BaseId.EqualsAny<uint>(
                 2009678,
                 2009676,
                 2009677,
@@ -146,7 +146,7 @@ public static unsafe class AirForceAutomation
                 2015183
             )).OrderBy(Player.DistanceTo))
             {
-                if (x.DataId.EqualsAny<uint>(
+                if (x.BaseId.EqualsAny<uint>(
                     2015183,
                     2009679
                 ))
@@ -213,7 +213,7 @@ public static unsafe class AirForceAutomation
                         aimPoint = edgePoint;
                     }
 
-                    targetCircles.Add(new TargetCircle(screen, targetRadius, skippedForBomb, x.DataId));
+                    targetCircles.Add(new TargetCircle(screen, targetRadius, skippedForBomb, x.BaseId));
                     if (skippedForBomb)
                     {
                         continue;
@@ -286,7 +286,7 @@ public static unsafe class AirForceAutomation
             return;
         }
 
-        foreach (var x in Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
+        foreach (var x in Svc.Objects.OfType<IEventObj>().Where(x => x.BaseId.EqualsAny<uint>(
             2009678, 2009676, 2009677, 2009679, 2015180, 2015179, 2015178, 2015183)))
         {
             var current = x.AnimationId();
@@ -296,7 +296,7 @@ public static unsafe class AirForceAutomation
             }
 
             lastEventState[x.GameObjectId] = current;
-            Svc.Chat.Print($"[Saucy][AF1診斷] {DateTime.Now:HH:mm:ss.fff} {x.Name} ({x.DataId}) " +
+            Svc.Chat.Print($"[Saucy][AF1診斷] {DateTime.Now:HH:mm:ss.fff} {x.Name} ({x.BaseId}) " +
                             $"EventState {previous}→{current} dist={Player.DistanceTo(x):F1}");
         }
     }
@@ -329,26 +329,26 @@ public static unsafe class AirForceAutomation
             ImGuiEx.Text($"Current aim: ({aim.X:F1}, {aim.Y:F1})");
         }
 
-        var targets = Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
+        var targets = Svc.Objects.OfType<IEventObj>().Where(x => x.BaseId.EqualsAny<uint>(
             2009678, 2009676, 2009677
-        )).Where(x => !x.DataId.EqualsAny<uint>(2015183, 2009679)).OrderBy(Player.DistanceTo).Take(3).ToArray();
+        )).Where(x => !x.BaseId.EqualsAny<uint>(2015183, 2009679)).OrderBy(Player.DistanceTo).Take(3).ToArray();
         ImGuiEx.Text($"Shootable targets (excl. avoid-list): {targets.Length}");
         foreach (var t in targets)
         {
-            ImGuiEx.Text($"  {t.Name} ({t.DataId}) dist={Player.DistanceTo(t):F1}");
+            ImGuiEx.Text($"  {t.Name} ({t.BaseId}) dist={Player.DistanceTo(t):F1}");
         }
 
         // Diagnostic: AnimationId() reading GameObject.EventState is an unverified guess (never
         // tested in-game). Lists the RAW value for every known target DataId regardless of the
         // ==1 filter above, so if auto-shoot never fires, compare this against what you actually
         // see in-game (a target visibly poppable vs. not) to find the right field/threshold.
-        var allKnown = Svc.Objects.OfType<IEventObj>().Where(x => x.DataId.EqualsAny<uint>(
+        var allKnown = Svc.Objects.OfType<IEventObj>().Where(x => x.BaseId.EqualsAny<uint>(
             2009678, 2009676, 2009677, 2009679, 2015180, 2015179, 2015178, 2015183
         )).OrderBy(Player.DistanceTo).Take(8).ToArray();
         ImGuiEx.Text($"[診斷] 附近已知目標原始 EventState 值 ({allKnown.Length}):");
         foreach (var t in allKnown)
         {
-            ImGuiEx.Text($"  {t.Name} ({t.DataId}) EventState={t.AnimationId()} dist={Player.DistanceTo(t):F1}");
+            ImGuiEx.Text($"  {t.Name} ({t.BaseId}) EventState={t.AnimationId()} dist={Player.DistanceTo(t):F1}");
         }
 
         // If "Shootable targets" above is 0 while actual balloons/targets are visible on screen,
@@ -361,7 +361,7 @@ public static unsafe class AirForceAutomation
         ImGuiEx.Text($"[診斷] 附近所有 EventObj，不限 DataId ({nearbyEventObjs.Length}):");
         foreach (var t in nearbyEventObjs)
         {
-            ImGuiEx.Text($"  {t.Name} DataId={t.DataId} EventState={t.AnimationId()} dist={Player.DistanceTo(t):F1}");
+            ImGuiEx.Text($"  {t.Name} DataId={t.BaseId} EventState={t.AnimationId()} dist={Player.DistanceTo(t):F1}");
         }
 
         // A reported "ground target" being shot at doesn't show up above if it isn't actually an
@@ -374,7 +374,7 @@ public static unsafe class AirForceAutomation
         ImGuiEx.Text($"[診斷] 附近所有物件，不限種類 ({nearbyAny.Length}):");
         foreach (var t in nearbyAny)
         {
-            ImGuiEx.Text($"  {t.Name} Kind={t.ObjectKind} DataId={t.DataId} Y={t.Position.Y:F1} dist={Player.DistanceTo(t):F1}");
+            ImGuiEx.Text($"  {t.Name} Kind={t.ObjectKind} DataId={t.BaseId} Y={t.Position.Y:F1} dist={Player.DistanceTo(t):F1}");
         }
     }
 }

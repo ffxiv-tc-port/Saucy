@@ -30,7 +30,10 @@ public unsafe partial class PluginUI : Window
         "Cliffhanger",
         "Slice is Right",
         "GATE schedule",
+        "Navigation",
         "Triple Triad",
+        "Mini Cactpot",
+        "快速賣重複卡",
         "Stats",
         "About",
         "Debug",
@@ -181,6 +184,11 @@ public unsafe partial class PluginUI : Window
         ImGui.Dummy(new(0, 6));
         DrawSidebarHeader("OTHER GAMES".Loc());
         NavSelectable("Triple Triad".Loc(), NavItem.TripleTriad);
+        NavSelectable("Mini Cactpot".Loc(), NavItem.MiniCactpot);
+        NavSelectable("Jumbo Cactpot".Loc(), NavItem.JumboCactpot);
+        NavSelectable("Out on a Limb".Loc(), NavItem.OutOnALimb);
+        NavSelectable("快速賣重複卡".Loc(), NavItem.SellCards);
+        NavSelectable("Navigation".Loc(), NavItem.Navigation);
 
         ImGui.Dummy(new(0, 6));
         ImGui.Separator();
@@ -228,7 +236,12 @@ public unsafe partial class PluginUI : Window
             case NavItem.LeapOfFaith: DrawLeapOfFaithPanel(); break;
             case NavItem.Cliffhanger: DrawCliffhangerPanel(); break;
             case NavItem.SliceIsRight: DrawSliceIsRightPanel(); break;
+            case NavItem.MiniCactpot: DrawMiniCactpotPanel(); break;
+            case NavItem.JumboCactpot: DrawJumboCactpotPanel(); break;
+            case NavItem.OutOnALimb: DrawOutOnALimbPanel(); break;
+            case NavItem.SellCards: DrawSellCardsPanel(); break;
             case NavItem.GateSchedule: DrawGateSchedulePanel(); break;
+            case NavItem.Navigation: DrawNavigationPanel(); break;
             case NavItem.Stats: DrawStatsTab(); break;
             case NavItem.About: AboutTab.Draw("Saucy"); break;
             case NavItem.Debug: DrawDebugTab(); break;
@@ -529,21 +542,21 @@ public unsafe partial class PluginUI : Window
 
         SaucyTheme.TextMuted("自動參加支援的 GATE（:00/:20/:40）——每個 GATE 可個別開關：");
         var airForceAutoJoin = C.GoldSaucerGates.AirForceAutoJoin;
-        if (ImGui.Checkbox("空軍裝甲駕駛員##AirForceAutoJoin", ref airForceAutoJoin))
+        if (ImGui.Checkbox("Air Force One".Loc() + "##AirForceAutoJoin", ref airForceAutoJoin))
         {
             C.GoldSaucerGates.AirForceAutoJoin = airForceAutoJoin;
             C.Save();
         }
         ImGui.SameLine();
         var windBlowsAutoJoin = C.GoldSaucerGates.WindBlowsAutoJoin;
-        if (ImGui.Checkbox("暴風倖存者##WindBlowsAutoJoin", ref windBlowsAutoJoin))
+        if (ImGui.Checkbox("Wind Blows".Loc() + "##WindBlowsAutoJoin", ref windBlowsAutoJoin))
         {
             C.GoldSaucerGates.WindBlowsAutoJoin = windBlowsAutoJoin;
             C.Save();
         }
         ImGui.SameLine();
         var sliceIsRightAutoJoin = C.GoldSaucerGates.SliceIsRightAutoJoin;
-        if (ImGui.Checkbox("必中一閃快刀斬魔##SliceIsRightAutoJoin", ref sliceIsRightAutoJoin))
+        if (ImGui.Checkbox("Slice is Right".Loc() + "##SliceIsRightAutoJoin", ref sliceIsRightAutoJoin))
         {
             C.GoldSaucerGates.SliceIsRightAutoJoin = sliceIsRightAutoJoin;
             C.Save();
@@ -617,11 +630,11 @@ public unsafe partial class PluginUI : Window
         ImGui.Dummy(new(0, 8));
         ImGui.Separator();
         ImGui.TextWrapped("支援 GATE 的報名 NPC：");
-        DrawGateNpcNavigationControls("空軍裝甲駕駛員（與登高跳跳樂共用同一個NPC）", "AirForceNpc", C.GoldSaucerGates.AirForceNpcSpot,
+        DrawGateNpcNavigationControls("Air Force One".Loc() + "（與登高跳跳樂共用同一個NPC）", "AirForceNpc", C.GoldSaucerGates.AirForceNpcSpot,
             () => C.GoldSaucerGates.AirForceNpcAutoNavigate, v => C.GoldSaucerGates.AirForceNpcAutoNavigate = v);
-        DrawGateNpcNavigationControls("暴風倖存者", "WindBlowsNpc", C.GoldSaucerGates.WindBlowsNpcSpot,
+        DrawGateNpcNavigationControls("Wind Blows".Loc(), "WindBlowsNpc", C.GoldSaucerGates.WindBlowsNpcSpot,
             () => C.GoldSaucerGates.WindBlowsNpcAutoNavigate, v => C.GoldSaucerGates.WindBlowsNpcAutoNavigate = v);
-        DrawGateNpcNavigationControls("必中一閃快刀斬魔", "SliceIsRightNpc", C.GoldSaucerGates.SliceIsRightNpcSpot,
+        DrawGateNpcNavigationControls("Slice is Right".Loc(), "SliceIsRightNpc", C.GoldSaucerGates.SliceIsRightNpcSpot,
             () => C.GoldSaucerGates.SliceIsRightNpcAutoNavigate, v => C.GoldSaucerGates.SliceIsRightNpcAutoNavigate = v);
 
         // Cliffhanger's registration NPC has two physical spots (confirmed by user), so it gets
@@ -633,11 +646,7 @@ public unsafe partial class PluginUI : Window
         {
             var spot = cliffhangerSpots[i];
             ImGui.TextUnformatted($"{spot.NpcName}（{spot.X:F1}, {spot.Y:F1}, {spot.Z:F1}）");
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"立即移動##CliffhangerNpcMove{i}"))
-            {
-                GateNpcNavigation.TryMoveNow(spot);
-            }
+            DrawRecordedSpotNavigationRow(spot, $"CliffhangerNpc{i}");
             ImGui.SameLine();
             if (ImGui.SmallButton($"立即互動##CliffhangerNpcInteract{i}"))
             {
@@ -722,7 +731,7 @@ public unsafe partial class PluginUI : Window
         ImGui.SameLine();
         using (ImRaii.Disabled(!recording))
         {
-            if (ImGui.Button("停止"))
+            if (ImGui.Button("Stop".Loc()))
             {
                 LeapOfFaith.LeapOfFaithRecorder.StopRecording();
             }
@@ -777,7 +786,7 @@ public unsafe partial class PluginUI : Window
         ImGui.SameLine();
         using (ImRaii.Disabled(!recording))
         {
-            if (ImGui.Button("停止##Cliffhanger"))
+            if (ImGui.Button("Stop".Loc() + "##Cliffhanger"))
             {
                 // "按停止時沒有匯出" — stopping and exporting used to be two separate manual
                 // steps (this button, then a second "匯出路線 JSON" click), easy to forget the
@@ -818,7 +827,12 @@ public unsafe partial class PluginUI : Window
         LeapOfFaith,
         Cliffhanger,
         SliceIsRight,
+        MiniCactpot,
+        JumboCactpot,
+        OutOnALimb,
+        SellCards,
         GateSchedule,
+        Navigation,
         Stats,
         About,
         Debug

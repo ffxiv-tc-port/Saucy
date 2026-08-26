@@ -1,4 +1,5 @@
 #nullable disable
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 using System.Collections.Generic;
@@ -57,6 +58,7 @@ public partial class TriadSession
     private bool _optimizerTimedOut;
     private bool _pauseOptimizerForActiveTriad;
     private bool _pauseOptimizerForNavmesh;
+    private bool _pauseOptimizerForQuestionable;
     private bool _pauseOptimizerForSolver;
 
     public int preGameBestId = -1;
@@ -108,6 +110,41 @@ public partial class TriadSession
         C.UseCachedOptimizedDeckIfAvailable &&
         !ShouldBuildOptimizedDeck();
 
+    public bool ShouldSkipBackgroundOptimizedDeckBuild(TriadNpc npc)
+    {
+        if (TriadUiState.IsPrepDeckSelectVisible() || TriadUiState.IsMatchRegistrationVisible())
+        {
+            return false;
+        }
+
+        if (TriadRunSession.NavigationRequiresOptimizedDeckBuild || TriadMapNavigation.IsNavigationActive)
+        {
+            return false;
+        }
+
+        if (C.PauseOptimizedDeckBuildWhileQuestionable && Questionable.IsQuestingNow())
+        {
+            return true;
+        }
+
+        return C.SkipOptimizedDeckForBeatenOrCompletedNpcs && IsNpcBeatenOrAllCardsOwned(npc);
+    }
+
+    public static bool IsNpcBeatenOrAllCardsOwned(TriadNpc npc)
+    {
+        if (!GameNpcDB.Get().mapNpcs.TryGetValue(npc.Id, out var info))
+        {
+            return false;
+        }
+
+        if (TriadMemoryReads.IsAvailable && TriadMemoryReads.TryIsNpcBeatenOnce(info.triadId))
+        {
+            return true;
+        }
+
+        return info.rewardCards.Count > 0 && TriadCardFarmSession.HasAllNpcRewardsOwned(info);
+    }
+
     public string GetAutoPickDeckSummary(TriadNpc npc)
     {
         if (!C.UseSimmedDeck || npc == null)
@@ -141,7 +178,16 @@ public partial class TriadSession
 
         if (CountSimmableProfileDecks() == 0)
         {
-            return DescribeMissingSimmableDecks();
+            var missing = DescribeMissingSimmableDecks() ?? "No usable decks".Loc();
+            lock (_preGameLock)
+            {
+                if (ResolveSelectableDeckIndexLocked(-1, true) >= 0)
+                {
+                    return missing;
+                }
+            }
+
+            return "?? — using game recommended".Loc(missing);
         }
 
         if (ShouldBuildOptimizedDeck())
@@ -215,6 +261,16 @@ public partial class TriadSession
         var hasFallbackDeck = hasUsableCache || hasAnyCache || hasProfileSaucyDeck;
         string WithFallbackNote(string message) =>
             hasFallbackDeck ? $"{message} · cached deck exists" : message;
+
+        if (ShouldSkipBackgroundOptimizedDeckBuild(npc))
+        {
+            if (C.PauseOptimizedDeckBuildWhileQuestionable && Questionable.IsQuestingNow())
+            {
+                return WithFallbackNote("Paused — Questionable is running".Loc());
+            }
+
+            return "Skipped — NPC beaten or all cards owned".Loc();
+        }
 
         if (OptimizerInProgress && TriadDeckOptimizerJobs.TryGetActive(out var job))
         {
