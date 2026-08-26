@@ -330,6 +330,8 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
     public override void PreDraw()
     {
+        base.PreDraw();
+
         if (!IsGameDataReady || !uiReaderCardList.IsVisible)
         {
             return;

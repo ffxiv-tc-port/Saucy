@@ -81,6 +81,8 @@ public class TriadCardInfoWindow : Window, IDisposable
 
     public override void PreDraw()
     {
+        base.PreDraw();
+
         uiReaderCardList.RefreshLiveSelectionState();
         SyncSelectedCardFromReader();
 

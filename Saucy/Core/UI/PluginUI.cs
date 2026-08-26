@@ -119,6 +119,8 @@ public unsafe partial class PluginUI : Window
 
     public override void PreDraw()
     {
+        base.PreDraw();
+
         _themeScope?.Dispose();
         _themeScope = SaucyTheme.PushScope();
 
@@ -141,6 +143,8 @@ public unsafe partial class PluginUI : Window
     {
         _themeScope?.Dispose();
         _themeScope = null;
+
+        base.PostDraw();
     }
 
     public override void Draw()
