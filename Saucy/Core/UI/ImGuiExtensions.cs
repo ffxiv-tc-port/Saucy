@@ -1,4 +1,4 @@
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 namespace Saucy;
 
 public static unsafe class ImGuiExtensions

@@ -98,7 +98,7 @@ public class UIReaderScheduler(IGameGui gameGui)
                     continue;
                 }
 
-                var baseNode = (AtkUnitBase*)handle;
+                var baseNode = (AtkUnitBase*)handle.Address;
                 if (IsAddonVisible(baseNode))
                 {
                     return handle;

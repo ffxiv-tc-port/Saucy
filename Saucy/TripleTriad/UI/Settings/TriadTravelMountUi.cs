@@ -1,6 +1,7 @@
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.LanguageHelpers;
 using Lumina.Excel.Sheets;
 using System;
 using System.Linq;
@@ -10,7 +11,7 @@ internal static class TriadTravelMountUi
 {
     public static void Draw()
     {
-        ImGui.TextWrapped("Mount used before vnavmesh pathing to Triple Triad NPCs.");
+        ImGui.TextWrapped("Mount used before vnavmesh pathing to Triple Triad NPCs.".Loc());
         ImGui.Dummy(new(0, 4));
 
         var selectedMountId = C.TriadCollection.TravelMountId;
@@ -18,7 +19,7 @@ internal static class TriadTravelMountUi
         using var mountCombo = ImRaii.Combo("##TriadTravelMount", GetPreviewLabel(selectedMountId));
         if (mountCombo)
         {
-            if (ImGui.Selectable("Mount roulette", selectedMountId == 0))
+            if (ImGui.Selectable("Mount roulette".Loc(), selectedMountId == 0))
             {
                 C.TriadCollection.TravelMountId = 0;
                 C.Save();
@@ -36,27 +37,27 @@ internal static class TriadTravelMountUi
 
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(
-            "Default uses the game's Mount Roulette general action. Pick a mount to always summon that one before map navigation.");
+            "Default uses the game's Mount Roulette general action. Pick a mount to always summon that one before map navigation.".Loc());
     }
 
     private static string GetPreviewLabel(uint mountId)
     {
         if (mountId == 0)
         {
-            return "Mount roulette";
+            return "Mount roulette".Loc();
         }
 
         var mountSheet = Svc.Data.GetExcelSheet<Mount>();
         var row = mountSheet?.GetRowOrDefault(mountId);
         if (row == null)
         {
-            return $"Mount #{mountId} (unavailable)";
+            return "Mount #?? (unavailable)".Loc(mountId);
         }
 
         var name = row.Value.Singular.ExtractText();
         if (!TravelMountHelper.IsMountUnlocked(mountId))
         {
-            return $"{name} (unavailable)";
+            return "?? (unavailable)".Loc(name);
         }
 
         return name;

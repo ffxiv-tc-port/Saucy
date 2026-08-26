@@ -1,6 +1,7 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.GameHelpers;
+using ECommons.LanguageHelpers;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
@@ -142,7 +143,7 @@ internal static unsafe partial class TriadMapNavigation
 
             if (DateTime.UtcNow - pending.PhaseStartedUtc > TimeSpan.FromSeconds(45))
             {
-                Svc.Chat.PrintError("[Saucy] Could not reach the Triple Triad NPC.");
+                Svc.Chat.PrintError("[Saucy] " + "Could not reach the Triple Triad NPC.".Loc());
                 ClearPending();
             }
 
@@ -187,7 +188,7 @@ internal static unsafe partial class TriadMapNavigation
         if (TryBeginTriadMatchAfterDeckOptimizer(pending) && !pending.AnnouncedTriadStart)
         {
             pending.AnnouncedTriadStart = true;
-            Svc.Chat.Print($"[Saucy] Arrived at {pending.Npc!.Name}. Starting Triple Triad...");
+            Svc.Chat.Print("[Saucy] " + "Arrived at ??. Starting Triple Triad...".Loc(pending.Npc!.Name));
         }
 
         if (DateTime.UtcNow - pending.PhaseStartedUtc > TimeSpan.FromSeconds(45))
@@ -308,7 +309,7 @@ internal static unsafe partial class TriadMapNavigation
 
         if (DateTime.UtcNow - pending.PhaseStartedUtc > NpcInteractionPhaseTimeout)
         {
-            Svc.Chat.PrintError("[Saucy] Could not open Triple Triad with this NPC.");
+            Svc.Chat.PrintError("[Saucy] " + "Could not open Triple Triad with this NPC.".Loc());
             ClearPending();
         }
     }

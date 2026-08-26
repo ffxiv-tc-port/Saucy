@@ -32,7 +32,7 @@ internal static unsafe class TriadResultRewardReader
             return 0;
         }
 
-        return ((AgentTripleTriad*)ifacePtr)->RewardItemId;
+        return ((AgentTripleTriad*)ifacePtr.Address)->RewardItemId;
     }
 
     private static uint TryReadRewardItemIdFromUi(AddonTripleTriadResult* resultAddon)

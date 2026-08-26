@@ -1,7 +1,8 @@
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 namespace Saucy.TripleTriad;
 
@@ -76,7 +77,7 @@ internal static class TriadNpcMapUi
     {
         if (TriadBattleHall.ShouldBlockMapNavigation(npc, location))
         {
-            return $"{showOnMapTooltip}\nThe Battlehall is a Duty Finder instance.\nSaucy cannot path there.";
+            return showOnMapTooltip + "\n" + "The Battlehall is a Duty Finder instance.\nSaucy cannot path there.".Loc();
         }
 
         var unlockLine = TriadNpcUnlockHelper.TryGetTooltipLine(npc);
@@ -87,25 +88,25 @@ internal static class TriadNpcMapUi
 
         if (!Vnavmesh.IsInstalled)
         {
-            return $"{showOnMapTooltip}\nInstall vnavmesh to walk to this NPC.";
+            return showOnMapTooltip + "\n" + "Install vnavmesh to walk to this NPC.".Loc();
         }
 
-        var lines = $"{showOnMapTooltip}\nLeft-click: path there and farm missing cards.";
+        var lines = showOnMapTooltip + "\n" + "Left-click: path there and farm missing cards.".Loc();
         if (npc != null)
         {
-            lines += "\nRight-click: path there and farm MGP.";
-            lines += "\nEnables Triple Triad automation on arrival.";
-            lines += "\nLeft-click uses MGP farm if you already have every card from this NPC.";
-            lines += "\nLeft-click with missing cards builds an optimized deck even if that option is off.";
+            lines += "\n" + "Right-click: path there and farm MGP.".Loc();
+            lines += "\n" + "Enables Triple Triad automation on arrival.".Loc();
+            lines += "\n" + "Left-click uses MGP farm if you already have every card from this NPC.".Loc();
+            lines += "\n" + "Left-click with missing cards builds an optimized deck even if that option is off.".Loc();
         }
         else
         {
-            lines = $"{showOnMapTooltip}\nClick to path with vnavmesh.";
+            lines = showOnMapTooltip + "\n" + "Click to path with vnavmesh.".Loc();
         }
 
         if (Lifestream.IsInstalled)
         {
-            lines += "\nUses Lifestream for travel (aetheryte or aethernet shard).";
+            lines += "\n" + "Uses Lifestream for travel (aetheryte or aethernet shard).".Loc();
             var route = MultiAreaRouteRegistry.FindRoute(location);
             if (route?.TooltipHint != null)
             {

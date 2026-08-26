@@ -75,20 +75,28 @@ internal struct AddonTripleTriadResult
     [FieldOffset(0)] public AtkUnitBase AtkUnitBase;
 }
 
-[StructLayout(LayoutKind.Explicit, Size = 0x1000)] // no idea what size, last entries seems to be around +0xfc0?
+// Verified against the working FFTriadBuddyDalamud plugin (D:\FFTriadBuddyDalamud, confirmed by
+// user to correctly read both players' board state live) — not guessed, not memory-scanned. Its
+// offsets exactly cross-validate the earlier live-diff finding too: the diffed card's real stats
+// address (addon-relative 0xAA0) equals Board start (0x8d0) + slot 2 (2*0xA8=0x150) + the real
+// intra-slot stat offset (0x80) = 0x8d0+0x150+0x80 = 0xAA0. So Board really does start at 0x8d0
+// as first assumed; the earlier mistake was assuming stats sit at the START of each 0xA8 slot
+// (+0x0) instead of well inside it (+0x80).
+[StructLayout(LayoutKind.Explicit, Size = 0x1000)]
 internal unsafe struct AddonTripleTriad
 {
+    [StructLayout(LayoutKind.Explicit, Size = 0xA8)]
     internal unsafe struct TripleTriadCard
     {
-        public AtkComponentBase* CardDropControl;
-        public byte CardRarity;  // 1..5
-        public byte CardType;    // 0: no type, 1: primal, 2: scion, 3: beastman, 4: garland
-        public byte CardOwner;   // 0: empty, 1: blue, 2: red
-        public byte NumSideU;
-        public byte NumSideD;
-        public byte NumSideR;
-        public byte NumSideL;
-        public bool HasCard;
+        [FieldOffset(0x8)] public AtkComponentBase* CardDropControl;
+        [FieldOffset(0x80)] public byte CardRarity;  // 1..5
+        [FieldOffset(0x81)] public byte CardType;    // 0: no type, 1: primal, 2: scion, 3: beastman, 4: garland
+        [FieldOffset(0x82)] public byte CardOwner;   // 0: empty, 1: blue, 2: red
+        [FieldOffset(0x83)] public byte NumSideU;
+        [FieldOffset(0x84)] public byte NumSideD;
+        [FieldOffset(0x85)] public byte NumSideR;
+        [FieldOffset(0x86)] public byte NumSideL;
+        [FieldOffset(0xA4)] public bool HasCard;
     }
 
     [InlineArray(5)]

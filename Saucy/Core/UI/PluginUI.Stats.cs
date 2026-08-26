@@ -1,5 +1,6 @@
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.LanguageHelpers;
 using System;
 using System.Linq;
 using System.Numerics;
@@ -13,18 +14,16 @@ public partial class PluginUI
 
         (var life, var sess) = (C.Stats, C.SessionStats);
 
-        DrawStatsCard("Triple Triad", TriadHeadline(life), () => DrawTriadRows(life, sess));
-        DrawStatsCard("Cuff-a-Cur", CuffHeadline(life), () => DrawCuffRows(life, sess));
-        DrawStatsCard("Out on a Limb", LimbHeadline(life), () => DrawLimbRows(life, sess));
-        DrawStatsCard("Air Force One", AirForceHeadline(life), () => DrawAirForceRows(life, sess));
+        DrawStatsCard("Triple Triad".Loc(), TriadHeadline(life), () => DrawTriadRows(life, sess));
+        DrawStatsCard("Air Force One".Loc(), AirForceHeadline(life), () => DrawAirForceRows(life, sess));
     }
 
     private static void DrawStatsToolbar()
     {
-        ImGui.TextDisabled("Hold Ctrl to reset stats.");
+        ImGui.TextDisabled("Hold Ctrl to reset stats.".Loc());
         ImGui.SameLine();
-        const string lifeLbl = "Reset Lifetime";
-        const string sessLbl = "Reset Session";
+        var lifeLbl = "Reset Lifetime".Loc();
+        var sessLbl = "Reset Session".Loc();
         var pad = ImGui.GetStyle().FramePadding.X * 2f;
         var lifeW = ImGui.CalcTextSize(lifeLbl).X + pad;
         var sessW = ImGui.CalcTextSize(sessLbl).X + pad;
@@ -54,20 +53,14 @@ public partial class PluginUI
     {
         if (s.GamesPlayedWithSaucy == 0)
         {
-            return "no games played";
+            return "no games played".Loc();
         }
         var pct = Math.Round(s.GamesWonWithSaucy / (double)s.GamesPlayedWithSaucy * 100, 1);
-        return $"{s.GamesPlayedWithSaucy:N0} games \u00b7 {pct}% win";
+        return "?? games \u00b7 ??% win".Loc($"{s.GamesPlayedWithSaucy:N0}", pct);
     }
 
-    private static string CuffHeadline(Stats s) =>
-        s.CuffGamesPlayed == 0 ? "no games played" : $"{s.CuffGamesPlayed:N0} games";
-
-    private static string LimbHeadline(Stats s) =>
-        s.LimbGamesPlayed == 0 ? "no games played" : $"{s.LimbGamesPlayed:N0} games";
-
     private static string AirForceHeadline(Stats s) =>
-        s.AirForceGamesPlayed == 0 ? "no games played" : $"{s.AirForceGamesPlayed:N0} games";
+        s.AirForceGamesPlayed == 0 ? "no games played".Loc() : "?? games".Loc($"{s.AirForceGamesPlayed:N0}");
 
     private static void DrawTriadRows(Stats life, Stats sess)
     {
@@ -77,54 +70,23 @@ public partial class PluginUI
             return;
         }
         StatsHeader();
-        StatsRow("Games", life.GamesPlayedWithSaucy, sess.GamesPlayedWithSaucy,
+        StatsRow("Games".Loc(), life.GamesPlayedWithSaucy, sess.GamesPlayedWithSaucy,
             perHour: SessionCountPerHour(sess.GamesPlayedWithSaucy, StatsSessionClock.GetTriadElapsedHours()));
-        StatsRow("Wins", life.GamesWonWithSaucy, sess.GamesWonWithSaucy);
-        StatsRow("Losses", life.GamesLostWithSaucy, sess.GamesLostWithSaucy);
-        StatsRow("Draws", life.GamesDrawnWithSaucy, sess.GamesDrawnWithSaucy);
-        StatsRow("Cards won", life.CardsDroppedWithSaucy, sess.CardsDroppedWithSaucy);
-        StatsRow("Card resale value", $"{GetDroppedCardValues(life):N0}", $"{GetDroppedCardValues(sess):N0}");
-        StatsRow("MGP won", $"{life.MGPWon:N0}", $"{sess.MGPWon:N0}", true,
+        StatsRow("Wins".Loc(), life.GamesWonWithSaucy, sess.GamesWonWithSaucy);
+        StatsRow("Losses".Loc(), life.GamesLostWithSaucy, sess.GamesLostWithSaucy);
+        StatsRow("Draws".Loc(), life.GamesDrawnWithSaucy, sess.GamesDrawnWithSaucy);
+        StatsRow("Cards won".Loc(), life.CardsDroppedWithSaucy, sess.CardsDroppedWithSaucy);
+        StatsRow("Card resale value".Loc(), $"{GetDroppedCardValues(life):N0}", $"{GetDroppedCardValues(sess):N0}");
+        StatsRow("MGP won".Loc(), $"{life.MGPWon:N0}", $"{sess.MGPWon:N0}", true,
             perHour: SessionMgpPerHour(sess.MGPWon, StatsSessionClock.GetTriadElapsedHours()));
 
         (var lifeNpcCount, var lifeNpcName) = TopNpcCell(life);
         (var sessNpcCount, var sessNpcName) = TopNpcCell(sess);
-        StatsRow("Most played NPC", lifeNpcCount, sessNpcCount, tooltipLife: lifeNpcName, tooltipSess: sessNpcName);
+        StatsRow("Most played NPC".Loc(), lifeNpcCount, sessNpcCount, tooltipLife: lifeNpcName, tooltipSess: sessNpcName);
 
         (var lifeCardCount, var lifeCardName) = TopCardCell(life);
         (var sessCardCount, var sessCardName) = TopCardCell(sess);
-        StatsRow("Most won card", lifeCardCount, sessCardCount, tooltipLife: lifeCardName, tooltipSess: sessCardName);
-    }
-
-    private static void DrawCuffRows(Stats life, Stats sess)
-    {
-        using var table = ImRaii.Table("##stats_cuff", 4, ImGuiTableFlags.NoBordersInBody | ImGuiTableFlags.SizingStretchProp);
-        if (!table)
-        {
-            return;
-        }
-        StatsHeader();
-        StatsRow("Games", life.CuffGamesPlayed, sess.CuffGamesPlayed,
-            perHour: SessionCountPerHour(sess.CuffGamesPlayed, StatsSessionClock.GetCuffElapsedHours()));
-        StatsRow("Bruisings", life.CuffBruisings, sess.CuffBruisings);
-        StatsRow("Punishings", life.CuffPunishings, sess.CuffPunishings);
-        StatsRow("Brutals", life.CuffBrutals, sess.CuffBrutals);
-        StatsRow("MGP won", $"{life.CuffMGP:N0}", $"{sess.CuffMGP:N0}", true,
-            perHour: SessionMgpPerHour(sess.CuffMGP, StatsSessionClock.GetCuffElapsedHours()));
-    }
-
-    private static void DrawLimbRows(Stats life, Stats sess)
-    {
-        using var table = ImRaii.Table("##stats_limb", 4, ImGuiTableFlags.NoBordersInBody | ImGuiTableFlags.SizingStretchProp);
-        if (!table)
-        {
-            return;
-        }
-        StatsHeader();
-        StatsRow("Games", life.LimbGamesPlayed, sess.LimbGamesPlayed,
-            perHour: SessionCountPerHour(sess.LimbGamesPlayed, StatsSessionClock.GetLimbElapsedHours()));
-        StatsRow("MGP won", $"{life.LimbMGP:N0}", $"{sess.LimbMGP:N0}", true,
-            perHour: SessionMgpPerHour(sess.LimbMGP, StatsSessionClock.GetLimbElapsedHours()));
+        StatsRow("Most won card".Loc(), lifeCardCount, sessCardCount, tooltipLife: lifeCardName, tooltipSess: sessCardName);
     }
 
     private static void DrawAirForceRows(Stats life, Stats sess)
@@ -135,9 +97,9 @@ public partial class PluginUI
             return;
         }
         StatsHeader();
-        StatsRow("Games", life.AirForceGamesPlayed, sess.AirForceGamesPlayed,
+        StatsRow("Games".Loc(), life.AirForceGamesPlayed, sess.AirForceGamesPlayed,
             perHour: SessionCountPerHour(sess.AirForceGamesPlayed, StatsSessionClock.GetAirForceElapsedHours()));
-        StatsRow("MGP won", $"{life.AirForceMGP:N0}", $"{sess.AirForceMGP:N0}", true,
+        StatsRow("MGP won".Loc(), $"{life.AirForceMGP:N0}", $"{sess.AirForceMGP:N0}", true,
             perHour: SessionMgpPerHour(sess.AirForceMGP, StatsSessionClock.GetAirForceElapsedHours()));
     }
 
@@ -158,7 +120,7 @@ public partial class PluginUI
             return ("\u2014", null);
         }
         var top = s.CardsWon.OrderByDescending(x => x.Value).First();
-        return ($"{top.Value:N0}", TriadCardDB.Get().FindById((int)top.Key)!.Name);
+        return ($"{top.Value:N0}", TriadCardDB.Get().FindById((int)top.Key)?.Name);
     }
 
     private static void StatsHeader()
@@ -166,19 +128,19 @@ public partial class PluginUI
         ImGui.TableSetupColumn("Metric", ImGuiTableColumnFlags.WidthStretch, 0.30f);
         ImGui.TableSetupColumn("Lifetime", ImGuiTableColumnFlags.WidthStretch, 0.25f);
         ImGui.TableSetupColumn("Session", ImGuiTableColumnFlags.WidthStretch, 0.25f);
-        ImGui.TableSetupColumn("Per Hour", ImGuiTableColumnFlags.WidthStretch, 0.20f);
+        ImGui.TableSetupColumn("PerHour", ImGuiTableColumnFlags.WidthStretch, 0.20f);
 
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
-        RightAlignCellText("Lifetime", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("Lifetime".Loc(), SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         ImGui.TableNextColumn();
-        RightAlignCellText("Session", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("Session".Loc(), SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         ImGui.TableNextColumn();
-        RightAlignCellText("Per Hour", SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
+        RightAlignCellText("Per hour".Loc(), SaucyTheme.ColorOr(SaucyTheme.ColumnHeader, ImGuiCol.Text));
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("Session rate since the first counted game of this minigame.");
+            ImGui.SetTooltip("Session rate since this minigame first counted a result.".Loc());
         }
     }
 
@@ -264,7 +226,11 @@ public partial class PluginUI
         var output = 0;
         foreach (var card in stat.CardsWon)
         {
-            output += GameCardDB.Get().FindById((int)card.Key)!.SaleValue * stat.CardsWon[card.Key];
+            var info = GameCardDB.Get().FindById((int)card.Key);
+            if (info != null)
+            {
+                output += info.SaleValue * stat.CardsWon[card.Key];
+            }
         }
         return output;
     }

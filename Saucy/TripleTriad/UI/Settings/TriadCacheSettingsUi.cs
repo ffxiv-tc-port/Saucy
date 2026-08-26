@@ -1,5 +1,6 @@
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.LanguageHelpers;
 using System;
 using System.Linq;
 namespace Saucy.TripleTriad;
@@ -8,7 +9,7 @@ internal static class TriadCacheSettingsUi
 {
     public static void Draw()
     {
-        ImGui.TextDisabled("Per character optimized decks");
+        ImGui.TextDisabled("Per character optimized decks".Loc());
 
         ImGui.Dummy(new(0, 4));
 
@@ -17,11 +18,11 @@ internal static class TriadCacheSettingsUi
         {
             if (Svc.ClientState.IsLoggedIn)
             {
-                ImGui.TextDisabled("No cached decks yet.");
+                ImGui.TextDisabled("No cached decks yet.".Loc());
             }
             else
             {
-                ImGui.TextDisabled("Log in to view cached decks.");
+                ImGui.TextDisabled("Log in to view cached decks.".Loc());
             }
         }
         else
@@ -47,9 +48,9 @@ internal static class TriadCacheSettingsUi
         var deckCount = character.Entries.Count;
         var deckCountLabel = deckCount switch
         {
-            0 => "no cached decks",
-            1 => "1 cached deck",
-            var _ => $"{deckCount} cached decks"
+            0 => "no cached decks".Loc(),
+            1 => "1 cached deck".Loc(),
+            var _ => "?? cached decks".Loc(deckCount)
         };
 
         var header = $"{character.DisplayName} — {deckCountLabel}";
@@ -64,7 +65,7 @@ internal static class TriadCacheSettingsUi
     {
         if (character.Entries.Count == 0)
         {
-            ImGui.TextDisabled("No optimized decks saved for this character yet.");
+            ImGui.TextDisabled("No optimized decks saved for this character yet.".Loc());
             return;
         }
 
@@ -81,8 +82,8 @@ internal static class TriadCacheSettingsUi
         var rulesLabel = FormatRulesLabel(entry.SessionKey);
         var builtLabel = entry.BuiltUtcTicks > 0
             ? new DateTime(entry.BuiltUtcTicks, DateTimeKind.Utc).ToLocalTime().ToString("g")
-            : "unknown time";
-        var winLabel = entry.EstWinChance > 0f ? $" · {entry.EstWinChance * 100f:F0}% opening" : string.Empty;
+            : "unknown time".Loc();
+        var winLabel = entry.EstWinChance > 0f ? " · ??% opening".Loc($"{entry.EstWinChance * 100f:F0}") : string.Empty;
 
         return string.IsNullOrEmpty(rulesLabel)
             ? $"{npcLabel}{winLabel} · {builtLabel}"
@@ -109,7 +110,7 @@ internal static class TriadCacheSettingsUi
     {
         var ctrlHeld = ImGui.GetIO().KeyCtrl;
         using var clearDisabled = ImRaii.Disabled(!ctrlHeld);
-        if (ImGui.Button("Clear deck cache for this character"))
+        if (ImGui.Button("Clear deck cache for this character".Loc()))
         {
             TriadOptimizedDeckCacheStore.ClearActiveCharacter();
         }
@@ -118,8 +119,8 @@ internal static class TriadCacheSettingsUi
         {
             ImGui.SetTooltip(
                 ctrlHeld
-                    ? "Deletes OptimizedDeckCache.json for the logged-in character."
-                    : "Hold Ctrl while clicking to clear the cache for this character.");
+                    ? "Deletes OptimizedDeckCache.json for the logged-in character.".Loc()
+                    : "Hold Ctrl while clicking to clear the cache for this character.".Loc());
         }
     }
 }

@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 using System.Numerics;
@@ -43,7 +44,7 @@ internal static partial class TriadMapNavigation
         }
 
         pending.NavMeshWaitAnnounced = true;
-        Svc.Chat.Print("[Saucy] vnavmesh is not ready for this zone yet. Waiting...");
+        Svc.Chat.Print("[Saucy] " + "vnavmesh is not ready for this zone yet. Waiting...".Loc());
         Vnavmesh.TryEnsureNavMeshLoading();
     }
 
@@ -79,7 +80,7 @@ internal static partial class TriadMapNavigation
             if (!Vnavmesh.IsBuildInProgress() &&
                 DateTime.UtcNow - pending.PhaseStartedUtc > NavMeshBuildWaitTimeout)
             {
-                Svc.Chat.PrintError("[Saucy] vnavmesh is not ready for this zone yet.");
+                Svc.Chat.PrintError("[Saucy] " + "vnavmesh is not ready for this zone yet.".Loc());
                 ClearPending();
             }
 
@@ -137,7 +138,7 @@ internal static partial class TriadMapNavigation
 
         if (DateTime.UtcNow - pending.PhaseStartedUtc > PathfindStartTimeout)
         {
-            Svc.Chat.PrintError("[Saucy] vnavmesh could not start movement.");
+            Svc.Chat.PrintError("[Saucy] " + "vnavmesh could not start movement.".Loc());
             ClearPending();
         }
     }
@@ -155,7 +156,7 @@ internal static partial class TriadMapNavigation
         }
 
         pending.LastAnnouncedBuildProgress = 0;
-        Svc.Chat.Print("[Saucy] navmesh building...");
+        Svc.Chat.Print("[Saucy] " + "navmesh building...".Loc());
     }
 
     private static void BeginPostVnavPhase(PendingNavigation pending)
@@ -170,7 +171,7 @@ internal static partial class TriadMapNavigation
         pending.Phase = NavigationPhase.MovingToNpc;
         pending.PhaseStartedUtc = DateTime.UtcNow;
         pending.VnavRetryCount = 0;
-        Svc.Chat.Print($"[Saucy] Moving to {pending.Npc.Name}...");
+        Svc.Chat.Print("[Saucy] " + "Moving to ??...".Loc(pending.Npc.Name));
     }
 
     private static Vector3 ResolvePathDestination(PendingNavigation pending)
@@ -239,7 +240,7 @@ internal static partial class TriadMapNavigation
                 return false;
             }
 
-            Svc.Chat.Print($"[Saucy] Moving to {pending.Location.PlaceName}.");
+            Svc.Chat.Print("[Saucy] " + "Moving to ??.".Loc(pending.Location.PlaceName));
             return true;
         }
 
@@ -248,14 +249,14 @@ internal static partial class TriadMapNavigation
 
         if (Vnavmesh.TryPathfindAndMoveTo(destination, fly))
         {
-            Svc.Chat.Print($"[Saucy] Moving to {pending.Location.PlaceName}.");
+            Svc.Chat.Print("[Saucy] " + "Moving to ??.".Loc(pending.Location.PlaceName));
             return true;
         }
 
         if (fly && Vnavmesh.TryPathfindAndMoveTo(destination))
         {
             pending.Fly = false;
-            Svc.Chat.Print($"[Saucy] Moving to {pending.Location.PlaceName}.");
+            Svc.Chat.Print("[Saucy] " + "Moving to ??.".Loc(pending.Location.PlaceName));
             return true;
         }
 

@@ -1,3 +1,4 @@
+using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
 using System.Collections.Generic;
@@ -243,7 +244,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
             {
                 if (attemptCount == MaxDeckSelectAttemptsPerScreen)
                 {
-                    Svc.Chat.PrintError("[Saucy] Could not select a deck automatically. Pick one manually.");
+                    Svc.Chat.PrintError("[Saucy] " + "Could not select a deck automatically. Pick one manually.".Loc());
                     attemptCount++;
                 }
 
@@ -273,7 +274,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
                         if (attemptCount == MaxDeckSelectAttemptsPerScreen)
                         {
                             Svc.Chat.PrintError(
-                                "[Saucy] Could not use game recommended deck. Pick a deck manually or try another option.");
+                                "[Saucy] " + "Could not use game recommended deck. Pick a deck manually or try another option.".Loc());
                         }
                     }
                 }
@@ -331,7 +332,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
             if (!TriadRun.TryResolveDeckListIndex(deck, out var resolvedListIndex))
             {
-                Svc.Chat.PrintError($"[Saucy] Could not find deck {deck + 1} in the selection list.");
+                Svc.Chat.PrintError("[Saucy] " + "Could not find deck ?? in the selection list.".Loc(deck + 1));
                 AttemptedDeckIndices.Add(deck);
                 attemptCount++;
                 return;
@@ -429,7 +430,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
         if (boardDismissFrames == DeckSelectBoardVisibleMaxFrames)
         {
-            Svc.Chat.PrintError("[Saucy] Match started without a deck. Confirm deck selection manually.");
+            Svc.Chat.PrintError("[Saucy] " + "Match started without a deck. Confirm deck selection manually.".Loc());
         }
     }
 

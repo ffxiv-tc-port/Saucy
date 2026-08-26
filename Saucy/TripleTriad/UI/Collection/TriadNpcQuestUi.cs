@@ -1,6 +1,7 @@
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 namespace Saucy.TripleTriad;
 
@@ -37,7 +38,7 @@ internal static class TriadNpcQuestUi
         var questName = npcInfo.UnlockQuestName;
         if (string.IsNullOrEmpty(questName))
         {
-            questName = $"Quest #{npcInfo.UnlockQuestId}";
+            questName = "Quest #??".Loc(npcInfo.UnlockQuestId);
         }
 
         var tooltip = BuildTooltip(snapshot, questName);
@@ -54,7 +55,7 @@ internal static class TriadNpcQuestUi
     {
         if (!Questionable.IsInstalled)
         {
-            Svc.Chat.Print("[Saucy] Install Questionable (/qst) to start quests from Saucy.");
+            Svc.Chat.Print("[Saucy] " + "Install Questionable (/qst) to start quests from Saucy.".Loc());
             return;
         }
 
@@ -68,7 +69,7 @@ internal static class TriadNpcQuestUi
 
         if (QuestionableTriad.TryStartSingleQuest(npcInfo.UnlockQuestId))
         {
-            Svc.Chat.Print($"[Saucy] Sent \"{questName}\" to Questionable.");
+            Svc.Chat.Print("[Saucy] " + "Sent \"??\" to Questionable.".Loc(questName));
             InvalidateCache();
             return;
         }
@@ -79,7 +80,7 @@ internal static class TriadNpcQuestUi
         }
         else
         {
-            Svc.Chat.PrintError($"[Saucy] Questionable could not start \"{questName}\".");
+            Svc.Chat.PrintError("[Saucy] " + "Questionable could not start \"??\".".Loc(questName));
         }
     }
 
@@ -87,17 +88,17 @@ internal static class TriadNpcQuestUi
     {
         if (!Questionable.IsInstalled)
         {
-            return "Install Questionable (/qst) to start this quest.";
+            return "Install Questionable (/qst) to start this quest.".Loc();
         }
 
         if (!snapshot.HasAutomationPath)
         {
-            return "Not supported in Questionable yet.";
+            return "Not supported in Questionable yet.".Loc();
         }
 
         if (snapshot.CanStart)
         {
-            return $"Start \"{questName}\" with Questionable";
+            return "Start \"??\" with Questionable".Loc(questName);
         }
 
         return snapshot.StatusMessage;
@@ -152,7 +153,7 @@ internal static class TriadNpcQuestUi
         {
             return new()
             {
-                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Quest already accepted."
+                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Quest already accepted.".Loc()
             };
         }
 
@@ -160,7 +161,7 @@ internal static class TriadNpcQuestUi
         {
             return new()
             {
-                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Quest unavailable in Questionable."
+                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Quest unavailable in Questionable.".Loc()
             };
         }
 
@@ -174,7 +175,7 @@ internal static class TriadNpcQuestUi
 
             return new()
             {
-                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Prerequisites not met yet (check Questionable /qst)."
+                IsComplete = false, HasAutomationPath = true, CanStart = false, StatusMessage = "Prerequisites not met yet (check Questionable /qst).".Loc()
             };
         }
 

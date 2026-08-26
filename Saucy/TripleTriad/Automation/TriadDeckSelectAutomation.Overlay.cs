@@ -1,3 +1,4 @@
+using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
@@ -90,7 +91,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
         var agentHandle = Svc.GameGui.FindAgentInterface((nint)addon);
         if (agentHandle != nint.Zero)
         {
-            var agent = (AgentInterface*)agentHandle;
+            var agent = (AgentInterface*)agentHandle.Address;
             agent->HideAddon();
             agent->Hide();
             addon->Update(0);
@@ -109,7 +110,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
     private static bool TrySelectGameRecommendedDeck(AtkUnitBase* addon)
     {
-        TriadDeckLog.Print("[Saucy] Using game recommended deck...");
+        TriadDeckLog.Print("[Saucy] " + "Using game recommended deck...".Loc());
         foreach (var buttonId in DeckSelectRecommendedButtonIds)
         {
             if (!TryClickSelectButton(addon, buttonId))
@@ -134,7 +135,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
     private static bool TryBlindDeckSelect(AtkUnitBase* addon)
     {
-        TriadDeckLog.Print("[Saucy] Selecting first deck...");
+        TriadDeckLog.Print("[Saucy] " + "Selecting first deck...".Loc());
         foreach (var listIndex in new[]
         {
             0, 1, 2, 3, 4

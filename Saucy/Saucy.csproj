@@ -1,14 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
+    <!-- Bumps a persisted build counter on every build and folds it into the assembly version's
+         4th component, so each local build gets a distinct, easily-identifiable version number
+         (shown in-game via TitleBarVersion.cs). Computed here at evaluation time (not inside a
+         Target) because Dalamud.NET.Sdk's own targets also stamp AssemblyVersion/FileVersion (from
+         git) in a target that runs AFTER any target-based override here, silently discarding it —
+         confirmed live: the compiled DLL kept showing 2.1.1.0 no matter what a BumpBuildNumber
+         Target set. Setting these as plain evaluated properties, before Sdk.targets is imported,
+         wins instead of racing it. -->
     <PropertyGroup>
         <Authors>Puni.sh</Authors>
-        <Version>2.1.1.11</Version>
+        <BuildNumberFile>$(MSBuildProjectDirectory)\BuildNumber.txt</BuildNumberFile>
+        <_PreviousBuildNumber Condition="Exists('$(BuildNumberFile)')">$([System.IO.File]::ReadAllText('$(BuildNumberFile)').Trim())</_PreviousBuildNumber>
+        <_PreviousBuildNumber Condition="'$(_PreviousBuildNumber)' == ''">0</_PreviousBuildNumber>
+        <BuildNumber>$([MSBuild]::Add($(_PreviousBuildNumber), 1))</BuildNumber>
+        <VersionPrefix>7.15.0</VersionPrefix>
+        <Version>$(VersionPrefix).$(BuildNumber)</Version>
+        <AssemblyVersion>$(Version)</AssemblyVersion>
+        <FileVersion>$(Version)</FileVersion>
     </PropertyGroup>
 
     <PropertyGroup>
         <TargetFramework>net9.0-windows</TargetFramework>
         <LangVersion>preview</LangVersion>
     </PropertyGroup>
+
+    <!-- Persists the incremented counter for next build. Timing doesn't matter here (unlike the
+         version properties above) since this only needs to be on disk before the NEXT invocation. -->
+    <Target Name="PersistBuildNumber" AfterTargets="Build">
+        <WriteLinesToFile File="$(BuildNumberFile)" Lines="$(BuildNumber)" Overwrite="true"/>
+    </Target>
 
     <!-- Apply .editorconfig code-style (IDE*) and analyzers on Debug builds and when CI=true. -->
     <PropertyGroup Condition="'$(Configuration)' == 'Debug' Or '$(CI)' == 'true'">
@@ -23,7 +44,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="ECommons" Version="3.0.1.32"/>
+        <!-- 3.0.1.15 (2025-09-15) is the newest ECommons published before yanmucorp's Dalamud hit
+             the real 13.0.0.6 pin (2025-09-16) - matches the API13 Dalamud.Bindings.ImGui/
+             AtkUnitBasePtr surface without pulling in newer members (e.g. IPlayerState) that only
+             exist in later API levels. -->
+        <PackageReference Include="ECommons" Version="3.0.1.15"/>
         <PackageReference Include="NAudio" Version="2.3.0"/>
         <PackageReference Include="NAudio.Lame" Version="2.1.0"/>
         <ProjectReference Include="..\PunishLib\PunishLib\PunishLib.csproj"/>
@@ -31,13 +56,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Reference Include="ImGui.NET">
-            <HintPath>$(DalamudLibPath)ImGui.NET.dll</HintPath>
-            <Private>false</Private>
-        </Reference>
-    </ItemGroup>
-
-    <ItemGroup>
+        <Content Include="LanguageChineseTraditional.ini">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
         <None Update="Saucy.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>

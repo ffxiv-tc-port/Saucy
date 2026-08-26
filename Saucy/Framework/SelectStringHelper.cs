@@ -178,7 +178,7 @@ public static unsafe class SelectStringHelper
         menu = null;
         for (var i = 1; i < 100; i++)
         {
-            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectString", i);
+            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectString", i).Address;
             if (addon == null)
             {
                 break;
@@ -518,7 +518,7 @@ public static unsafe class SelectStringHelper
         menu = null;
         for (var i = 1; i < 100; i++)
         {
-            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName(addonName, i);
+            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName(addonName, i).Address;
             if (addon == null)
             {
                 break;

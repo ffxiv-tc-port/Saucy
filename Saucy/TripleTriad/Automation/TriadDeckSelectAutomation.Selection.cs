@@ -1,4 +1,5 @@
 using ECommons.Automation.UIInput;
+using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
 namespace Saucy.TripleTriad;
@@ -71,7 +72,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
                 continue;
             }
 
-            TriadDeckLog.Print($"[Saucy] Selecting \"{deck.name}\"...");
+            TriadDeckLog.Print("[Saucy] " + "Selecting \"??\"...".Loc(deck.name));
             var profileDeckId = TriadRun.HasOptimizedDeckApplied
                 ? TriadRun.OptimizedDeckSlotId
                 : deck.id;
@@ -167,7 +168,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
         string message;
         if (attemptCount > 0 || AttemptedDeckIndices.Count > 0)
         {
-            message = $"[Saucy] Retrying with deck {deck + 1}...";
+            message = "[Saucy] " + "Retrying with deck ??...".Loc(deck + 1);
         }
         else if (C.UseSimmedDeck && TriadRun.HasOptimizedDeckApplied)
         {
@@ -178,8 +179,8 @@ internal static unsafe partial class TriadDeckSelectAutomation
             }
 
             message = !string.IsNullOrWhiteSpace(deckName)
-                ? $"[Saucy] Selecting \"{deckName}\" (slot {deck + 1})..."
-                : $"[Saucy] Selecting optimized deck {deck + 1}...";
+                ? "[Saucy] " + "Selecting \"??\" (slot ??)...".Loc(deckName, deck + 1)
+                : "[Saucy] " + "Selecting optimized deck ??...".Loc(deck + 1);
         }
         else
         {
@@ -191,8 +192,8 @@ internal static unsafe partial class TriadDeckSelectAutomation
             }
 
             message = !string.IsNullOrWhiteSpace(deckName)
-                ? $"[Saucy] Selecting \"{deckName}\"..."
-                : $"[Saucy] Selecting deck {deck + 1}...";
+                ? "[Saucy] " + "Selecting \"??\"...".Loc(deckName)
+                : "[Saucy] " + "Selecting deck ??...".Loc(deck + 1);
         }
 
         if (C.UseSimmedDeck)

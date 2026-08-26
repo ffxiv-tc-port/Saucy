@@ -11,7 +11,9 @@ public sealed partial class Saucy
         try
         {
             SubscriptionManager.Subscribe();
-            YesAlready.SyncForGameActivity(GoldSaucerGameActivity.IsAnyGamePlaying());
+            GateNpcNavigation.TickManualInteract();
+            UpdateGateAutoOpen();
+            GateScheduleAutomation.Tick();
             TriadOptimizedDeckCacheStore.TickCharacter();
             TriadMapNavigation.Tick();
 
@@ -131,6 +133,28 @@ public sealed partial class Saucy
 
         _pluginUi.OpenForTriad();
         _autoOpenedForTriadFlow = true;
+    }
+
+    private Module.GateType _lastAutoOpenedGate = Module.GateType.None;
+
+    /// <summary>Opens the UI to the matching GATE panel the moment the player actually joins one
+    /// on stage, so there's no need to manually click over from wherever the UI was left.</summary>
+    private void UpdateGateAutoOpen()
+    {
+        if (!C.GoldSaucerGates.AutoOpenUiOnGateJoin || !GateDirector.InSaucer || !GateDirector.IsPlayerOnStage())
+        {
+            _lastAutoOpenedGate = Module.GateType.None;
+            return;
+        }
+
+        var gate = GateDirector.GetCurrentGate();
+        if (gate == Module.GateType.None || gate == _lastAutoOpenedGate)
+        {
+            return;
+        }
+
+        _lastAutoOpenedGate = gate;
+        _pluginUi.OpenForGate(gate);
     }
 
     private static unsafe bool IsTriadFlowActive()
