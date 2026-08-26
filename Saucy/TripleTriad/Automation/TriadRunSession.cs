@@ -102,7 +102,6 @@ internal static class TriadRunSession
 
     public static void EnableFromNavigation()
     {
-        GoldSaucerArcadeMachineHelper.DisableConflictingModules();
         ModuleEnabled = true;
         BeginAutomationSession();
     }

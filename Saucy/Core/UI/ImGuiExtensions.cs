@@ -1,16 +1,10 @@
-﻿using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 namespace Saucy;
 
 public static unsafe class ImGuiExtensions
 {
-    public static bool PassFilterBool(this ImGuiTextFilterPtr self, ImU8String text)
+    public static bool PassFilterBool(this ImGuiTextFilterPtr self, string text)
     {
-        var ret = false;
-        fixed (byte* textPtr = text)
-        {
-            ret = ImGuiNative.PassFilter(self.Handle, textPtr, textPtr + text.Length) != 0;
-        }
-        text.Recycle();
-        return ret;
+        return self.PassFilter(text);
     }
 }

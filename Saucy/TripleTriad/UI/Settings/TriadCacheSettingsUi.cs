@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using Dalamud.Interface.Utility.Raii;
 using System;
 using System.Linq;
@@ -54,8 +54,7 @@ internal static class TriadCacheSettingsUi
 
         var header = $"{character.DisplayName} — {deckCountLabel}";
         var flags = character.IsCurrentCharacter ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None;
-        using var characterHeader = ImRaii.Header(header, flags);
-        if (characterHeader)
+        if (ImGui.CollapsingHeader(header, flags))
         {
             DrawCharacterEntries(character);
         }

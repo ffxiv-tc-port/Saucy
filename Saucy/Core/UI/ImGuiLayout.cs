@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
@@ -11,8 +11,7 @@ internal static class ImGuiLayout
 {
     public static void DrawCollapsingSection(string title, ImGuiTreeNodeFlags flags, Action body)
     {
-        using var header = ImRaii.Header(title, flags);
-        if (!header)
+        if (!ImGui.CollapsingHeader(title, flags))
         {
             return;
         }

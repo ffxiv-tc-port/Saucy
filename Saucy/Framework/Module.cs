@@ -21,8 +21,7 @@ public abstract partial class Module : IModule
         TheTimeOfMyLife = 4,
         AnyWayTheWindBlows = 5,
         LeapOfFaith = 6,
-        AirForceOne = 7,
-        SliceIsRight = 8
+        AirForceOne = 7
     }
 
     protected TaskManager TaskManager;

@@ -315,7 +315,7 @@ public unsafe class MiniCactpot : Module
         }
 
         var value = unit->AtkValues[0];
-        return value.Type == AtkValueType.Int ? value.Int : -1;
+        return value.Type == FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int ? value.Int : -1;
     }
 
     private static void ReadBoardState(AddonLotteryDaily* addon, int[] dest)

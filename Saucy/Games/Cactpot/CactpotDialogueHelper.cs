@@ -46,8 +46,8 @@ internal static unsafe class CactpotDialogueHelper
         addon->IsVisible;
 
     public static bool IsTargetingCashier() =>
-        Svc.Targets.Target?.BaseId == CactpotNpcs.CashierBaseId ||
-        Svc.Targets.SoftTarget?.BaseId == CactpotNpcs.CashierBaseId;
+        Svc.Targets.Target?.DataId == CactpotNpcs.CashierBaseId ||
+        Svc.Targets.SoftTarget?.DataId == CactpotNpcs.CashierBaseId;
 
     public static bool IsJumboBrokerPurchaseMenu(AddonSelectString* menu)
     {

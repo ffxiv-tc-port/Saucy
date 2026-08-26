@@ -3,6 +3,13 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
 namespace Saucy.TripleTriad.UI;
 
+internal enum TurnState : byte
+{
+    Waiting = 0,
+    NormalMove = 1,
+    MaskedMove = 2
+}
+
 internal static class TriadTurnState
 {
     public const int PlayerTurnAtkValueIndex = 23;
@@ -33,7 +40,7 @@ internal static class TriadTurnState
         }
 
         ref var value = ref unit->AtkValues[PlayerTurnAtkValueIndex];
-        return value.Type == AtkValueType.Int && value.Int == 1;
+        return value.Type == FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int && value.Int == 1;
     }
 
     public static bool IsBoardPickPhase(byte turnState) => turnState == (byte)TurnState.NormalMove;
