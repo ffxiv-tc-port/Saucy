@@ -1,4 +1,5 @@
 using Saucy.AirForce;
+using Saucy.IPC;
 namespace Saucy;
 
 public sealed partial class Saucy
@@ -55,6 +56,14 @@ public sealed partial class Saucy
             if (obj.isWin)
             {
                 C.UpdateStats(stats => stats.GamesWonWithSaucy++);
+
+                // 🔴 純通知：贏了就請塔塔露念一句，對方沒安裝／還在冷卻都只是回 false，
+                // 不影響底下的掉卡處理與連戰流程。這個回呼一場對戰只會進來一次
+                // （同一個位置在累加勝場統計），所以不必自己做去重。
+                if (C.TriadWinTataruPraise)
+                {
+                    TataruPraise.TryPraiseJackpot();
+                }
 
                 var cardStatsRecorded = false;
                 if (TriadCardFarmSession.IsModeActive())

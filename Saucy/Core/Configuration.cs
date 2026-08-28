@@ -48,6 +48,11 @@ public class Configuration : IPluginConfiguration
     public DateTime SessionStartTime { get; set; } = DateTime.UtcNow;
 
     public bool PlaySound { get; set; } = false;
+
+    /// <summary>幻卡對戰獲勝時，透過 IPC 請 TataruPraise 念一句「中獎」（每贏一場叫一次）。
+    /// 對方沒安裝就什麼都不會發生，也不影響任何自動化流程。</summary>
+    public bool TriadWinTataruPraise { get; set; } = true;
+
     public string SelectedSound { get; set; } = "Moogle";
     public bool OnlyUnobtainedCards { get; set; } = true;
     public bool OpenAutomatically { get; set; } = true;
@@ -85,6 +90,18 @@ public class Configuration : IPluginConfiguration
     public const int MiniCactpotMinClickIntervalMs = 400;
     public const int MiniCactpotMaxClickIntervalMs = 5000;
     public const int MiniCactpotMaxCloseDelayMs = 10000;
+
+    /// <summary>仙人微彩：這一張的派彩達到 <see cref="MiniCactpotJackpotThresholdMgp"/> 時，
+    /// 透過 IPC 請 TataruPraise 念一句「中獎」。對方沒安裝就什麼都不會發生。</summary>
+    public bool MiniCactpotJackpotTataruPraise { get; set; } = true;
+
+    /// <summary>仙人微彩：要請塔塔露提醒的派彩門檻（金碟幣）。
+    /// 📌 派彩表最小的非零值是 36、最大是 10000，所以滑桿就夾在這兩個真實值之間——
+    /// 設成 <see cref="MiniCactpotJackpotMinThresholdMgp"/> 等於「中任何獎都念」。</summary>
+    public int MiniCactpotJackpotThresholdMgp { get; set; } = 1000;
+
+    public const int MiniCactpotJackpotMinThresholdMgp = 36;
+    public const int MiniCactpotJackpotMaxThresholdMgp = 10000;
 
     /// <summary>仙人仙彩：號碼來源。false（預設）＝每次隨機、true＝固定使用
     /// <see cref="JumboCactpotFixedNumber"/>。只在 JumboCactpot 模組啟用時生效。</summary>

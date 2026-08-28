@@ -561,6 +561,41 @@ public unsafe partial class PluginUI
                 ImGui.SetTooltip("全部翻開後等這麼久再領獎關窗，讓開獎動畫與派彩數字跑完——" +
                                  "設成 0 就會立刻關掉，你會看不到中了多少。");
             }
+
+            ImGui.Dummy(new(0, 4));
+
+            var praise = C.MiniCactpotJackpotTataruPraise;
+            if (ImGui.Checkbox("中獎時請塔塔露提醒（需安裝 TataruPraise）##MiniCactpotTataruPraise", ref praise))
+            {
+                C.MiniCactpotJackpotTataruPraise = praise;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("開獎後派彩達到門檻時，請「塔塔露誇獎」念一句。\n" +
+                                 "沒安裝那個外掛就什麼都不會發生；不論有沒有念，都不影響本模組的自動流程。\n" +
+                                 "派彩是照選中那條線的線和查派彩表算出來的，不讀面板文字。");
+            }
+
+            if (praise)
+            {
+                using var praiseIndent = ImRaii.PushIndent();
+                var threshold = C.MiniCactpotJackpotThresholdMgp;
+                ImGui.SetNextItemWidth(220);
+                if (ImGui.SliderInt("提醒門檻（金碟幣）##MiniCactpotTataruThreshold", ref threshold,
+                        Configuration.MiniCactpotJackpotMinThresholdMgp,
+                        Configuration.MiniCactpotJackpotMaxThresholdMgp))
+                {
+                    C.MiniCactpotJackpotThresholdMgp = threshold;
+                    C.Save();
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("派彩達到這個數字才提醒。\n" +
+                                     "仙人微彩的派彩表最低 36、最高 10000 金碟幣，" +
+                                     "所以拉到最左邊等於「中任何獎都提醒」。");
+                }
+            }
         }
 
         ImGui.Dummy(new(0, 4));

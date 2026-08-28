@@ -39,6 +39,48 @@ internal sealed class MiniCactpotSolver
 
     private readonly Dictionary<ulong, double> memo = [];
 
+    /// <summary>派彩表裡最小的非零值（線和 7 = 36 MGP）。</summary>
+    public const int MinPayout = 36;
+
+    /// <summary>派彩表裡最大的值（線和 6 = 10000 MGP）。</summary>
+    public const int MaxPayout = 10000;
+
+    /// <summary>
+    /// 已開獎（九格全翻開）的盤面上，某一條線實際派彩多少 MGP。
+    /// </summary>
+    /// <param name="board">盤面，索引 0..8，0 代表未翻開。</param>
+    /// <param name="lane">線索引，與 <c>AddonLotteryDaily.LaneTileSelector</c> 的 UI 順序一致
+    /// （也就是 <see cref="SuggestLane"/> 的回傳值）。</param>
+    /// <returns>派彩 MGP。這條線有任何一格還沒翻開、或線索引越界，一律回 0。</returns>
+    /// <remarks>
+    /// 🔑 這是<b>純查表</b>：派彩只看線和，表是遊戲常數（與求解器自己用的是同一份），
+    /// 所以不必去讀面板上的派彩文字——沒有在地化字串、沒有節點版面假設，也沒有「解析失敗」這回事。
+    /// ⚠️ 前提是呼叫端傳進來的線索引真的是玩家選中的那一條。本模組是自己送出選線的所以拿得到；
+    /// 玩家自己手動選線時模組不知道選了哪條，那種情況呼叫端不要叫這個函式。
+    /// </remarks>
+    public static int PayoutFor(ReadOnlySpan<int> board, int lane)
+    {
+        if (lane is < 0 or >= TotalLanes || board.Length < TotalCells)
+        {
+            return 0;
+        }
+
+        var sum = 0;
+        foreach (var idx in Lanes[lane])
+        {
+            var value = board[idx];
+            if (value is < 1 or > 9)
+            {
+                // 還沒全部翻開＝還沒開獎，不猜。
+                return 0;
+            }
+
+            sum += value;
+        }
+
+        return sum < Payouts.Length ? Payouts[sum] : 0;
+    }
+
     /// <summary>翻格階段：回傳期望值最高的隱藏格索引（0..8；無格可翻回 -1）。</summary>
     public int SuggestCell(ReadOnlySpan<int> board)
     {

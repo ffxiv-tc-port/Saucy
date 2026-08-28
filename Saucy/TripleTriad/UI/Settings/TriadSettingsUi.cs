@@ -506,6 +506,17 @@ internal static class TriadSettingsUi
             using var _ = ImRaii.PushIndent();
             DrawSoundPicker();
         }
+
+        var tataruPraise = C.TriadWinTataruPraise;
+        if (ImGui.Checkbox("Ask Tataru to celebrate wins (requires TataruPraise)".Loc(), ref tataruPraise))
+        {
+            C.TriadWinTataruPraise = tataruPraise;
+            C.Save();
+        }
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker(
+            "Every match you win, asks the TataruPraise plugin to say a line. Does nothing if that plugin is not installed, and never affects the match flow either way."
+                .Loc());
     }
 
     private static void DrawSoundPicker()

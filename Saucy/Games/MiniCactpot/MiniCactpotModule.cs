@@ -5,6 +5,7 @@ using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Saucy.Framework;
+using Saucy.IPC;
 using System;
 using System.Threading.Tasks;
 using static ECommons.GenericHelpers;
@@ -56,6 +57,9 @@ public unsafe class MiniCactpotModule : Module
     private DateTime? confirmedLaneUtc;
     private bool boardLayoutSeen;
 
+    /// <summary>這一張已經處理過開獎通知（不論有沒有真的念出來），避免每幀重試。</summary>
+    private bool jackpotHandled;
+
     private bool solveInFlight;
     private bool hasSolvedCell;
     private ulong solvedBoardKey;
@@ -70,10 +74,19 @@ public unsafe class MiniCactpotModule : Module
     /// <summary>全部翻開後先讓開獎動畫/派彩數字跑一下再關窗，玩家至少看得到中了多少。</summary>
     private static int CloseDelayMs => Math.Clamp(C.MiniCactpotCloseDelayMs, 0, Configuration.MiniCactpotMaxCloseDelayMs);
 
+    /// <summary>請塔塔露提醒的派彩門檻（金碟幣），夾在派彩表的真實值域內。</summary>
+    private static int JackpotThresholdMgp => Math.Clamp(
+        C.MiniCactpotJackpotThresholdMgp,
+        Configuration.MiniCactpotJackpotMinThresholdMgp,
+        Configuration.MiniCactpotJackpotMaxThresholdMgp);
+
     public override string Name => "Mini Cactpot";
 
     /// <summary>給設定面板顯示的最近動作說明。</summary>
     public string LastAction { get; private set; } = "等待開啟仙人微彩面板";
+
+    /// <summary>這一張開獎後的實際派彩（金碟幣）。還沒開獎、或這張不是模組選的線就是 0。</summary>
+    public int LastPayoutMgp { get; private set; }
 
     public override void Enable()
     {
@@ -172,7 +185,7 @@ public unsafe class MiniCactpotModule : Module
                 TickLaneStage(addon, board);
                 break;
             case MiniCactpotSolver.TotalCells:
-                TickCloseStage(addon);
+                TickCloseStage(addon, board);
                 break;
             // 5..8 = 選線後開獎資料翻開中，等它到齊。
         }
@@ -320,9 +333,13 @@ public unsafe class MiniCactpotModule : Module
         }
     }
 
-    private void TickCloseStage(AddonLotteryDaily* addon)
+    private void TickCloseStage(AddonLotteryDaily* addon, ReadOnlySpan<int> board)
     {
         closeArmedUtc ??= DateTime.UtcNow;
+
+        // 九格全翻開＝已開獎。派彩在關窗延遲之前就先算，免得延遲設成 0 時整個跳過。
+        HandleJackpot(board);
+
         if ((DateTime.UtcNow - closeArmedUtc.Value).TotalMilliseconds < CloseDelayMs)
         {
             return;
@@ -335,9 +352,53 @@ public unsafe class MiniCactpotModule : Module
 
         // 這次進場已經完整跑過一張彩券＝版面確定建好了，下一張只需要短暖機。
         boardLayoutSeen = true;
-        LastAction = "領獎並關閉面板";
+        LastAction = LastPayoutMgp > 0
+            ? $"領獎並關閉面板（本張派彩 {LastPayoutMgp} 金碟幣）"
+            : "領獎並關閉面板";
         Callback.Fire(&addon->AtkUnitBase, true, -1);
         addon->AtkUnitBase.Close(true);
+    }
+
+    /// <summary>
+    /// 開獎後的「中獎」通知：算出這一張的實際派彩，達門檻就請 TataruPraise 念一句。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 <b>純讀取、零副作用。</b> 不碰盤面、不影響翻格/選線/關窗任何一步；IPC 失敗一律忽略。
+    /// <para>📌 派彩是<b>查表</b>算出來的（線和 → 派彩表），不解析面板文字，所以與在地化無關。
+    /// 只在模組自己送出過選線（<c>confirmedLane &gt;= 0</c>）時才算——玩家自己手動選線的話
+    /// 模組不知道他選了哪一條，寧可不念也不猜。</para>
+    /// <para>⚠️ 一張只處理一次，成功與否都設旗標：這個階段每幀都會進來，重試等於洗 IPC。</para>
+    /// </remarks>
+    private void HandleJackpot(ReadOnlySpan<int> board)
+    {
+        if (jackpotHandled)
+        {
+            return;
+        }
+
+        jackpotHandled = true;
+
+        if (confirmedLane < 0)
+        {
+            return;
+        }
+
+        var payout = MiniCactpotSolver.PayoutFor(board, confirmedLane);
+        LastPayoutMgp = payout;
+        if (payout <= 0 || !C.MiniCactpotJackpotTataruPraise)
+        {
+            return;
+        }
+
+        var threshold = JackpotThresholdMgp;
+        if (payout < threshold)
+        {
+            return;
+        }
+
+        // 使用者跑 LogLevel 2，這行要看得到才有診斷價值。
+        Log($"Payout {payout} MGP >= threshold {threshold}; asking TataruPraise to celebrate.");
+        TataruPraise.TryPraiseJackpot();
     }
 
     /// <summary>翻格：格子的 callback 值取自其元件節點 NodeId（30..38 → 0..8，與陣列索引
@@ -433,6 +494,8 @@ public unsafe class MiniCactpotModule : Module
         pendingCellRevealedCount = -1;
         confirmedLane = -1;
         confirmedLaneUtc = null;
+        jackpotHandled = false;
+        LastPayoutMgp = 0;
 
         lock (solveLock)
         {
