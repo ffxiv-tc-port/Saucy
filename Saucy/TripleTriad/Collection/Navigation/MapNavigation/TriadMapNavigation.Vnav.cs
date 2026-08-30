@@ -293,7 +293,11 @@ internal static partial class TriadMapNavigation
     private static bool TryPathToNpcBackoff(Vector3 npcPos, bool fly)
     {
         var dest = ResolveNpcBackoffPoint(npcPos);
-        var useFly = TravelMountHelper.ResolveUseFlying(fly);
+        // 這段後退是 NPC 互動前的短距離重新站位,呼叫端的 IsReadyForNpcInteraction() 內含
+        // EnsureDismountedForNpcInteraction(),到這裡一定是下坐騎狀態,本來就不該飛。
+        // ResolveUseFlying 現在也會在未騎乘時降級,這裡再明確擋一次,避免將來那層被放寬時
+        // 又把 fly=true 交給 vnavmesh —— 那會讓角色站著不動而且完全沒有訊息。
+        var useFly = TravelMountHelper.ResolveUseFlying(fly) && Svc.Condition[ConditionFlag.Mounted];
         return Vnavmesh.TryPathfindAndMoveTo(dest, useFly) ||
                (useFly && Vnavmesh.TryPathfindAndMoveTo(dest));
     }

@@ -44,7 +44,35 @@ internal static unsafe class TravelMountHelper
             return false;
         }
 
-        return IsFlyingUnlocked();
+        if (!IsFlyingUnlocked())
+        {
+            return false;
+        }
+
+        // vnavmesh 的 PathfindAndMoveTo/MoveTo 收到 fly=true 但玩家沒騎坐騎時,會直接把移動
+        // 停用並返回:角色站著不動、沒有任何訊息,而且 vnavmesh 不會替呼叫端上坐騎。
+        // 這裡在把「要飛」交給 vnavmesh 之前先確認真的在坐騎上,否則降級成地面路徑。
+        // 刻意不在這裡代替使用者上坐騎——要上坐騎的路徑另有 TryEnsureMountedForNav/TryMountUp,
+        // 而且那兩者在「坐騎技能當下不可用」時會回 true 卻仍然是下坐騎狀態,所以這層檢查是必要的。
+        // 只在解析「目前所在區域」時才做這個降級;帶 territoryId 預先規劃別的區域時不適用。
+        if (territoryId.HasValue && territoryId.Value != Svc.ClientState.TerritoryType)
+        {
+            return true;
+        }
+
+        if (Svc.Condition[ConditionFlag.Mounted] || Svc.Condition[ConditionFlag.InFlight])
+        {
+            return true;
+        }
+
+        if (EzThrottler.Throttle("SaucyFlyDowngradeNotMounted", 5000))
+        {
+            Svc.Log.Information(
+                "[Saucy] 目前沒有騎乘坐騎,這次導航改用地面路徑。" +
+                "(vnavmesh 收到飛行指令但未騎乘時會直接停住不動,且不會自動上坐騎;Saucy 也不會代替你上坐騎)");
+        }
+
+        return false;
     }
 
     public static bool TryMountUp()
