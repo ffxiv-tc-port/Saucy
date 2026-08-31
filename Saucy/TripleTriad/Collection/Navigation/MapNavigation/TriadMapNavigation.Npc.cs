@@ -129,7 +129,7 @@ internal static unsafe partial class TriadMapNavigation
             if (pending.VnavRetryCount < 3 &&
                 EzThrottler.Throttle("SaucyNavVnavRetry", 2000))
             {
-                if (!TryEnsureMountedForNav(pending))
+                if (!TryResolveMountForNav(pending))
                 {
                     return;
                 }

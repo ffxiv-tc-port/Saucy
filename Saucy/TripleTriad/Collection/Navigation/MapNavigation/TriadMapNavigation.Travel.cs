@@ -324,7 +324,7 @@ internal static partial class TriadMapNavigation
             return;
         }
 
-        if (!TryEnsureMountedForNav(pending))
+        if (!TryResolveMountForNav(pending))
         {
             return;
         }

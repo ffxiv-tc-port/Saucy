@@ -5,11 +5,38 @@ using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
+using System;
 namespace Saucy.TripleTriad;
+
+/// <summary>
+/// <see cref="TravelMountHelper.TryMount"/> 的結果。
+/// 刻意不用 bool:「騎不上去」和「還在騎上去的路上」對呼叫端是完全不同的兩件事,
+/// 用 bool 表示會逼得其中一種要說謊(舊版就是把「騎不上去」回報成 true,呼叫端因此
+/// 以為已經在坐騎上,把 fly=true 交給 vnavmesh,角色站著不動而且沒有任何訊息)。
+/// </summary>
+internal enum MountAttemptResult
+{
+    /// <summary>還在嘗試(節流等待、施法中、動作鎖中……)。呼叫端應該什麼都別做,下一幀再問。</summary>
+    InProgress = 0,
+
+    /// <summary>已經在坐騎上。前置條件確實達成了。</summary>
+    Mounted,
+
+    /// <summary>當下騎不上去(本區禁止騎乘,或坐騎技能不可用)。呼叫端應降級成走路,不要再等。</summary>
+    Unavailable,
+}
 
 internal static unsafe class TravelMountHelper
 {
     private const uint GeneralActionMountRoulette = 9;
+
+    /// <summary>
+    /// <c>GetActionStatus</c> 對「剛切換區域/剛落地/剛結束戰鬥」這類短暫狀態也會回非 0。
+    /// 一觀察到就宣告 Unavailable 會讓整段路程都用走的,所以先給一段連續觀察的寬限期。
+    /// </summary>
+    private static readonly TimeSpan MountUnavailableGrace = TimeSpan.FromSeconds(3);
+
+    private static DateTime _mountUnavailableSinceUtc = DateTime.MinValue;
 
     public static bool CanMountInCurrentTerritory() =>
         CanMountInTerritory(Svc.ClientState.TerritoryType);
@@ -52,8 +79,9 @@ internal static unsafe class TravelMountHelper
         // vnavmesh 的 PathfindAndMoveTo/MoveTo 收到 fly=true 但玩家沒騎坐騎時,會直接把移動
         // 停用並返回:角色站著不動、沒有任何訊息,而且 vnavmesh 不會替呼叫端上坐騎。
         // 這裡在把「要飛」交給 vnavmesh 之前先確認真的在坐騎上,否則降級成地面路徑。
-        // 刻意不在這裡代替使用者上坐騎——要上坐騎的路徑另有 TryEnsureMountedForNav/TryMountUp,
-        // 而且那兩者在「坐騎技能當下不可用」時會回 true 卻仍然是下坐騎狀態,所以這層檢查是必要的。
+        // 刻意不在這裡代替使用者上坐騎——要上坐騎的路徑另有 TryResolveMountForNav/TryMount。
+        // 那條路徑現在會誠實回報 Unavailable(不再謊稱成功),但它回報之後呼叫端就照樣往下走了,
+        // 所以這層「真的在坐騎上嗎」的檢查仍然是最後一道防線。
         // 只在解析「目前所在區域」時才做這個降級;帶 territoryId 預先規劃別的區域時不適用。
         if (territoryId.HasValue && territoryId.Value != Svc.ClientState.TerritoryType)
         {
@@ -75,16 +103,23 @@ internal static unsafe class TravelMountHelper
         return false;
     }
 
-    public static bool TryMountUp()
+    /// <summary>
+    /// 嘗試把玩家弄上坐騎。<see cref="MountAttemptResult.Mounted"/> 才等價於「前置條件已達成」;
+    /// 騎不上去一律回 <see cref="MountAttemptResult.Unavailable"/> 交給呼叫端降級走路,絕不謊稱成功。
+    /// </summary>
+    public static MountAttemptResult TryMount()
     {
         if (!CanMountInCurrentTerritory())
         {
-            return true;
+            // 這個區域本來就不能騎坐騎,走路是唯一選項,是正常狀況所以不出診斷訊息。
+            ClearMountUnavailableTracking();
+            return MountAttemptResult.Unavailable;
         }
 
         if (Svc.Condition[ConditionFlag.Mounted])
         {
-            return true;
+            ClearMountUnavailableTracking();
+            return MountAttemptResult.Mounted;
         }
 
         if (Svc.Condition[ConditionFlag.MountOrOrnamentTransition] || Svc.Condition[ConditionFlag.Casting])
@@ -94,12 +129,12 @@ internal static unsafe class TravelMountHelper
 
         if (Svc.Condition[ConditionFlag.Jumping])
         {
-            return false;
+            return MountAttemptResult.InProgress;
         }
 
         if (!EzThrottler.Check("SaucyTravelMountWait"))
         {
-            return false;
+            return MountAttemptResult.InProgress;
         }
 
         var mountId = C.TriadCollection.TravelMountId;
@@ -108,31 +143,59 @@ internal static unsafe class TravelMountHelper
         {
             if (actionManager->GetActionStatus(ActionType.GeneralAction, GeneralActionMountRoulette) != 0)
             {
-                return true;
+                return TrackMountUnavailable("坐騎輪盤現在無法使用");
             }
 
+            ClearMountUnavailableTracking();
             if (Player.IsAnimationLocked || !EzThrottler.Throttle("SaucyTravelMount"))
             {
-                return false;
+                return MountAttemptResult.InProgress;
             }
 
             actionManager->UseAction(ActionType.GeneralAction, GeneralActionMountRoulette);
-            return false;
+            return MountAttemptResult.InProgress;
         }
 
         if (actionManager->GetActionStatus(ActionType.Mount, mountId) != 0)
         {
-            return true;
+            return TrackMountUnavailable("設定的旅行坐騎現在無法使用");
         }
 
+        ClearMountUnavailableTracking();
         if (Player.IsAnimationLocked || !EzThrottler.Throttle("SaucyTravelMount"))
         {
-            return false;
+            return MountAttemptResult.InProgress;
         }
 
         actionManager->UseAction(ActionType.Mount, mountId);
-        return false;
+        return MountAttemptResult.InProgress;
     }
+
+    private static MountAttemptResult TrackMountUnavailable(string reason)
+    {
+        var now = DateTime.UtcNow;
+        if (_mountUnavailableSinceUtc == DateTime.MinValue)
+        {
+            _mountUnavailableSinceUtc = now;
+        }
+
+        if (now - _mountUnavailableSinceUtc < MountUnavailableGrace)
+        {
+            return MountAttemptResult.InProgress;
+        }
+
+        // 使用者跑 LogLevel 2,所以診斷寫 Information;節流是為了不要每幀洗版。
+        if (EzThrottler.Throttle("SaucyTravelMountUnavailableNotice", 10000))
+        {
+            Svc.Log.Information(
+                $"[Saucy] {reason},這次導航改用地面路徑(不會自動替你上坐騎)。" +
+                "常見原因:戰鬥中、正在施法、當前區域或狀態暫時禁止騎乘。");
+        }
+
+        return MountAttemptResult.Unavailable;
+    }
+
+    private static void ClearMountUnavailableTracking() => _mountUnavailableSinceUtc = DateTime.MinValue;
 
     public static bool TryDismount()
     {

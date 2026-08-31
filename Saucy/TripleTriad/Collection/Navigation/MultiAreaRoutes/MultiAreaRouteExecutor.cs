@@ -307,7 +307,9 @@ internal static unsafe class MultiAreaRouteExecutor
             return false;
         }
 
-        return TravelMountHelper.TryMountUp();
+        // 騎不上去時不要卡在這一步(這一步沒有逾時,卡住就是永遠卡住):把它當作完成,
+        // 後續的 MoveTo 會經由 ResolveUseFlying 的未騎乘降級自動改走地面路徑。
+        return TravelMountHelper.TryMount() != MountAttemptResult.InProgress;
     }
 
     private static bool TickMoveTo(MultiAreaRouteStep step, RouteExecution execution)

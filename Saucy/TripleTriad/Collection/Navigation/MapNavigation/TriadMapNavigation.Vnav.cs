@@ -106,7 +106,7 @@ internal static partial class TriadMapNavigation
             pending.LastAnnouncedBuildProgress = -1;
         }
 
-        if (pending.AttemptMountBeforeNav && !TryEnsureMountedForNav(pending))
+        if (pending.AttemptMountBeforeNav && !TryResolveMountForNav(pending))
         {
             if (DateTime.UtcNow - pending.PhaseStartedUtc > MountBeforeNavTimeout)
             {
@@ -125,7 +125,7 @@ internal static partial class TriadMapNavigation
             return;
         }
 
-        if (!TryEnsureMountedForNav(pending))
+        if (!TryResolveMountForNav(pending))
         {
             return;
         }
@@ -192,7 +192,15 @@ internal static partial class TriadMapNavigation
         return pending.Destination;
     }
 
-    private static bool TryEnsureMountedForNav(PendingNavigation pending)
+    /// <summary>
+    /// 回傳「坐騎階段是否已經定案」——已經在坐騎上、或確定當下騎不上去(那就用走的)都算定案。
+    /// 回傳 false 只代表「還在嘗試,下一幀再問」。
+    /// ⚠️ 定案不等於「人在坐騎上」:騎不上去時這裡照樣回 true 讓導航往下走,真正擋住飛行的是
+    /// <see cref="TravelMountHelper.ResolveUseFlying"/> 裡的未騎乘降級,不要把那層拿掉。
+    /// (舊版此處連同 TravelMountHelper.TryMountUp 的 bool 回傳一起在說謊:騎不上去也回 true,
+    ///  呼叫端因此把 fly=true 交給 vnavmesh,角色站著不動且沒有訊息。)
+    /// </summary>
+    private static bool TryResolveMountForNav(PendingNavigation pending)
     {
         if (!TravelMountHelper.CanMountInCurrentTerritory())
         {
@@ -209,7 +217,7 @@ internal static partial class TriadMapNavigation
             return false;
         }
 
-        return TravelMountHelper.TryMountUp();
+        return TravelMountHelper.TryMount() != MountAttemptResult.InProgress;
     }
 
     private static bool TryStartVnav(PendingNavigation pending)
@@ -226,7 +234,7 @@ internal static partial class TriadMapNavigation
             return false;
         }
 
-        if (!TryEnsureMountedForNav(pending))
+        if (!TryResolveMountForNav(pending))
         {
             return false;
         }
@@ -270,7 +278,7 @@ internal static partial class TriadMapNavigation
             return false;
         }
 
-        if (!TryEnsureMountedForNav(pending))
+        if (!TryResolveMountForNav(pending))
         {
             return false;
         }
