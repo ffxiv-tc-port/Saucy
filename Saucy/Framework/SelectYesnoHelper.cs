@@ -13,6 +13,9 @@ namespace Saucy.Framework;
 
 public static unsafe class SelectYesnoHelper
 {
+    /// <summary>確認框的 addon 名稱。也是它在 <see cref="AddonPressGuard"/> 裡的鍵。</summary>
+    public const string AddonName = "SelectYesno";
+
     public const uint PromptTextNodeId = 2;
 
     /// <summary>Standard SelectYesno (Yes=8, No=11). Skip when ticket layout node 12 is visible.</summary>
@@ -131,7 +134,7 @@ public static unsafe class SelectYesnoHelper
         yesno = null;
         for (var i = 1; i < 100; i++)
         {
-            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectYesno", i).Address;
+            var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName(AddonName, i).Address;
             if (addon == null)
             {
                 return false;
@@ -497,8 +500,33 @@ public static unsafe class SelectYesnoHelper
         return button->AtkResNode->IsVisible();
     }
 
+    /// <summary>把「是／否」真的按下去——本外掛所有模組按確認框的<b>總出口</b>
+    /// （<see cref="PressYes"/>／<see cref="PressNo"/>／<see cref="TryPressArmedYes"/> 全部走這裡）。</summary>
+    /// <remarks>
+    /// 🔴🔴 <b>送出之前一定要過 <see cref="AddonPressGuard.TryBeginPress"/>。</b>
+    /// 確認框被按下之後有「正在關閉中」的幾幀，這段期間 <see cref="TryGetVisible"/> 仍拿得到實例、
+    /// <c>IsAddonReady</c> 三關也全過（<b>所以那兩道判斷不是防護</b>），此時再送一次
+    /// callback 或再模擬一次點擊就是原生 AccessViolation ——
+    /// 而 AVE 在 .NET Core 是 corrupted-state exception，<b>下面那三層 <c>try</c>/<c>catch</c>
+    /// 一層都攔不到</b>，遊戲當場關閉。
+    /// <para>
+    /// 閘門下沉在這裡而不是各呼叫端，是因為本外掛按確認框的路徑全部匯流到這一支
+    /// （幻卡對話跳過、幻卡導航開局、仙人微彩購票、孤樹無援續戰／收手、跨區路線、登出確認），
+    /// 漏掉任何一個都等於沒防護。下面五條後援路徑（結構欄位按鈕、節點 id 按鈕、
+    /// <c>AddonMaster</c>、<c>Callback.Fire</c>、<c>FireCallbackInt</c>）也一併罩住。
+    /// </para>
+    /// <para>
+    /// 📌 被擋下時回 <see langword="false"/>，與「按不到任何按鈕」同一個語意
+    /// （這一幀沒做成、下一幀再試）；所有呼叫端本來就是每幀重試的，正常路徑行為零變化。
+    /// </para>
+    /// </remarks>
     private static bool PressCallback(AddonSelectYesno* yesno, int callbackId, Action<AddonMaster.SelectYesno> fallback)
     {
+        if (yesno == null || !AddonPressGuard.TryBeginPress(AddonName, &yesno->AtkUnitBase))
+        {
+            return false;
+        }
+
         var wantsYes = callbackId == 0;
         if (wantsYes && TryResolveYesButton(yesno, out var yesButton) &&
             TryClickStructButton(yesno, yesButton, forceEnable: true))

@@ -109,6 +109,9 @@ public sealed partial class Saucy : IDalamudPlugin
         Svc.PluginInterface.UiBuilder.OpenMainUi -= EzConfigGui.Open;
         Svc.Framework.Update -= RunBot;
         Svc.PluginInterface.UiBuilder.Draw -= ObjectDebugOverlay.Draw;
+        // 確認框防重按閘門掛著 AddonLifecycle 監聽器：在 ECommonsMain.Dispose() 之前拆乾淨，
+        // 不留任何指向本組件的委派。
+        AddonPressGuard.ForceTeardown();
         PreciseMovement.Shutdown();
         PrepareTriadSessionForPluginUnload();
         _triadCollectionHost?.Dispose();
