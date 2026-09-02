@@ -54,8 +54,12 @@ namespace Saucy.Framework;
 /// 底下、<b>每個 tick 都會再進來一次</b>。
 /// </item>
 /// <item>
-/// <b><see cref="IAddonLifecycle"/> 事件</b>：<see cref="AddonEvent.PreFinalize"/>（這一扇正在被銷毀）
-/// 與 <see cref="AddonEvent.PostSetup"/>（有新的一扇被建立起來）。
+/// <b><see cref="IAddonLifecycle"/> 的 <see cref="AddonEvent.PostSetup"/></b>
+/// （<b>這個位址上</b>有全新的一扇被建立起來 ⇒ 那個位址的舊紀錄過期）。
+/// 🔴🔴 <b>解除一律以「事件講的那一個位址」為準，不是「這個名字底下全部」</b>——
+/// 整包清會在同名第二扇開起來時，把第一扇「正在關閉中而且按過了」一起忘掉，理由見
+/// <see cref="OnLifecycle"/>。而 <see cref="AddonEvent.PreFinalize"/> 不是解除點<b>而是加鎖點</b>
+/// （記進 <see cref="FinalizedByAddon"/>，見 <see cref="IsRetiringInstance"/>）。
 /// 🔴 這條是<b>必要的</b>而不是錦上添花：同名 addon 關掉再開常常會<b>重用同一塊記憶體位址</b>，
 /// 只靠第 1 條的話，重開的那扇會被誤認成「按過的那扇還沒收掉」而白白被擋到逃生口
 /// ——<b>幻卡連續對局正是這個形狀</b>（每一局都要重開一次確認框）。
@@ -65,7 +69,7 @@ namespace Saucy.Framework;
 /// 那會把封鎖提早解除，正好把這道防線變成沒有。
 /// </item>
 /// </list>
-/// 另外，<b>看過 <see cref="AddonEvent.PreFinalize"/> 的那個位址</b>在下一次 PostSetup 之前一律不碰
+/// 另外，<b>看過 <see cref="AddonEvent.PreFinalize"/> 的那個位址</b>在<b>同一位址的</b>下一次 PostSetup 之前一律不碰
 /// （有幀數上限 <see cref="FinalizedGraceFrames"/>，防「PostSetup 沒來」變成永久鎖）：
 /// 這是給「按了窗也不會關」的機台鈕／棋盤／翻格用的形狀——它們不能用「同窗只按一次」，
 /// 唯一能加的就是「已經在銷毀的實例不要再碰」。
@@ -178,7 +182,7 @@ internal static unsafe class AddonPressGuard
     };
 
     /// <param name="Address">被按的那個實例的位址，<b>只做等值比較</b>。</param>
-    /// <param name="Frame">按下時的繪製幀號。</param>
+    /// <param name="Frame">按下時的<b>守衛幀號</b>（<see cref="frameCount"/>，遊戲 tick；<b>不是</b>繪製幀）。</param>
     /// <remarks>
     /// 🔴 刻意<b>不</b>把「登記當時的逃生口幀數」記進來：其他按法判「終結動作還熱著」一律用
     /// <see cref="TerminalHotFrames"/>。拿逃生口長度當熱窗會把後援按法餓死（見該常數說明），
@@ -197,6 +201,28 @@ internal static unsafe class AddonPressGuard
 
     private static readonly Dictionary<string, IAddonLifecycle.AddonEventDelegate> Watchers =
         new(StringComparer.Ordinal);
+
+    /// <summary>守衛自己的幀計數器：<c>Svc.Framework.Update</c> 每個遊戲 tick 加一。</summary>
+    /// <remarks>
+    /// 🔴🔴 <b>刻意<u>不</u>用 <c>Svc.PluginInterface.UiBuilder.FrameCount</c>——那個計數器會停住。</b>
+    /// 本 pin 的 <c>UiBuilder.OnDraw()</c> 在三種情況成立時<b>直接 <c>return</c></b>：
+    /// ①使用者隱藏 UI ＋ <c>ToggleUiHide</c>　②<b>過場動畫</b> ＋ <c>ToggleUiHideDuringCutscenes</c>
+    /// （<b>預設開</b>）　③GPose ＋ <c>ToggleUiHideDuringGpose</c>；
+    /// 而 <c>FrameCount++</c> 寫在那個 <c>return</c> <b>之後</b>
+    /// ——也就是說<b>過場或隱藏 UI 期間 <c>UiBuilder.FrameCount</c> 完全不前進</b>。
+    /// <para>
+    /// 守衛的每一個門檻都是幀數（<see cref="ReleaseEscapeFrames"/>、
+    /// <see cref="RoutineRePressEscapeFrames"/>、<see cref="TerminalHotFrames"/>、
+    /// <see cref="FinalizedGraceFrames"/>），用那個時鐘等於<b>過場中所有逃生口永不到期</b>：
+    /// 幻卡對局途中就有過場，於是「後援按法被熱窗餓死」會以「熱窗永遠不過期」的形式原封不動回來。
+    /// </para>
+    /// <c>Svc.Framework.Update</c> 掛在遊戲自己的 update 迴圈上，與畫不畫 ImGui 無關，
+    /// 不受上述三種隱藏影響。（做法沿用 TCToolbox 的同名守衛。）
+    /// </remarks>
+    private static long frameCount;
+
+    /// <summary>幀計數器的訂閱旗標（只掛一次，<see cref="ForceTeardown"/> 拆）。</summary>
+    private static bool clockRunning;
 
     /// <summary>
     /// 登記「即將對這扇視窗送出終結動作」（整扇窗只有一種按法、或按了窗就會走）。
@@ -253,7 +279,7 @@ internal static unsafe class AddonPressGuard
         EnsureWatching(addonName);
 
         var address = (nint)addon;
-        var frame = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+        var frame = frameCount;
         var routine = escapeFrames <= RoutineRePressEscapeFrames;
         var label = string.IsNullOrEmpty(pressKey) ? "終結動作" : $"按法「{pressKey}」";
 
@@ -358,7 +384,7 @@ internal static unsafe class AddonPressGuard
         EnsureWatching(addonName);
 
         var address = (nint)addon;
-        var frame = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+        var frame = frameCount;
 
         if (IsRetiringInstance(addonName, address, frame))
         {
@@ -391,7 +417,7 @@ internal static unsafe class AddonPressGuard
         !string.IsNullOrEmpty(text) && text.Contains('�');
 
     /// <summary>
-    /// 「已經看過這個實例 PreFinalize、還沒看到新的 PostSetup」＝正在銷毀，不碰。
+    /// 「已經看過這個實例 PreFinalize、還沒看到<b>同一位址</b>的 PostSetup」＝正在銷毀，不碰。
     /// 超過 <see cref="FinalizedGraceFrames"/> 就當這個位址已經是別的東西，把紀錄清掉。
     /// </summary>
     private static bool IsRetiringInstance(string addonName, nint address, long frame)
@@ -424,6 +450,12 @@ internal static unsafe class AddonPressGuard
         {
             Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, addonName, handler);
             Svc.AddonLifecycle.UnregisterListener(AddonEvent.PreFinalize, addonName, handler);
+        }
+
+        if (clockRunning)
+        {
+            Svc.Framework.Update -= OnFrameworkUpdate;
+            clockRunning = false;
         }
 
         Watchers.Clear();
@@ -498,6 +530,10 @@ internal static unsafe class AddonPressGuard
     /// </remarks>
     private static void EnsureWatching(string addonName)
     {
+        // 🔴 時鐘要在下面那個 early return 之前掛上：這支對「已經在監聽的名字」會直接返回，
+        // 把 EnsureClock 放在後面的話，第二個以後的名字進來時計數器根本沒被掛起來。
+        EnsureClock();
+
         if (Watchers.ContainsKey(addonName))
         {
             return;
@@ -510,21 +546,109 @@ internal static unsafe class AddonPressGuard
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, addonName, handler);
     }
 
+    /// <summary>掛上守衛自己的幀計數器（只掛一次；<see cref="ForceTeardown"/> 拆）。</summary>
+    /// <remarks>
+    /// 見 <see cref="frameCount"/>：為什麼不能用 <c>UiBuilder.FrameCount</c>。
+    /// <para>
+    /// 📌 <b>外掛啟動時就先呼叫一次</b>（<c>Saucy</c> 建構子裡、<c>Svc.Framework.Update += RunBot</c> 之前），
+    /// 好讓計數器排在本外掛所有 <c>Framework.Update</c> 處理常式的<b>最前面</b>：
+    /// 本 pin 的 <c>FrameworkPluginScoped.OnUpdateForward</c> 是拿<b>整條多播委派</b>包在同一個
+    /// <c>try</c>／<c>catch</c> 裡呼叫的（<c>PluginErrorHandler.InvokeAndCatch</c>），
+    /// 排在前面的處理常式一擲例外，後面的<b>這一個 tick 全部不會被呼叫</b>。
+    /// 排最前面就不會有「別人壞掉順便把守衛的時鐘停住」。
+    /// （它不會被取消訂閱，所以只是漏數幾個 tick，方向仍是 fail-closed：擋住不按。）
+    /// </para>
+    /// </remarks>
+    public static void EnsureClock()
+    {
+        if (clockRunning)
+        {
+            return;
+        }
+
+        clockRunning = true;
+        Svc.Framework.Update += OnFrameworkUpdate;
+    }
+
+    /// <summary>守衛的時鐘：每個遊戲 tick 加一。</summary>
+    /// <remarks>
+    /// 🔴 這裡<b>不可以</b>加任何 early return（例如「沒有按下紀錄就不數」）：
+    /// 那會讓計數器在沒有紀錄的期間停住，等於把剛修掉的「時鐘會凍結」換個地方再犯一次。
+    /// </remarks>
+    private static void OnFrameworkUpdate(IFramework framework) => frameCount++;
+
+    /// <summary>
+    /// 解除封鎖用的生命週期監聽器。<b>🔴 一切都按「這一個實例位址」處理，不按名稱整包清。</b>
+    /// </summary>
+    /// <remarks>
+    /// 🔴🔴 <b>曾經是 <c>PressedByAddon.Remove(addonName)</c>（把整個名字底下的紀錄一次清掉），
+    /// 那是會崩的：</b>
+    /// 幀 F 對同名的第一扇 <c>#A</c> 送出終結動作、登記 <c>(#A, F)</c>；
+    /// 幀 F+1 <c>#A</c> 進入「關閉中」的那幾幀（<c>GetAddonByName</c> 仍回得到它、
+    /// <c>IsVisible</c> 與 <c>LoadedState</c> 三關全過），此時同名的第二扇 <c>#B</c> 被建立
+    /// ⇒ <c>PostSetup</c> 觸發 ⇒ 連 <c>#A</c> 的紀錄一起被清掉；
+    /// 幀 F+2 任何一個按下點從 index 1 解到的若仍是 <c>#A</c>，查無紀錄就會放行
+    /// ⇒ 對正在關閉的 <c>#A</c> 送出第二發 ⇒ <b>原生存取違規</b>。
+    /// 只清「事件講的那一個位址」就沒有這條路徑。
+    /// <para>
+    /// 📌 <c>PreFinalize</c> <b>刻意不清</b>按下紀錄（只登記 <see cref="FinalizedByAddon"/>）：
+    /// 那扇窗正在被銷毀，這時候「忘記它被按過」沒有任何好處。
+    /// 它的紀錄由既有的兩條路徑收乾淨——①<see cref="ReleaseVanished"/> 觀察到它從 addon
+    /// 清單消失　②同一位址被新的一扇重用時的 <c>PostSetup</c>（就在下面）。
+    /// 「同名 addon 關掉再開重用同一塊位址」（幻卡連續對局）靠的正是第 ② 條，語意不變。
+    /// </para>
+    /// <para>
+    /// 📌 <see cref="FinalizedByAddon"/> 的清除同樣改成按位址：同名的<b>另一扇</b>被建立起來
+    /// 不代表正在銷毀的那一扇已經安全（它還在關閉中，一碰就是存取違規）；
+    /// 只有「這個位址被新的一扇重用」才代表舊的銷毀紀錄過期。
+    /// 沒被重用的殘留紀錄由 <see cref="IsRetiringInstance"/> 的
+    /// <see cref="FinalizedGraceFrames"/> 上限自行過期，不會變成永久鎖。
+    /// </para>
+    /// 🔴 全程只取位址、不解參（<c>args.Addon</c> 是純指標包裝，<c>.Address</c> 不碰記憶體）。
+    /// </remarks>
     private static void OnLifecycle(string addonName, AddonEvent type, AddonArgs args)
     {
-        // 銷毀中或剛建好：那扇窗的按下紀錄都不算數了。
-        PressedByAddon.Remove(addonName);
+        var address = args.Addon.Address;
+        if (address == 0)
+        {
+            return;
+        }
 
         if (type == AddonEvent.PreFinalize)
         {
-            // 只記位址，不解參（args.Addon 只是拿來取位址）。
-            FinalizedByAddon[addonName] = new FinalizeRecord(
-                args.Addon.Address,
-                (long)Svc.PluginInterface.UiBuilder.FrameCount);
+            FinalizedByAddon[addonName] = new FinalizeRecord(address, frameCount);
+            return;
         }
-        else
+
+        // PostSetup：這個位址上是全新的一扇窗，舊紀錄一律過期。
+        ForgetPresses(addonName, address);
+
+        if (FinalizedByAddon.TryGetValue(addonName, out var finalized) && finalized.Address == address)
         {
             FinalizedByAddon.Remove(addonName);
+        }
+    }
+
+    /// <summary>只清掉<b>這一個實例位址</b>的按下紀錄，同名的其他實例不受影響。</summary>
+    /// <remarks>🔴 只做位址等值比較，永遠不解參。</remarks>
+    private static void ForgetPresses(string addonName, nint address)
+    {
+        if (!PressedByAddon.TryGetValue(addonName, out var presses))
+        {
+            return;
+        }
+
+        foreach (var pressKey in presses.Keys.ToArray())
+        {
+            if (presses[pressKey].Address == address)
+            {
+                presses.Remove(pressKey);
+            }
+        }
+
+        if (presses.Count == 0)
+        {
+            PressedByAddon.Remove(addonName);
         }
     }
 }

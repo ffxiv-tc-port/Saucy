@@ -38,6 +38,12 @@ public sealed partial class Saucy : IDalamudPlugin
     public Saucy(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this, Module.All);
+
+        // 確認框防重按閘門的幀計數器：在掛上任何其他 Framework.Update 處理常式之前先掛，
+        // 讓它排在本外掛多播委派的最前面（本 pin 是整條委派共用一個 try／catch，
+        // 前面的人擲例外會讓後面的人整個 tick 不被呼叫）。拆除在 ForceTeardown()。
+        AddonPressGuard.EnsureClock();
+
         ECommons.LanguageHelpers.Localization.Init("ChineseTraditional");
         PunishLibMain.Init(pluginInterface, "Saucy", new AboutPlugin());
         EzConfig.Migrate<Configuration>();
