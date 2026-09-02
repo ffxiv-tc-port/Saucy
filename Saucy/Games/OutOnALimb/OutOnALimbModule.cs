@@ -586,7 +586,7 @@ public unsafe class OutOnALimbModule : Module
             }
         }
 
-        if (TryClickButton(addon, LimbBoard.AimgStopButtonId(addon), AimgThrottleKey, AimgThrottleMs))
+        if (TryClickButton(LimbBoard.AimgAddon, addon, LimbBoard.AimgStopButtonId(addon), AimgThrottleKey, AimgThrottleMs))
         {
             powerMeterClicked = true;
             var landedName = (LimbDifficulty)Math.Clamp(landed, 0, 2);
@@ -923,7 +923,7 @@ public unsafe class OutOnALimbModule : Module
             return;
         }
 
-        if (!TryClickButton(addon, LimbBoard.BotanistSwingButtonId, SwingThrottleKey, SwingThrottleMs))
+        if (!TryClickButton(LimbBoard.BotanistAddon, addon, LimbBoard.BotanistSwingButtonId, SwingThrottleKey, SwingThrottleMs))
         {
             return;
         }
@@ -1209,7 +1209,14 @@ public unsafe class OutOnALimbModule : Module
         string.IsNullOrEmpty(text) ? string.Empty : text.Replace("\r", string.Empty).Replace("\n", " ⏎ ");
 
     /// <summary>每一層都先驗指標再解參考；任何一層取不到就整個不動作。</summary>
-    private static bool TryClickButton(AtkUnitBase* addon, uint nodeId, string throttleKey, int throttleMs)
+    /// <remarks>
+    /// 機台鈕按下不會關窗（機台板要到局末才由遊戲收掉），「同窗只按一次」不適用（一局要揮很多刀），
+    /// 而且停表／揮擊都是看指針落點的時序動作，任何額外延遲都會改變落點。
+    /// 所以這裡只接 <see cref="AddonPressGuard.TryTouch"/>：不登記、不改節奏，只擋
+    /// 「已經看過 PreFinalize 的實例」——局末遊戲收板那幾幀剛好落一下就是它要擋的。
+    /// 放在節流之前：被擋下不消耗節流，下一幀時機還在就照常按。
+    /// </remarks>
+    private static bool TryClickButton(string addonName, AtkUnitBase* addon, uint nodeId, string throttleKey, int throttleMs)
     {
         if (addon == null)
         {
@@ -1219,6 +1226,11 @@ public unsafe class OutOnALimbModule : Module
         var button = addon->GetComponentButtonById(nodeId);
         // ⚠️ button->AtkResNode 與 IsEnabled 解的 OwnerNode 是兩個不同欄位，前者擋不到後者 → 用 IsEnabledSafe。
         if (button == null || button->AtkResNode == null || !button->AtkResNode->IsVisible() || !AddonButton.IsEnabledSafe(button))
+        {
+            return false;
+        }
+
+        if (!AddonPressGuard.TryTouch(addonName, addon))
         {
             return false;
         }

@@ -18,6 +18,20 @@ internal static unsafe partial class TriadDeckSelectAutomation
     private const int MaxDeckSelectMethods = 5;
     private const int MaxDeckSelectNodeScan = 48;
 
+    /// <summary>選牌組窗的 addon 名稱。也是它在 <see cref="Saucy.Framework.AddonPressGuard"/> 裡的鍵。</summary>
+    /// <remarks>
+    /// 這扇窗<b>不是</b>單答窗：同一幀先點列、再送 deck callback、最後才按確認鈕是刻意的正常流程，
+    /// 所以按法各自成鍵（<c>row|索引</c>／<c>cb|事件|牌組</c>／<c>list|索引</c>／<c>button|節點</c>）；
+    /// 只有「按了窗就會走」的終結動作（確認鈕 5／1、<c>close:true</c> 的 callback）併成整扇窗一鍵，
+    /// 登記之後同位址任何按法都不准——見 <see cref="TryRunConfirmChain"/>。
+    /// </remarks>
+    private const string SelDeckAddonName = "TripleTriadSelDeck";
+
+    /// <summary>終結動作鏈走到第幾招，以及那是對哪一個實例（守衛走逃生口放行時才前進一招）。</summary>
+    private static int confirmChainStage;
+
+    private static nint confirmChainAddress;
+
     private static readonly uint[] DeckSelectConfirmButtonIds =
     [
         5, 1

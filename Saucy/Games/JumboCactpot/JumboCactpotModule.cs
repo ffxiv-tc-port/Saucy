@@ -120,6 +120,13 @@ public unsafe class JumboCactpotModule : Module
 
         var number = ResolveNumber();
 
+        // 同一扇購票面板只送一次：submittedForThisWindow 已經是閂，守衛是同一件事的位址版
+        // （PostSetup／PreFinalize 都會解除），被擋下就下一幀再來，行為不變。
+        if (!AddonPressGuard.TryBeginPress(AddonName, addon))
+        {
+            return;
+        }
+
         // DR 驗證過的送出方式：帶號碼的單一 int callback 等同「把號碼填進欄位並按下購買」，
         // 之後遊戲自己跳出扣款確認框。我們到此為止。
         Callback.Fire(addon, true, number);

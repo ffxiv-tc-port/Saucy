@@ -89,6 +89,15 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
     private static void TryForceHideLastResort(AtkUnitBase* addon)
     {
+        // 這條不是送輸入（agent Hide／直接改 IsVisible／Update(0)），但作用在剛被按過、可能正在關的窗上，
+        // 而且呼叫端一律緊接在同一 tick 的 TryCloseDeckSelectGracefully 之後。只擋兩種狀態：
+        // 已看過 PreFinalize 的實例、以及 15 幀內剛送過終結動作（確認鈕／close:true callback）的實例——
+        // 終結動作之後窗若還在，就不是在關閉中，最後手段照常執行。
+        if (!AddonPressGuard.TryTouch(SelDeckAddonName, addon))
+        {
+            return;
+        }
+
         var agentHandle = Svc.GameGui.FindAgentInterface((nint)addon);
         if (agentHandle != nint.Zero)
         {
@@ -221,6 +230,12 @@ internal static unsafe partial class TriadDeckSelectAutomation
             return false;
         }
 
+        // 清單項目點擊不關窗：按法鍵＝選中索引。
+        if (!AddonPressGuard.TryBeginPress(SelDeckAddonName, addon, $"list|{selected}"))
+        {
+            return false;
+        }
+
         try
         {
             list->SelectItem(selected, true);
@@ -309,6 +324,18 @@ internal static unsafe partial class TriadDeckSelectAutomation
             }
         }
 
+        if (best is null)
+        {
+            return false;
+        }
+
+        // 底部動作鈕：按法鍵＝節點 id（OwnerNode 已在上面 IsEnabledSafe 驗過非 null）。
+        var bestNodeId = best->AtkComponentBase.OwnerNode->AtkResNode.NodeId;
+        if (!AddonPressGuard.TryBeginPress(SelDeckAddonName, addon, $"button|{bestNodeId}"))
+        {
+            return false;
+        }
+
         return AddonButton.TryClick(addon, best);
     }
 
@@ -354,7 +381,19 @@ internal static unsafe partial class TriadDeckSelectAutomation
         return false;
     }
 
-    private static void TryFireDeckCallback(AtkUnitBase* addon, int eventId, int deckValue, bool close = false)
+    /// <summary>不關窗的 deck callback（選牌組）：按法鍵＝事件 id＋牌組值，同一幀送不同參數互不干擾。</summary>
+    private static void TryFireDeckCallback(AtkUnitBase* addon, int eventId, int deckValue)
+    {
+        if (!AddonPressGuard.TryBeginPress(SelDeckAddonName, addon, $"cb|{eventId}|{deckValue}"))
+        {
+            return;
+        }
+
+        FireDeckCallbackRaw(addon, eventId, deckValue, close: false);
+    }
+
+    /// <summary>🔴 不經守衛的原始 callback；只准由已經登記過守衛的呼叫端使用。</summary>
+    private static void FireDeckCallbackRaw(AtkUnitBase* addon, int eventId, int deckValue, bool close)
     {
         try
         {
@@ -371,21 +410,69 @@ internal static unsafe partial class TriadDeckSelectAutomation
         }
     }
 
-    private static bool TryFireDeckSelectConfirmCallback(AtkUnitBase* addon, int deckValue)
+    private static bool TryFireDeckSelectConfirmCallback(AtkUnitBase* addon, int deckValue) =>
+        deckValue >= 0 && TryRunConfirmChain(addon, deckValue, includeButtons: false);
+
+    /// <summary>
+    /// 終結動作鏈：確認鈕 5 → 確認鈕 1 → callback 1（close）→ callback 0（close）。
+    /// </summary>
+    /// <remarks>
+    /// 🔴🔴 原本是同一次呼叫內「按一招 → 看 <c>IsSelectionComplete</c>／<c>IsVisible</c> 沒落 → 換下一招」的級聯，
+    /// 但關閉中的那幾幀窗還在、還可見，第二招就是打在正在關的窗上（攔不到的存取違規）。
+    /// 改成：一個守衛窗口只送一招；守衛走逃生口放行（＝窗 90 幀都沒收掉，上一招真的沒生效）時才輪到下一招。
+    /// 候選的順序與前置條件都沒變（鈕要可見可用、callback 要有牌組值），只是不再擠在同一次呼叫裡。
+    /// 前置條件在登記守衛<b>之前</b>驗——登記了卻沒按會白白封鎖到逃生口。
+    /// <para>
+    /// 回傳值沿用舊語意：點了鈕回 <see langword="true"/>（送出成功），送了 callback 回「窗是否已收掉」；
+    /// 被守衛擋下回 <see langword="false"/>（這一幀沒做成，呼叫端本來就是每幀重試）。
+    /// </para>
+    /// </remarks>
+    private static bool TryRunConfirmChain(AtkUnitBase* addon, int deckValue, bool includeButtons)
     {
-        if (deckValue < 0)
+        // Kind 0 = 確認鈕（Value = 節點 id），Kind 1 = close:true callback（Value = 事件 id）。
+        Span<(int Kind, int Value)> steps = stackalloc (int, int)[4];
+        var count = 0;
+
+        if (includeButtons)
+        {
+            foreach (var buttonId in DeckSelectConfirmButtonIds)
+            {
+                if (CanClickSelectButton(addon, buttonId))
+                {
+                    steps[count++] = (0, (int)buttonId);
+                }
+            }
+        }
+
+        if (deckValue >= 0)
+        {
+            steps[count++] = (1, 1);
+            steps[count++] = (1, 0);
+        }
+
+        if (count == 0)
         {
             return false;
         }
 
-        TryFireDeckCallback(addon, 1, deckValue, true);
-        addon->Update(0);
-        if (IsSelectionComplete() || !IsDeckSelectVisible())
+        if (!AddonPressGuard.TryBeginPress(
+                SelDeckAddonName, addon, AddonPressGuard.WholeWindowKey, AddonPressGuard.ReleaseEscapeFrames,
+                out var viaEscape))
         {
-            return true;
+            return false;
         }
 
-        TryFireDeckCallback(addon, 0, deckValue, true);
+        var address = (nint)addon;
+        confirmChainStage = viaEscape && confirmChainAddress == address ? confirmChainStage + 1 : 0;
+        confirmChainAddress = address;
+
+        var (kind, value) = steps[confirmChainStage % count];
+        if (kind == 0)
+        {
+            return ClickSelectButtonRaw(addon, (uint)value);
+        }
+
+        FireDeckCallbackRaw(addon, value, deckValue, close: true);
         addon->Update(0);
         return IsSelectionComplete() || !IsDeckSelectVisible();
     }

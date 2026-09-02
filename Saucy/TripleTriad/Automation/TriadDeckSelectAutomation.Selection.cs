@@ -7,11 +7,34 @@ namespace Saucy.TripleTriad;
 
 internal static unsafe partial class TriadDeckSelectAutomation
 {
+    /// <summary>非終結鈕（遊戲推薦牌組等）的點擊：按法鍵＝節點 id。終結鈕（確認 5／1）走 <see cref="TryRunConfirmChain"/>。</summary>
     private static bool TryClickSelectButton(AtkUnitBase* addon, uint buttonId)
+    {
+        if (!CanClickSelectButton(addon, buttonId))
+        {
+            return false;
+        }
+
+        if (!AddonPressGuard.TryBeginPress(SelDeckAddonName, addon, $"button|{buttonId}"))
+        {
+            return false;
+        }
+
+        return ClickSelectButtonRaw(addon, buttonId);
+    }
+
+    private static bool CanClickSelectButton(AtkUnitBase* addon, uint buttonId)
     {
         var button = addon->GetComponentButtonById(buttonId);
         // ⚠️ IsEnabled 解的是 OwnerNode，AtkResNode 的檢查擋不到它 → 用 IsEnabledSafe。
-        if (button == null || !AddonButton.IsEnabledSafe(button) || button->AtkResNode == null || !button->AtkResNode->IsVisible())
+        return button != null && AddonButton.IsEnabledSafe(button) && button->AtkResNode != null && button->AtkResNode->IsVisible();
+    }
+
+    /// <summary>🔴 不經守衛的原始點擊；只准由已經登記過守衛的呼叫端使用。</summary>
+    private static bool ClickSelectButtonRaw(AtkUnitBase* addon, uint buttonId)
+    {
+        var button = addon->GetComponentButtonById(buttonId);
+        if (button == null)
         {
             return false;
         }
@@ -151,18 +174,11 @@ internal static unsafe partial class TriadDeckSelectAutomation
         awaitingConfirm = false;
     }
 
+    /// <summary>按確認：確認鈕 5 → 確認鈕 1 → callback 1（close）→ callback 0（close），一個守衛窗口只送一招。</summary>
     private static bool TryClickConfirmButton(AtkUnitBase* addon)
     {
-        foreach (var buttonId in DeckSelectConfirmButtonIds)
-        {
-            if (TryClickSelectButton(addon, buttonId))
-            {
-                return true;
-            }
-        }
-
         var deckValue = pendingProfileDeckId >= 0 ? pendingProfileDeckId : pendingDeckIndex;
-        return deckValue >= 0 && TryFireDeckSelectConfirmCallback(addon, deckValue);
+        return TryRunConfirmChain(addon, deckValue, includeButtons: true);
     }
 
     private static void PrintAttemptMessage(int deck, int listIndex)
@@ -227,7 +243,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
             return false;
         }
 
-        if (TryClickComponentButton(rowNode, addon))
+        if (TryClickComponentButton(rowNode, addon, listIndex))
         {
             return true;
         }
@@ -240,7 +256,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
         foreach (var child in children)
         {
-            if (TryClickComponentButton(child, addon))
+            if (TryClickComponentButton(child, addon, listIndex))
             {
                 return true;
             }
@@ -249,7 +265,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
         return false;
     }
 
-    private static bool TryClickComponentButton(AtkResNode* node, AtkUnitBase* addon)
+    private static bool TryClickComponentButton(AtkResNode* node, AtkUnitBase* addon, int listIndex)
     {
         if (node == null)
         {
@@ -259,6 +275,12 @@ internal static unsafe partial class TriadDeckSelectAutomation
         var button = node->GetAsAtkComponentButton();
         // ⚠️ IsEnabled 解的是 OwnerNode，AtkResNode 的檢查擋不到它 → 用 IsEnabledSafe。
         if (button == null || !AddonButton.IsEnabledSafe(button) || button->AtkResNode == null || !button->AtkResNode->IsVisible())
+        {
+            return false;
+        }
+
+        // 點列不關窗：按法鍵＝列索引，同一幀之後的 deck callback／確認鈕各自成鍵不互擋。
+        if (!AddonPressGuard.TryBeginPress(SelDeckAddonName, addon, $"row|{listIndex}"))
         {
             return false;
         }

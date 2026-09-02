@@ -57,6 +57,12 @@ public unsafe class MiniCactpotModule : Module
     private DateTime? confirmedLaneUtc;
     private bool boardLayoutSeen;
 
+    /// <summary>領獎關窗級聯走到第幾招（0 = <c>Callback(-1)</c>、1 = <c>Close(true)</c>），以及那是對哪一個實例
+    /// （<see cref="AddonPressGuard"/> 走逃生口放行時才前進一招）。</summary>
+    private int closeChainStage;
+
+    private nint closeChainAddress;
+
     /// <summary>這一張已經處理過開獎通知（不論有沒有真的念出來），避免每幀重試。</summary>
     private bool jackpotHandled;
 
@@ -350,13 +356,36 @@ public unsafe class MiniCactpotModule : Module
             return;
         }
 
+        // 🔴🔴 原本是同一次呼叫內「Callback(-1) → 緊接 Close(true)」，之後每過 ClickThrottleMs 再來一輪直到窗消失。
+        // 但 Callback(-1) 生效後那幾幀窗仍在、IsVisible／IsAddonReady 三關照過（GetLotteryDailyAddon 擋不住），
+        // 第二下就是打在正在關的窗上（攔不到的存取違規）；節流下限 400ms 在低 FPS 只有 10 幀，正落在危險窗口內。
+        // 改成：守衛以 LotteryDaily 位址為鍵，一個守衛窗口只送一招；守衛走逃生口放行（＝窗 90 幀都沒收掉，
+        // 上一招真的沒生效）時才輪到下一招。兩招的順序與內容都沒變，只是不再擠在同一次呼叫裡。
+        var unit = &addon->AtkUnitBase;
+        if (!AddonPressGuard.TryBeginPress(
+                AddonName, unit, AddonPressGuard.WholeWindowKey, AddonPressGuard.ReleaseEscapeFrames,
+                out var viaEscape))
+        {
+            return;
+        }
+
+        var address = (nint)unit;
+        closeChainStage = viaEscape && closeChainAddress == address ? closeChainStage + 1 : 0;
+        closeChainAddress = address;
+
         // 這次進場已經完整跑過一張彩券＝版面確定建好了，下一張只需要短暖機。
         boardLayoutSeen = true;
         LastAction = LastPayoutMgp > 0
             ? $"領獎並關閉面板（本張派彩 {LastPayoutMgp} 金碟幣）"
             : "領獎並關閉面板";
-        Callback.Fire(&addon->AtkUnitBase, true, -1);
-        addon->AtkUnitBase.Close(true);
+        if (closeChainStage % 2 == 0)
+        {
+            Callback.Fire(unit, true, -1);
+        }
+        else
+        {
+            unit->Close(true);
+        }
     }
 
     /// <summary>
@@ -423,6 +452,13 @@ public unsafe class MiniCactpotModule : Module
             return false;
         }
 
+        // 翻格不關窗，「同窗只按一次」不適用（一張要翻三格、同一格還會重試）；
+        // 能加的只有「已經看過 PreFinalize／剛送過終結動作的實例不要再碰」——玩家中途手動關板就是那一種。
+        if (!AddonPressGuard.TryTouch(AddonName, &addon->AtkUnitBase))
+        {
+            return false;
+        }
+
         Callback.Fire(&addon->AtkUnitBase, true, 1, (int)(nodeId - CellNodeIdFirst));
         return true;
     }
@@ -445,6 +481,12 @@ public unsafe class MiniCactpotModule : Module
 
         var nodeId = owner->AtkResNode.NodeId;
         if (nodeId is < LaneNodeIdFirst or > LaneNodeIdLast)
+        {
+            return false;
+        }
+
+        // 同 TryClickCell：選線不關窗，只擋正在銷毀／剛送過終結動作的實例。
+        if (!AddonPressGuard.TryTouch(AddonName, &addon->AtkUnitBase))
         {
             return false;
         }
@@ -496,6 +538,8 @@ public unsafe class MiniCactpotModule : Module
         confirmedLaneUtc = null;
         jackpotHandled = false;
         LastPayoutMgp = 0;
+        closeChainStage = 0;
+        closeChainAddress = nint.Zero;
 
         lock (solveLock)
         {

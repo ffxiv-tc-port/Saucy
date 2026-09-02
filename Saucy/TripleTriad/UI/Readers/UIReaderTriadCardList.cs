@@ -1,6 +1,7 @@
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using Saucy.Framework;
 using System;
 namespace Saucy.TripleTriad.UI;
 
@@ -342,6 +343,12 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
         if (addon->SelectedPage != pendingNavPage)
         {
+            // 切頁不關窗；只擋「玩家在導航進行中關掉清單」的那幾幀（已看過 PreFinalize 的實例不碰）。
+            if (!AddonPressGuard.TryTouch(GoldSaucerCardListUi.AddonName, &addon->AtkUnitBase))
+            {
+                return;
+            }
+
             // Old FFXIVClientStructs has no separate RequestedPage hint field; the tab
             // controller call below is what actually drives the page change.
             addon->TabController.SetTabIndexAndCallBack(pendingNavPage);

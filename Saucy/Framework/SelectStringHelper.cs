@@ -11,6 +11,15 @@ namespace Saucy.Framework;
 
 public static unsafe class SelectStringHelper
 {
+    /// <summary>兩種選單的 addon 名稱。也是它們在 <see cref="AddonPressGuard"/> 裡的鍵。</summary>
+    /// <remarks>
+    /// 選項按下即關窗，但刻意<b>不</b>併成整扇窗一鍵（巢狀選單會重用同一個實例只換內容），
+    /// 改用「選項索引」當按法鍵——本外掛對同一扇選單永遠算出同一個索引，同幀雙按照樣擋得住。
+    /// </remarks>
+    public const string SelectStringAddonName = "SelectString";
+
+    public const string SelectIconStringAddonName = "SelectIconString";
+
     public const uint ListNodeId = 3;
 
     public const int YesnoMenuEntryCount = 2;
@@ -62,8 +71,20 @@ public static unsafe class SelectStringHelper
             var select = new AddonMaster.SelectString(menu);
             for (var i = 0; i < select.Entries.Length; i++)
             {
-                if (select.Entries[i].Text.Contains(textFragment, StringComparison.OrdinalIgnoreCase))
+                var text = select.Entries[i].Text;
+                if (AddonPressGuard.LooksCorrupted(text))
                 {
+                    // 選項文字讀到 U+FFFD＝窗記憶體正在變動，該幀不碰。
+                    return false;
+                }
+
+                if (text.Contains(textFragment, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!AddonPressGuard.TryBeginPress(SelectStringAddonName, &menu->AtkUnitBase, PressKey(i)))
+                    {
+                        return false;
+                    }
+
                     select.Entries[i].Select();
                     return true;
                 }
@@ -84,6 +105,14 @@ public static unsafe class SelectStringHelper
     public static bool TrySelectEntry(AddonSelectString* menu, int index)
     {
         if (menu == null || !IsAddonReady(&menu->AtkUnitBase) || !menu->AtkUnitBase.IsVisible)
+        {
+            return false;
+        }
+
+        // 🔴 選項按下即關窗；幻卡代理的兩項式選單在同一幀會被三四條路徑各按一次（第一次生效後
+        // 仍 IsVisible + ready），第二下就打在正在關的窗上。守衛以位址＋索引為鍵，下面兩條後援
+        // 是「送出成功即停」的鏈，登記一次就夠。
+        if (!AddonPressGuard.TryBeginPress(SelectStringAddonName, &menu->AtkUnitBase, PressKey(index)))
         {
             return false;
         }
@@ -266,6 +295,12 @@ public static unsafe class SelectStringHelper
             return false;
         }
 
+        // 同 TrySelectEntry：位址＋索引為鍵，三條後援登記一次。
+        if (!AddonPressGuard.TryBeginPress(SelectIconStringAddonName, &menu->AtkUnitBase, PressKey(index)))
+        {
+            return false;
+        }
+
         try
         {
             new AddonMaster.SelectIconString(menu).Entries[index].Select();
@@ -320,6 +355,12 @@ public static unsafe class SelectStringHelper
         }
 
         if (!TryFindTriadEntryIndex(menu, out var index))
+        {
+            return false;
+        }
+
+        // 同 TrySelectEntry：位址＋索引為鍵，兩條後援登記一次。
+        if (!AddonPressGuard.TryBeginPress(SelectStringAddonName, menu, PressKey(index)))
         {
             return false;
         }
@@ -379,7 +420,14 @@ public static unsafe class SelectStringHelper
 
         for (var i = 0; i < count; i++)
         {
-            if (IsTriadListEntryText(TryGetListEntryText(menu, i)))
+            var text = TryGetListEntryText(menu, i);
+            if (AddonPressGuard.LooksCorrupted(text))
+            {
+                // 🔴 選項文字讀到 U+FFFD＝窗記憶體正在變動（多半是關閉中），該幀不做任何判定。
+                return false;
+            }
+
+            if (IsTriadListEntryText(text))
             {
                 index = i;
                 return true;
@@ -441,6 +489,9 @@ public static unsafe class SelectStringHelper
 
     private static bool IsTriadListEntryIcon(uint iconId) =>
         Array.IndexOf(TriadListEntryIconIds, iconId) >= 0;
+
+    /// <summary>選單的按法鍵＝選項索引（不變文化，免得別的地區設定把同一個索引格式成兩種字串）。</summary>
+    private static string PressKey(int index) => index.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static bool TryGetListEntryIconId(AtkComponentList* list, int entryIndex, out uint iconId)
     {

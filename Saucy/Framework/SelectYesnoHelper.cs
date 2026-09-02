@@ -1,5 +1,6 @@
 using ECommons.Automation;
 using ECommons.Automation.UIInput;
+using ECommons.Throttlers;
 using ECommons.UIHelpers.AddonMasterImplementations;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -522,7 +523,26 @@ public static unsafe class SelectYesnoHelper
     /// </remarks>
     private static bool PressCallback(AddonSelectYesno* yesno, int callbackId, Action<AddonMaster.SelectYesno> fallback)
     {
-        if (yesno == null || !AddonPressGuard.TryBeginPress(AddonName, &yesno->AtkUnitBase))
+        if (yesno == null)
+        {
+            return false;
+        }
+
+        // 🔴 內文讀到 U+FFFD＝這扇窗的記憶體正在變動（崩潰前實測看到的徵兆），該幀不碰。
+        // 放在登記守衛之前：登記了卻不按會白白封鎖到逃生口。內文是 SeString 只取文字 payload
+        // 的結果，正常文字（含顏色／圖示 payload）不會出現替代字元。
+        if (AddonPressGuard.LooksCorrupted(GetPromptText(yesno)))
+        {
+            if (EzThrottler.Throttle("SelectYesnoHelper-Corrupted", 1000))
+            {
+                Svc.Log.Information(
+                    $"[SelectYesno] 確認框（實例 0x{(nint)yesno:X}）內文讀到 U+FFFD，記憶體正在變動，這一幀不按。");
+            }
+
+            return false;
+        }
+
+        if (!AddonPressGuard.TryBeginPress(AddonName, &yesno->AtkUnitBase))
         {
             return false;
         }
