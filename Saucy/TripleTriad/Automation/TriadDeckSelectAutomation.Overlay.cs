@@ -358,27 +358,60 @@ internal static unsafe partial class TriadDeckSelectAutomation
         return false;
     }
 
+    /// <summary>盲試整輪（<see cref="BlindDeckSweepIndices"/>）都推進完了嗎。</summary>
+    private static bool IsBlindDeckSweepExhausted => blindSweepStage >= BlindDeckSweepIndices.Length;
+
+    /// <summary>
+    /// 讀不到牌組清單時的盲試：對列索引 0~4 依序送選牌組 callback ＋ 確認，<b>一次呼叫只試一副</b>。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 <b>為什麼不能把五副擠在同一個 <c>foreach</c> 裡</b>（原本的寫法）：每一圈最後那個確認是
+    /// <b>終結動作</b>，登記之後同一位址在 <see cref="AddonPressGuard.TerminalHotFrames"/> 幀內的
+    /// 任何按法都會被守衛擋掉（對關閉中的視窗送輸入正是攔不到的存取違規）。整個 <c>foreach</c> 跑在
+    /// <b>同一幀</b>，所以第 1~4 圈的 callback 與確認<b>全部</b>落在第 0 圈確認的熱窗內被靜默丟掉。
+    /// <para>
+    /// 而這條路徑是<b>一次性</b>的：<see cref="Tick"/> 的入口只在 <c>attemptCount == 0 &amp;&amp;
+    /// AttemptedDeckIndices.Count == 0</c> 時進得來，不像另外四條後援有跨幀 stage 可以在逃生口之後補按
+    /// —— 也就是說列索引 1~4 的盲試<b>永遠不會發生</b>，而不只是延後。
+    /// </para>
+    /// 🔑 改成跨幀推進：呼叫端每 <see cref="DeckSelectRetryCooldownFrames"/> 幀進來一次、推進一副，
+    /// 整輪走完才算一次嘗試（<c>attemptCount++</c>）。守衛的熱窗（15 幀）遠短於這個節奏，
+    /// 所以每一副的 callback 都真的送得出去。
+    /// </remarks>
     private static bool TryBlindDeckSelect(AtkUnitBase* addon)
     {
-        TriadDeckLog.Print("[Saucy] " + "Selecting first deck...".Loc());
-        foreach (var listIndex in new[]
+        // 🔴 位址只做等值比較，永不解參：換了實例就從第一副重新盲試。
+        var address = (nint)addon;
+        if (blindSweepAddress != address)
         {
-            0, 1, 2, 3, 4
-        })
-        {
-            TryFireDeckCallback(addon, 1, listIndex);
-            TryFireDeckCallback(addon, 0, listIndex);
-            addon->Update(0);
-            TryClickConfirmButton(addon);
-            addon->Update(0);
-            if (IsSelectionComplete())
-            {
-                confirmedThisScreen = true;
-                return true;
-            }
+            blindSweepAddress = address;
+            blindSweepStage = 0;
         }
 
-        return false;
+        if (IsBlindDeckSweepExhausted)
+        {
+            return false;
+        }
+
+        if (blindSweepStage == 0)
+        {
+            TriadDeckLog.Print("[Saucy] " + "Selecting first deck...".Loc());
+        }
+
+        var listIndex = BlindDeckSweepIndices[blindSweepStage];
+        blindSweepStage++;
+
+        TryFireDeckCallback(addon, 1, listIndex);
+        TryFireDeckCallback(addon, 0, listIndex);
+        addon->Update(0);
+        TryClickConfirmButton(addon);
+        addon->Update(0);
+        if (IsSelectionComplete())
+        {
+            confirmedThisScreen = true;
+        }
+
+        return true;
     }
 
     /// <summary>不關窗的 deck callback（選牌組）：按法鍵＝事件 id＋牌組值，同一幀送不同參數互不干擾。</summary>

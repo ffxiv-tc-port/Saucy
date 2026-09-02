@@ -32,6 +32,17 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
     private static nint confirmChainAddress;
 
+    /// <summary>讀不到牌組清單時的盲試候選列索引（一個守衛窗口只試一副，見 <c>TryBlindDeckSelect</c>）。</summary>
+    private static readonly int[] BlindDeckSweepIndices =
+    [
+        0, 1, 2, 3, 4
+    ];
+
+    /// <summary>盲試走到第幾副牌，以及那是對哪一個實例（🔴 位址只做等值比較，永不解參）。</summary>
+    private static int blindSweepStage;
+
+    private static nint blindSweepAddress;
+
     private static readonly uint[] DeckSelectConfirmButtonIds =
     [
         5, 1
@@ -211,12 +222,6 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
             if (awaitingConfirm)
             {
-                if (!IsSelectionComplete())
-                {
-                    TryClickConfirmButton(addon);
-                    addon->Update(0);
-                }
-
                 if (IsSelectionComplete())
                 {
                     confirmedThisScreen = true;
@@ -228,6 +233,12 @@ internal static unsafe partial class TriadDeckSelectAutomation
                     return;
                 }
 
+                // 🔴 後援按法（非終結）一定要排在確認（終結動作）之前送。
+                //    確認一登記，同一位址在 AddonPressGuard.TerminalHotFrames 幀內的任何按法都會被守衛擋掉；
+                //    先送確認等於每一輪都自己把當輪要試的那一招擋掉 —— 五段後援階梯會被靜默燒光，
+                //    每個牌組候選都被標成「試過」卻一下都沒真的按到。
+                //    確認的嘗試次數並沒有變少：TryApplyDeckSelection 送完後援按法之後本來就會補一次確認，
+                //    這裡只是把順序改回「先選、後確認」。
                 if (pendingSelectMethod + 1 < MaxDeckSelectMethods)
                 {
                     pendingSelectMethod++;
@@ -240,6 +251,21 @@ internal static unsafe partial class TriadDeckSelectAutomation
                         {
                             ClearPending();
                         }
+                    }
+
+                    return;
+                }
+
+                // 後援按法用盡：只剩終結動作可以推進（守衛的逃生口讓確認鏈每輪換一招）。
+                TryClickConfirmButton(addon);
+                addon->Update(0);
+
+                if (IsSelectionComplete())
+                {
+                    confirmedThisScreen = true;
+                    if (!TriadUiState.IsBoardVisible() || IsBoardHandsPopulated())
+                    {
+                        ClearPending();
                     }
 
                     return;
@@ -306,8 +332,14 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
                 if (uiReaderPrep.cachedState.decks.Count == 0 && TryBlindDeckSelect(addon))
                 {
-                    attemptCount++;
                     framesSinceAttempt = DeckSelectRetryCooldownFrames;
+                    if (IsBlindDeckSweepExhausted)
+                    {
+                        // 盲試整輪（5 副牌）走完才算一次嘗試：中途每一副各佔一個守衛窗口，
+                        // 一副就燒掉 MaxDeckSelectAttemptsPerScreen 的額度會讓這條路徑退化成只試第一副。
+                        attemptCount++;
+                    }
+
                     return;
                 }
             }
@@ -367,6 +399,8 @@ internal static unsafe partial class TriadDeckSelectAutomation
         attemptCount = 0;
         framesSinceAttempt = 0;
         FramesOpen = 0;
+        blindSweepStage = 0;
+        blindSweepAddress = nint.Zero;
         recommendedClicked = false;
         recommendedAttempts = 0;
     }
@@ -392,6 +426,8 @@ internal static unsafe partial class TriadDeckSelectAutomation
         ClearPending();
         AttemptedDeckIndices.Clear();
         attemptCount = 0;
+        blindSweepStage = 0;
+        blindSweepAddress = nint.Zero;
         recommendedClicked = false;
         recommendedAttempts = 0;
         framesSinceAttempt = DeckSelectPostOptimizerCooldownFrames;

@@ -38,8 +38,11 @@ namespace Saucy.Framework;
 /// （<c>TripleTriadSelDeck</c>）刻意在同一幀先點列、再送 deck callback、最後才按確認鈕，
 /// 只看位址會把這條正常流程整個擋掉。所以按法各自成鍵，互不干擾。
 /// <b>例外是「終結動作」</b>（<see cref="WholeWindowKey"/>）：確認鈕、<c>close:true</c> 的 callback、
-/// <c>Close(true)</c> 這類「按了窗就會走」的動作登記之後，同一位址<b>任何</b>按法都不准，
-/// 因為那之後這扇窗就是在關閉中。而「一扇窗一生只回答一次」的窗（<see cref="SingleAnswerAddons"/>）
+/// <c>Close(true)</c> 這類「按了窗就會走」的動作登記之後，同一位址<b>任何</b>按法在
+/// <see cref="TerminalHotFrames"/> 幀內都不准，因為那幾幀這扇窗可能正在關閉。
+/// 🔴 熱窗<b>只有那麼短是刻意的</b>：拿逃生口長度（90 幀）當熱窗會把呼叫端的後援階梯永久餓死，
+/// 理由見 <see cref="TerminalHotFrames"/>。
+/// 而「一扇窗一生只回答一次」的窗（<see cref="SingleAnswerAddons"/>）
 /// 不管走哪一條路徑、送什麼參數，一律併成終結動作。
 /// </para>
 /// <para>
@@ -110,6 +113,31 @@ internal static unsafe class AddonPressGuard
     public const int RoutineRePressEscapeFrames = 15;
 
     /// <summary>
+    /// 終結動作登記之後，<b>同一位址的其他按法</b>被擋住的「熱窗」長度（幀）。
+    /// </summary>
+    /// <remarks>
+    /// 🔴🔴 <b>熱窗與逃生口（<see cref="ReleaseEscapeFrames"/>）是兩件不同的事，絕對不能共用同一個數字。</b>
+    /// 熱窗要涵蓋的是「這扇窗正在關閉」的那幾幀（實測 &lt; 10 幀）；逃生口要涵蓋的是
+    /// 「上一次按下根本沒生效」的判定門檻（90 幀）。
+    /// <para>
+    /// 🔴 <b>把熱窗也設成 90 會讓後援按法永久餓死</b>（2026-09-02 實際踩過的形狀）：
+    /// 終結動作每次走逃生口放行都會<b>重新登記</b>、時間戳歸零，於是熱窗永遠接得上下一個熱窗，
+    /// 同一扇窗的其他按法一次都送不出去 —— 呼叫端的多段後援階梯全部靜默空轉，
+    /// 每個候選都被標成「試過」卻一下都沒真的按到。要維持的不變式是
+    /// <b>本常數必須遠小於「兩次終結動作之間的最小間隔」</b>（後者由 <see cref="ReleaseEscapeFrames"/>
+    /// 保證），15 對 90 有六倍餘裕。
+    /// </para>
+    /// 熱窗過了之後那扇窗若還在，代表它既沒 <c>PreFinalize</c> 也沒從 addon 清單消失
+    /// （<see cref="ReleaseVanished"/> 每次登記前都會先掃一遍），也就是「上一次按下沒讓它關」——
+    /// 那就不是關閉中，其他按法可以送。
+    /// <para>
+    /// 數值與 <see cref="RoutineRePressEscapeFrames"/> 相同純屬巧合（同一份「危險窗口 &lt; 10 幀」的判準），
+    /// <b>兩者語意不同，不要合併</b>。
+    /// </para>
+    /// </remarks>
+    public const int TerminalHotFrames = 15;
+
+    /// <summary>
     /// 「終結動作」的按法鍵：按了這扇窗就會走（確認鈕、<c>close:true</c> callback、<c>Close(true)</c>）。
     /// 登記之後，同一位址<b>任何</b>按法在它走完生命週期（或逃生口）之前都不准。
     /// </summary>
@@ -151,8 +179,12 @@ internal static unsafe class AddonPressGuard
 
     /// <param name="Address">被按的那個實例的位址，<b>只做等值比較</b>。</param>
     /// <param name="Frame">按下時的繪製幀號。</param>
-    /// <param name="EscapeFrames">登記當時呼叫端給的逃生口；其他按法判「終結動作還熱著」用它。</param>
-    private readonly record struct PressRecord(nint Address, long Frame, int EscapeFrames);
+    /// <remarks>
+    /// 🔴 刻意<b>不</b>把「登記當時的逃生口幀數」記進來：其他按法判「終結動作還熱著」一律用
+    /// <see cref="TerminalHotFrames"/>。拿逃生口長度當熱窗會把後援按法餓死（見該常數說明），
+    /// 把它存進紀錄裡只是讓那個錯誤更容易被寫回來。
+    /// </remarks>
+    private readonly record struct PressRecord(nint Address, long Frame);
 
     private readonly record struct FinalizeRecord(nint Address, long Frame);
 
@@ -238,7 +270,7 @@ internal static unsafe class AddonPressGuard
             if (pressKey != WholeWindowKey &&
                 presses.TryGetValue(WholeWindowKey, out var whole) &&
                 whole.Address == address &&
-                frame - whole.Frame < whole.EscapeFrames)
+                frame - whole.Frame < TerminalHotFrames)
             {
                 if (EzThrottler.Throttle($"AddonPressGuard-Hold-{addonName}", 1000))
                 {
@@ -299,7 +331,7 @@ internal static unsafe class AddonPressGuard
             PressedByAddon[addonName] = presses;
         }
 
-        presses[pressKey] = new PressRecord(address, frame, escapeFrames);
+        presses[pressKey] = new PressRecord(address, frame);
         return true;
     }
 
@@ -313,10 +345,10 @@ internal static unsafe class AddonPressGuard
     /// <remarks>
     /// 🔑 這種窗不能套「同窗只按一次」：一局要揮很多刀、一張彩券要翻三格，而且它們不會因為被按而消失，
     /// 「窗走完生命週期」在遊戲收掉之前永遠不會發生。能加的只有「已經在銷毀／已經在關的實例不要再碰」，
-    /// 這正是本方法。<paramref name="terminalHotFrames"/> 預設 <see cref="RoutineRePressEscapeFrames"/>：
+    /// 這正是本方法。<paramref name="terminalHotFrames"/> 預設 <see cref="TerminalHotFrames"/>：
     /// 關閉中的危險窗口 &lt; 10 幀，15 幀不落在裡面；而終結動作之後窗若仍在，就不是在關閉中。
     /// </remarks>
-    public static bool TryTouch(string addonName, AtkUnitBase* addon, int terminalHotFrames = RoutineRePressEscapeFrames)
+    public static bool TryTouch(string addonName, AtkUnitBase* addon, int terminalHotFrames = TerminalHotFrames)
     {
         if (addon == null || string.IsNullOrEmpty(addonName))
         {
