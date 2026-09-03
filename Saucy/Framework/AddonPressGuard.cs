@@ -358,6 +358,8 @@ internal static unsafe class AddonPressGuard
         }
 
         presses[pressKey] = new PressRecord(address, frame);
+        // 跨外掛重按診斷：只在真的送出按壓時記一行，刻意不節流。
+        Svc.Log.Information($"[按窗診斷] plugin=Saucy addon={addonName} addr=0x{address:X} key={pressKey}");
         return true;
     }
 
