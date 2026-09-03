@@ -13,23 +13,27 @@ namespace Saucy;
 
 internal static class PluginDependenciesUi
 {
-    public const string VeynRepositoryUrl = "https://puni.sh/api/repository/veyn";
+    // 這裡絕對不能指國際服的外掛庫：那些庫裡的 vnavmesh、Lifestream、Questionable
+    // 內部名與台服版完全相同，按下去會把 API15 的版本裝進台服環境並撞同一個已安裝鍵。
+    // 一律指本艦隊的 feed。
+    public const string TcRepositoryUrl = "https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/repo.json";
 
     public static DependencyEntry Vnavmesh(string description) =>
         new(
             "vnavmesh",
             "vnavmesh",
             description,
-            VeynRepositoryUrl,
+            TcRepositoryUrl,
             [],
             () => IPC.Vnavmesh.IsInstalled);
 
+    // IPCNames.BossMod 是 EzIPC 前綴（BMR 沿用舊名），不是內部名，不能拿來查已安裝清單。
     public static DependencyEntry BossModPlugin(string description) =>
         new(
-            "Boss Mod",
-            IPCNames.BossMod,
+            "Bossmod Reborn",
+            "BossModReborn",
             description,
-            VeynRepositoryUrl,
+            TcRepositoryUrl,
             [],
             () => BossMod.IsInstalled);
 
@@ -38,10 +42,8 @@ internal static class PluginDependenciesUi
             "Lifestream",
             "Lifestream",
             description,
-            "https://github.com/NightmareXIV/MyDalamudPlugins/raw/main/pluginmaster.json",
-            [
-                "https://raw.githubusercontent.com/NightmareXIV/MyDalamudPlugins/main/pluginmaster.json"
-            ],
+            TcRepositoryUrl,
+            [],
             () => Lifestream.IsInstalled);
 
     public static DependencyEntry QuestionablePlugin(string description) =>
@@ -49,7 +51,7 @@ internal static class PluginDependenciesUi
             "Questionable",
             "Questionable",
             description,
-            "https://love.puni.sh/ment.json",
+            TcRepositoryUrl,
             [],
             () => Questionable.IsInstalled);
 
