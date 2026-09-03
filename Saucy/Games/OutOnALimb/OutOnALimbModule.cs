@@ -1134,7 +1134,7 @@ public unsafe class OutOnALimbModule : Module
         var accept = hasButtons && !blocked && !doubleDown && mentionsMachine && matchesTemplate;
         if (!accept)
         {
-            // 「為什麼沒按」必須看得見。使用者跑 LogLevel 2，所以寫 Information 不是 Debug。
+            // 「為什麼沒按」必須看得見。使用者跑 LogLevel 1，所以寫 Information 不是 Debug。
             if (EzThrottler.Throttle(ReplayPromptDiagThrottleKey, ReplayPromptDiagThrottleMs))
             {
                 Svc.Log.Information($"[OutOnALimb] auto-replay left a yes/no prompt alone: " +

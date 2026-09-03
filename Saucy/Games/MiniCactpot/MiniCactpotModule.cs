@@ -425,7 +425,7 @@ public unsafe class MiniCactpotModule : Module
             return;
         }
 
-        // 使用者跑 LogLevel 2，這行要看得到才有診斷價值。
+        // 使用者跑 LogLevel 1，這行要看得到才有診斷價值。
         Log($"Payout {payout} MGP >= threshold {threshold}; asking TataruPraise to celebrate.");
         TataruPraise.TryPraiseJackpot();
     }

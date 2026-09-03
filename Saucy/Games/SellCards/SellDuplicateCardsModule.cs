@@ -152,7 +152,7 @@ public unsafe class SellDuplicateCardsModule : Module
             if (!readFailedLogged)
             {
                 readFailedLogged = true;
-                // 要玩家回報的診斷寫 Information（使用者跑 LogLevel 2）。
+                // 要玩家回報的診斷寫 Information（使用者跑 LogLevel 1）。
                 Log($"讀取幻卡交換視窗失敗，欄位版面可能與此台服版本不符：{ex.Message}");
             }
         }

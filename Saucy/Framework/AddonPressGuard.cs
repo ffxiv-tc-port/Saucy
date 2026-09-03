@@ -313,7 +313,7 @@ internal static unsafe class AddonPressGuard
                 var waited = frame - pressed.Frame;
                 if (waited < escapeFrames)
                 {
-                    // 🔴 這就是會崩潰的那一幀。單答窗寫 Information（使用者跑 LogLevel 2）；
+                    // 🔴 這就是會崩潰的那一幀。單答窗寫 Information（使用者跑 LogLevel 1）；
                     // Talk 類每頁都會走到這裡一次，寫 Debug 免得洗版。
                     if (EzThrottler.Throttle($"AddonPressGuard-Hold-{addonName}", 1000))
                     {

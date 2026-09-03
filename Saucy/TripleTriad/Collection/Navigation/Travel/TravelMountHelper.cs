@@ -184,7 +184,7 @@ internal static unsafe class TravelMountHelper
             return MountAttemptResult.InProgress;
         }
 
-        // 使用者跑 LogLevel 2,所以診斷寫 Information;節流是為了不要每幀洗版。
+        // 使用者跑 LogLevel 1,所以診斷寫 Information;節流是為了不要每幀洗版。
         if (EzThrottler.Throttle("SaucyTravelMountUnavailableNotice", 10000))
         {
             Svc.Log.Information(

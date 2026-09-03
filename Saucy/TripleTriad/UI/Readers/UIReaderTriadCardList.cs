@@ -479,7 +479,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
     /// <see cref="IsAddonReadyForNodeReads"/> 的具狀態包裝:未就緒時設定狀態並安靜 return。
     /// </summary>
     /// <remarks>
-    /// 只在「就緒 ↔ 未就緒」轉換時印一行 Information(使用者跑 LogLevel 2,Debug/Verbose 收不到),
+    /// 只在「就緒 ↔ 未就緒」轉換時印一行 Information(使用者跑 LogLevel 1,盲區只有 Verbose,Debug 收得到但單檔數十萬行會淹沒),
     /// 所以逐幀阻擋不會刷版面。
     /// </remarks>
     private bool EnsureAddonReadyForNodeReads(AddonGSInfoCardList* addon)
