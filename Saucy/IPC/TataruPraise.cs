@@ -12,7 +12,8 @@ namespace Saucy.IPC;
 /// <para>⚠️ 這裡刻意<b>不</b>走本 repo 其他整合用的 ECommons <c>[IPC]</c> + <see cref="SubscriptionManager"/>
 /// 路徑。那條路徑把可用性綁在「<c>InstalledPlugins</c> 裡有這個 InternalName 而且 IsLoaded」上，
 /// 對「有裝就順便念一句、沒裝就當沒這回事」的純通知來說是多餘的耦合；而且 TataruPraise 自己
-/// 就提供了 <c>IsAvailable</c>（總開關開著＋池裡真的有已合成語音），那才是「現在叫得動嗎」的真值來源。</para>
+/// 就提供了 <c>IsAvailableFor(情境)</c>（總開關開著＋這個情境沒被關掉＋這個情境真的有已合成語音），
+/// 那才是「<b>這個情境</b>現在叫得動嗎」的真值來源。</para>
 ///
 /// <para>📌 契約名與情境鍵逐字取自 TataruPraise 的 <c>IpcContract.cs</c> / <c>PraiseCategory.cs</c>。
 /// 🔴 Dalamud 的 CallGate 是<b>純字串比對</b>——這幾個字串打錯不會有任何錯誤訊息，
@@ -28,11 +29,30 @@ internal static class TataruPraise
     /// <summary>現在有沒有辦法出聲（總開關開著、而且池裡有可播的內容）。<c>Func&lt;bool&gt;</c>。</summary>
     public const string IsAvailableChannel = "TataruPraise.IsAvailable";
 
+    /// <summary>
+    /// <c>Func&lt;string, bool&gt;</c>：<b>指定的那個情境</b>現在出得了聲嗎
+    /// （總開關開著＋這個情境沒被關掉＋這個情境至少有一句已合成的語音）。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 <b>閘門要問的是這一個，不是 <see cref="IsAvailableChannel"/>。</b>後者問的是
+    /// 「整池<b>有某個情境</b>播得出來」，於是「別的情境有語音、<b>呼叫端要的那個情境</b>一句都沒有」時
+    /// 照樣通過，接著 <c>Praise</c> 回 <c>false</c>——呼叫端就分不出「不能出聲」與「這次剛好沒出聲」。
+    /// <para>
+    /// 📌 它刻意<b>不看冷卻</b>：冷卻是「這次剛好不出聲」，不是「不能出聲」。
+    /// </para>
+    /// <para>
+    /// 🔴 舊版 TataruPraise 沒有註冊這個端點，<c>InvokeFunc</c> 會擲 <c>IpcNotReadyError</c>，
+    /// 剛好落進既有的 catch＝安靜不出聲，這是正確的 fail-safe。
+    /// <b>失敗時絕不可以退回去叫 <see cref="IsAvailableChannel"/></b>——那樣就把這個端點的意義整個抵銷掉了。
+    /// </para>
+    /// </remarks>
+    public const string IsAvailableForChannel = "TataruPraise.IsAvailableFor";
+
     /// <summary>「中獎」情境鍵，逐字對應 TataruPraise 的 <c>PraiseCategory.Jackpot</c>。</summary>
     public const string JackpotCategory = "中獎";
 
     private static ICallGateSubscriber<string, bool>? praiseSubscriber;
-    private static ICallGateSubscriber<bool>? isAvailableSubscriber;
+    private static ICallGateSubscriber<string, bool>? isAvailableForSubscriber;
 
     /// <summary>請塔塔露念一句「中獎」。回傳「有沒有排進播放」——回 false 全部都是正常情形
     /// （沒安裝、總開關關著、還在冷卻、池裡沒有已合成的句子），不是錯誤。</summary>
@@ -50,11 +70,11 @@ internal static class TataruPraise
         {
             // 訂閱端可以在對方載入之前就先取得（CallGate 是後綁的），所以快取起來重用沒有問題。
             praiseSubscriber ??= Svc.PluginInterface.GetIpcSubscriber<string, bool>(PraiseChannel);
-            isAvailableSubscriber ??= Svc.PluginInterface.GetIpcSubscriber<bool>(IsAvailableChannel);
+            isAvailableForSubscriber ??= Svc.PluginInterface.GetIpcSubscriber<string, bool>(IsAvailableForChannel);
 
-            // 先問「叫得動嗎」再叫：對方沒載入時這一步就會擲 IpcNotReadyError，
-            // 不會走到 Praise。
-            if (!isAvailableSubscriber.InvokeFunc())
+            // 先問「這個情境叫得動嗎」再叫：對方沒載入時這一步就會擲 IpcNotReadyError，
+            // 不會走到 Praise。舊版沒註冊 IsAvailableFor 也是同一條路＝安靜不出聲。
+            if (!isAvailableForSubscriber.InvokeFunc(category))
             {
                 return false;
             }
