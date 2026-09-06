@@ -45,7 +45,10 @@ public partial class TriadSession
                 TrySlotCachedDeckIntoProfileLocked(preGameNpc, regionMods, out var _);
             }
 
-            EnsurePreviewEvalForNpc(preGameNpc, regionMods);
+            // 出鎖後才做:EnsurePreviewEvalForNpc 會走到 Vnavmesh.ShouldDeferHeavyWork()。
+            var previewEvalNpc = preGameNpc;
+            TriadDeferredSideEffects.RunAfterLock(
+                () => EnsurePreviewEvalForNpc(previewEvalNpc, regionMods));
         }
     }
 
@@ -145,7 +148,10 @@ public partial class TriadSession
             return;
         }
 
-        StartDeckOptimizer(preGameNpc, regionMods);
+        // 出鎖後才做:StartDeckOptimizer 的前導會打 Questionable.IsRunning、
+        // Vnavmesh 的四支 rpc,以及(拒絕未解鎖 NPC 時)Lifestream.Abort 與 Path.Stop。
+        var startNpc = preGameNpc;
+        TriadDeferredSideEffects.RunAfterLock(() => StartDeckOptimizer(startNpc, regionMods));
     }
 
     private bool IsOptimizerStartBlockedForSessionLocked(string sessionKey)

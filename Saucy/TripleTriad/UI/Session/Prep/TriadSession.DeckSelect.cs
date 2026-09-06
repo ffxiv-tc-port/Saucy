@@ -209,6 +209,14 @@ public partial class TriadSession
 
         var kickPreviewEval = false;
         TriadNpc previewNpc = null;
+
+        // 判斷型的 IPC 不能延後(回傳值決定鎖內走哪條分支),只能在取鎖之前問完:
+        // IsDeckOptimizerBlockedByNavmesh() 會打 vnavmesh 的四支 rpc。
+        // 前面那個 && 是把鎖內第一道閘門的條件照抄過來,讓「什麼情況下會問」與原本相同
+        // (原本那道閘門先回 false 時,這個運算式根本不會被求值)。
+        var blockedByNavmesh =
+            !(HasOptimizedDeckApplied && _optimizerTargetDeckId >= 0) &&
+            IsDeckOptimizerBlockedByNavmesh();
         lock (_preGameLock)
         {
             if (HasOptimizedDeckApplied && _optimizerTargetDeckId >= 0)
@@ -216,7 +224,7 @@ public partial class TriadSession
                 return false;
             }
 
-            if (IsDeckOptimizerBlockedByNavmesh())
+            if (blockedByNavmesh)
             {
                 return true;
             }

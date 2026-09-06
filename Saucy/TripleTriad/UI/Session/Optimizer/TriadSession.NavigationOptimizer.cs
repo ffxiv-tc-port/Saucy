@@ -68,7 +68,10 @@ public partial class TriadSession
                 return;
             }
 
-            StartDeckOptimizer(npc, ResolveRegionModsForNpc(npc), navigationRequest: true);
+            // 出鎖後才做:StartDeckOptimizer 的前導會打別的外掛的 IPC。
+            var startMods = ResolveRegionModsForNpc(npc);
+            TriadDeferredSideEffects.RunAfterLock(
+                () => StartDeckOptimizer(npc, startMods, navigationRequest: true));
         }
     }
 
@@ -98,7 +101,11 @@ public partial class TriadSession
         PrintOptimizerChat(
             "[Saucy] " + "Deck optimization interrupted for ??; retry ??/??…".Loc(result.Npc.Name, _navigationOptimizerRetryCount, MaxNavigationOptimizerRetries));
         _optimizerTimedOut = false;
-        StartDeckOptimizer(result.Npc, ResolveRegionModsForNpc(result.Npc), navigationRequest: true);
+        // 出鎖後才做:同上。
+        var restartNpc = result.Npc;
+        var restartMods = ResolveRegionModsForNpc(restartNpc);
+        TriadDeferredSideEffects.RunAfterLock(
+            () => StartDeckOptimizer(restartNpc, restartMods, navigationRequest: true));
         return true;
     }
 }

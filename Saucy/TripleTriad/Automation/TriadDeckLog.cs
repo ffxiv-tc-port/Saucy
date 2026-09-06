@@ -40,8 +40,16 @@ internal static class TriadDeferredSideEffects
     // 緩衝區跟著「持鎖的那一條執行緒」走，所以是 ThreadStatic。
     [ThreadStatic] private static int deferralDepth;
     [ThreadStatic] private static List<string>? pendingChat;
-    [ThreadStatic] private static List<(bool IsWarning, string Message)>? pendingLog;
+    [ThreadStatic] private static List<(DeferredLogLevel Level, string Message)>? pendingLog;
     [ThreadStatic] private static int pendingConfigSaves;
+    [ThreadStatic] private static List<Action>? pendingActions;
+
+    private enum DeferredLogLevel
+    {
+        Info,
+        Warning,
+        Error
+    }
 
     public static Scope Begin()
     {
@@ -64,7 +72,7 @@ internal static class TriadDeferredSideEffects
 
     public static void Info(string message)
     {
-        if (!TryDeferLog(false, message))
+        if (!TryDeferLog(DeferredLogLevel.Info, message))
         {
             Svc.Log.Info(message);
         }
@@ -72,10 +80,37 @@ internal static class TriadDeferredSideEffects
 
     public static void Warning(string message)
     {
-        if (!TryDeferLog(true, message))
+        if (!TryDeferLog(DeferredLogLevel.Warning, message))
         {
             Svc.Log.Warning(message);
         }
+    }
+
+    public static void Error(string message)
+    {
+        if (!TryDeferLog(DeferredLogLevel.Error, message))
+        {
+            Svc.Log.Error(message);
+        }
+    }
+
+    /// <summary>
+    ///     出鎖之後才做的動作。用在「整段都不該在持鎖時跑」的工作 —— 目前是
+    ///     StartDeckOptimizer 與 EnsurePreviewEvalForNpc，兩者的呼叫鏈會打 vnavmesh／
+    ///     Lifestream／Questionable 的 IPC，而 IPC 是在呼叫端的執行緒上執行對方的程式碼，
+    ///     在鎖內打等於把自己的鎖交給別的外掛持有。
+    ///     🔑 不在延後範圍內時當場執行，與其他入口一樣：漏包的後果是維持原本的行為。
+    /// </summary>
+    public static void RunAfterLock(Action action)
+    {
+        if (deferralDepth > 0)
+        {
+            pendingActions ??= new List<Action>();
+            pendingActions.Add(action);
+            return;
+        }
+
+        action();
     }
 
     /// <summary>
@@ -94,15 +129,15 @@ internal static class TriadDeferredSideEffects
         C.Save();
     }
 
-    private static bool TryDeferLog(bool isWarning, string message)
+    private static bool TryDeferLog(DeferredLogLevel level, string message)
     {
         if (deferralDepth <= 0)
         {
             return false;
         }
 
-        pendingLog ??= new List<(bool, string)>();
-        pendingLog.Add((isWarning, message));
+        pendingLog ??= new List<(DeferredLogLevel, string)>();
+        pendingLog.Add((level, message));
         return true;
     }
 
@@ -120,6 +155,10 @@ internal static class TriadDeferredSideEffects
             FlushLog();
             FlushChat();
             FlushConfigSave();
+
+            // 動作排最後:它們自己還會寫 log／送聊天,此時 deferralDepth 已歸零,
+            // 所以會當場輸出 —— 排在前面三個之後才不會把先後順序倒過來。
+            FlushActions();
         }
 
         // 每個 Flush 都先拍快照再清空：做的期間如果又有新的進來，不會跟這一輪混在一起。
@@ -133,15 +172,19 @@ internal static class TriadDeferredSideEffects
 
             var entries = pending.ToArray();
             pending.Clear();
-            foreach (var (isWarning, message) in entries)
+            foreach (var (level, message) in entries)
             {
-                if (isWarning)
+                switch (level)
                 {
-                    Svc.Log.Warning(message);
-                }
-                else
-                {
-                    Svc.Log.Info(message);
+                    case DeferredLogLevel.Error:
+                        Svc.Log.Error(message);
+                        break;
+                    case DeferredLogLevel.Warning:
+                        Svc.Log.Warning(message);
+                        break;
+                    default:
+                        Svc.Log.Info(message);
+                        break;
                 }
             }
         }
@@ -169,6 +212,22 @@ internal static class TriadDeferredSideEffects
             for (var i = 0; i < count; i++)
             {
                 C.Save();
+            }
+        }
+
+        private static void FlushActions()
+        {
+            var pending = pendingActions;
+            if (pending == null || pending.Count == 0)
+            {
+                return;
+            }
+
+            var actions = pending.ToArray();
+            pending.Clear();
+            foreach (var action in actions)
+            {
+                action();
             }
         }
     }
