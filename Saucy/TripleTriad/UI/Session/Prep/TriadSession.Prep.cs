@@ -455,9 +455,13 @@ public partial class TriadSession
             {
                 if (ShouldBuildOptimizedDeck())
                 {
-                    lock (_preGameLock)
+                    // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
+                    using (TriadChatDeferral.Begin())
                     {
-                        TryEnsureOptimizedDeckForPrepLocked();
+                        lock (_preGameLock)
+                        {
+                            TryEnsureOptimizedDeckForPrepLocked();
+                        }
                     }
                 }
                 else

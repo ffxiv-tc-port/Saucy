@@ -54,6 +54,8 @@ public partial class TriadSession
             return;
         }
 
+        // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
+        using var chatScope = TriadChatDeferral.Begin();
         lock (_preGameLock)
         {
             if (OptimizerInProgress)

@@ -92,19 +92,23 @@ public partial class TriadSession
             return;
         }
 
-        lock (_preGameLock)
+        // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
+        using (TriadChatDeferral.Begin())
         {
-            if (forceRebuild)
+            lock (_preGameLock)
             {
-                PrepareStaleDeckRebuildLocked(npc, optimizerKey);
-            }
-            else if (!premadeRequest && TrySkipOptimizedDeckRebuildLocked(npc, regionMods))
-            {
-                return;
-            }
-            else if (premadeRequest && TrySkipPremadeDeckLocked(npc, regionMods))
-            {
-                return;
+                if (forceRebuild)
+                {
+                    PrepareStaleDeckRebuildLocked(npc, optimizerKey);
+                }
+                else if (!premadeRequest && TrySkipOptimizedDeckRebuildLocked(npc, regionMods))
+                {
+                    return;
+                }
+                else if (premadeRequest && TrySkipPremadeDeckLocked(npc, regionMods))
+                {
+                    return;
+                }
             }
         }
 
@@ -175,6 +179,8 @@ public partial class TriadSession
             return;
         }
 
+        // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
+        using var chatScope = TriadChatDeferral.Begin();
         lock (_preGameLock)
         {
             if (result.PassId != _optimizerPassId)
