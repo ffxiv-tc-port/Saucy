@@ -331,7 +331,9 @@ public partial class TriadSession
             return;
         }
 
-        TriadDeckLog.Print(message);
+        // force 一定要往下傳：TriadDeckLog.Print 的 force 預設是 false，會再檢查一次
+        // C.ShowOptimizerChatSpam，漏傳等於這裡標的 force 全部作廢。
+        TriadDeckLog.Print(message, force);
     }
 
     private void AnnounceOptimizerSkipOnce(string skipKey, string message)
