@@ -46,6 +46,11 @@ internal static class TriadOptimizedDeckCacheStore
 
     private static readonly object FileLock = new();
 
+    // 只包住真正碰磁碟的那幾行，跟 FileLock 分開。有它才保住「同一個檔不會被兩條執行緒同時寫」
+    // ——那件事原本是 FileLock 順手扛著的，把 I/O 搬出 FileLock 之後就沒人管了。
+    // 取鎖順序永遠是「先放掉 FileLock 再拿 IoLock」，反過來會形成環。
+    private static readonly object IoLock = new();
+
     private static ulong activeContentId;
     private static TriadOptimizedDeckCacheFile? activeFile;
     private static bool loadedForCharacter;
@@ -55,6 +60,14 @@ internal static class TriadOptimizedDeckCacheStore
     // the plugin-configs directory and re-parsing every character's JSON cache file every frame.
     private static IReadOnlyList<TriadOptimizedDeckCacheCharacterView>? cachedCharacterViews;
     private static bool characterViewsDirty = true;
+
+    // 每拍一份存檔快照就 +1（在 FileLock 內）；lastWrittenSequence 是實際落地的最後一號
+    // （在 IoLock 內）。舊快照輪到寫入時若已經有更新的落地了就整份跳過，不把新的蓋回舊的。
+    private static long saveSequence;
+    private static long lastWrittenSequence;
+
+    // 掃磁碟已經搬到 FileLock 外面，所以要有辦法知道「掃的期間資料有沒有又被改過」。
+    private static long viewsScanEpoch;
 
     public static void TickCharacter()
     {
@@ -217,19 +230,26 @@ internal static class TriadOptimizedDeckCacheStore
 
     public static IReadOnlyList<TriadOptimizedDeckCacheCharacterView> GetCharacterCacheViews()
     {
+        EnsureLoaded();
+
+        long scanEpoch;
         lock (FileLock)
         {
-            EnsureLoaded();
-
             if (!characterViewsDirty && cachedCharacterViews != null)
             {
                 return cachedCharacterViews;
             }
 
-            var currentContentId = GetLocalContentId();
-            var views = new List<TriadOptimizedDeckCacheCharacterView>();
-            var configsRoot = GetPluginConfigsRoot();
+            scanEpoch = viewsScanEpoch;
+        }
 
+        // 掃目錄與逐檔讀 JSON 都搬到 FileLock 外面，繪製端不會在持著那把鎖的時候等磁碟。
+        // 這一段改用 IoLock，只擋「同一批檔案同時被寫」，不與繪製端的狀態共用一把鎖。
+        var currentContentId = GetLocalContentId();
+        var scanned = new List<(ulong ContentId, TriadOptimizedDeckCacheFile File)>();
+        lock (IoLock)
+        {
+            var configsRoot = GetPluginConfigsRoot();
             if (Directory.Exists(configsRoot))
             {
                 foreach (var charDir in Directory.EnumerateDirectories(configsRoot, "CHAR_*"))
@@ -241,21 +261,25 @@ internal static class TriadOptimizedDeckCacheStore
                     }
 
                     var cachePath = Path.Combine(charDir, Svc.PluginInterface.InternalName, CacheFileName);
-                    if (!TryLoadCacheFile(cachePath, out var file))
+                    if (!TryLoadCacheFile(cachePath, out var file) || file == null)
                     {
                         continue;
                     }
 
-                    var cacheFile = contentId == currentContentId && activeFile != null && loadedForCharacter
-                        ? activeFile
-                        : file;
-                    if (cacheFile == null)
-                    {
-                        continue;
-                    }
-
-                    views.Add(BuildCharacterView(contentId, cacheFile, contentId == currentContentId));
+                    scanned.Add((contentId, file));
                 }
+            }
+        }
+
+        lock (FileLock)
+        {
+            var views = new List<TriadOptimizedDeckCacheCharacterView>();
+            foreach (var (contentId, file) in scanned)
+            {
+                var cacheFile = contentId == currentContentId && activeFile != null && loadedForCharacter
+                    ? activeFile
+                    : file;
+                views.Add(BuildCharacterView(contentId, cacheFile, contentId == currentContentId));
             }
 
             if (currentContentId != 0 &&
@@ -266,14 +290,22 @@ internal static class TriadOptimizedDeckCacheStore
                 views.Add(BuildCharacterView(currentContentId, activeFile, true));
             }
 
-            cachedCharacterViews =
+            IReadOnlyList<TriadOptimizedDeckCacheCharacterView> ordered =
             [
                 .. views
                     .OrderByDescending(v => v.IsCurrentCharacter)
                     .ThenBy(v => v.DisplayName, StringComparer.OrdinalIgnoreCase)
             ];
-            characterViewsDirty = false;
-            return cachedCharacterViews;
+
+            // 掃描期間資料若又被改過（存檔、換角色、手動重新整理），這批結果只回傳、不落快取，
+            // 讓下一幀重掃；不要拿舊掃描的結果去蓋掉新的狀態。
+            if (scanEpoch == viewsScanEpoch)
+            {
+                cachedCharacterViews = ordered;
+                characterViewsDirty = false;
+            }
+
+            return ordered;
         }
     }
 
@@ -286,7 +318,7 @@ internal static class TriadOptimizedDeckCacheStore
     {
         lock (FileLock)
         {
-            characterViewsDirty = true;
+            MarkCharacterViewsDirtyLocked();
         }
     }
 
@@ -384,6 +416,9 @@ internal static class TriadOptimizedDeckCacheStore
 
     public static void ClearActiveCharacter()
     {
+        ulong contentId;
+        long sequence;
+
         lock (FileLock)
         {
             if (activeContentId == 0)
@@ -393,15 +428,28 @@ internal static class TriadOptimizedDeckCacheStore
 
             activeFile = new();
             loadedForCharacter = true;
-            characterViewsDirty = true;
+            MarkCharacterViewsDirtyLocked();
+            contentId = activeContentId;
+            sequence = ++saveSequence;
+        }
+
+        // 刪檔與寫檔共用同一組號碼與同一把 IoLock，所以「清空」不會被一份更早拍的快照蓋回來。
+        lock (IoLock)
+        {
+            if (sequence <= lastWrittenSequence)
+            {
+                return;
+            }
 
             try
             {
-                var path = GetCachePath(activeContentId);
+                var path = GetCachePath(contentId);
                 if (File.Exists(path))
                 {
                     File.Delete(path);
                 }
+
+                lastWrittenSequence = sequence;
             }
             catch (Exception ex)
             {
@@ -497,24 +545,33 @@ internal static class TriadOptimizedDeckCacheStore
 
             Svc.Framework.RunOnFrameworkThread(() =>
             {
+                bool needsSave;
                 lock (FileLock)
                 {
                     if (activeContentId != contentId)
                         return; // character changed again before this finished; drop stale result
 
                     activeFile = loaded;
-                    characterViewsDirty = true;
-                    ImportLegacyBuildTimestampsLocked();
+                    MarkCharacterViewsDirtyLocked();
+                    needsSave = ImportLegacyBuildTimestampsLocked();
+                }
+
+                // 存檔一定要在 FileLock 外面呼叫：SaveActive() 之後會去拿 IoLock 碰磁碟，
+                // 在 FileLock 內呼叫等於把磁碟等待又搬回這把鎖裡。
+                if (needsSave)
+                {
+                    SaveActive();
                 }
             });
         });
     }
 
-    private static void ImportLegacyBuildTimestampsLocked()
+    /// <summary>回報有沒有改到資料；實際存檔由呼叫端在放掉 FileLock 之後自己做。</summary>
+    private static bool ImportLegacyBuildTimestampsLocked()
     {
         if (activeFile == null || C.TriadOptimizedDeckBuiltUtcTicksByNpcId.Count == 0)
         {
-            return;
+            return false;
         }
 
         var changed = false;
@@ -534,29 +591,58 @@ internal static class TriadOptimizedDeckCacheStore
             changed = true;
         }
 
-        if (changed)
-        {
-            SaveActive();
-        }
+        return changed;
+    }
+
+    // 只在持有 FileLock 時呼叫。
+    private static void MarkCharacterViewsDirtyLocked()
+    {
+        characterViewsDirty = true;
+        viewsScanEpoch++;
     }
 
     private static void SaveActive()
     {
-        if (!loadedForCharacter || activeFile == null)
-        {
-            return;
-        }
+        string json;
+        ulong contentId;
+        long sequence;
 
         lock (FileLock)
         {
+            if (!loadedForCharacter || activeFile == null)
+            {
+                return;
+            }
+
+            StampCharacterMetadata(activeFile);
+
+            // 鎖內只做「拍快照」：序列化成字串之後就沒有任何可變狀態逸出鎖外，
+            // 組路徑（會建目錄）與寫檔都留到出鎖之後。
+            json = JsonConvert.SerializeObject(activeFile, Formatting.Indented);
+            contentId = activeContentId;
+            sequence = ++saveSequence;
+            MarkCharacterViewsDirtyLocked();
+        }
+
+        WriteCacheFile(contentId, json, sequence);
+    }
+
+    private static void WriteCacheFile(ulong contentId, string json, long sequence)
+    {
+        lock (IoLock)
+        {
+            if (sequence <= lastWrittenSequence)
+            {
+                // 已經有更新的快照落地了，這一份是舊的，寫下去等於回退。
+                return;
+            }
+
             try
             {
-                StampCharacterMetadata(activeFile);
-                var path = GetCachePath(activeContentId);
+                var path = GetCachePath(contentId);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                var json = JsonConvert.SerializeObject(activeFile, Formatting.Indented);
                 File.WriteAllText(path, json);
-                characterViewsDirty = true;
+                lastWrittenSequence = sequence;
             }
             catch (Exception ex)
             {
@@ -567,10 +653,13 @@ internal static class TriadOptimizedDeckCacheStore
 
     private static void ResetActive()
     {
-        loadedForCharacter = false;
-        activeFile = null;
-        activeContentId = 0;
-        characterViewsDirty = true;
+        lock (FileLock)
+        {
+            loadedForCharacter = false;
+            activeFile = null;
+            activeContentId = 0;
+            MarkCharacterViewsDirtyLocked();
+        }
     }
 
     private static string GetCachePath(ulong contentId)
