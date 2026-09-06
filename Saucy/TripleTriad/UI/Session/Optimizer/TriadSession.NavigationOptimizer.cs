@@ -54,8 +54,8 @@ public partial class TriadSession
             return;
         }
 
-        // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
-        using var chatScope = TriadChatDeferral.Begin();
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using var chatScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             if (OptimizerInProgress)

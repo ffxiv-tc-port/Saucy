@@ -19,8 +19,8 @@ public partial class TriadSession
             return;
         }
 
-        // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
-        using var chatScope = TriadChatDeferral.Begin();
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using var chatScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             var regionMods = ResolveRegionModsForNpc(preGameNpc);
@@ -283,8 +283,8 @@ public partial class TriadSession
             return;
         }
 
-        // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
-        using var chatScope = TriadChatDeferral.Begin();
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using var chatScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             ApplyOptimizedDeckToProfileLocked(deck, estWinChance);
@@ -338,7 +338,7 @@ public partial class TriadSession
 
     private void AnnounceOptimizerSkipOnce(string skipKey, string message)
     {
-        Svc.Log.Info(message);
+        TriadDeferredSideEffects.Info(message);
         if (_lastOptimizerSkipKey == skipKey)
         {
             return;

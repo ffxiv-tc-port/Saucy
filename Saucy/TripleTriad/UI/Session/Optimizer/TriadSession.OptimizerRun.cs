@@ -92,8 +92,8 @@ public partial class TriadSession
             return;
         }
 
-        // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
-        using (TriadChatDeferral.Begin())
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using (TriadDeferredSideEffects.Begin())
         {
             lock (_preGameLock)
             {
@@ -179,8 +179,8 @@ public partial class TriadSession
             return;
         }
 
-        // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
-        using var chatScope = TriadChatDeferral.Begin();
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using var chatScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             if (result.PassId != _optimizerPassId)
@@ -376,7 +376,7 @@ public partial class TriadSession
 
         message =
             "[Saucy] " + "Loaded cached deck into profile slot ?? for ??.".Loc(targetDeckId + 1, npc.Name);
-        Svc.Log.Info(message);
+        TriadDeferredSideEffects.Info(message);
         return true;
     }
 
@@ -408,7 +408,7 @@ public partial class TriadSession
 
         message ??=
             "[Saucy] " + "Using cached deck for ?? in profile slot ??.".Loc(npc.Name, targetDeckId + 1);
-        Svc.Log.Info(message);
+        TriadDeferredSideEffects.Info(message);
 
         return true;
     }
@@ -436,7 +436,7 @@ public partial class TriadSession
 
         C.TriadOptimizedDeckBuiltUtcTicksByNpcId[npc.Id] = DateTime.UtcNow.Ticks;
         PruneLegacyOptimizedDeckBuildTimestamps();
-        C.Save();
+        TriadDeferredSideEffects.SaveConfig();
     }
 
     private static void PruneLegacyOptimizedDeckBuildTimestamps()
@@ -462,7 +462,7 @@ public partial class TriadSession
             C.TriadOptimizedDeckBuiltUtcTicksByNpcId.Remove(npcId);
         }
 
-        C.Save();
+        TriadDeferredSideEffects.SaveConfig();
     }
 
     private bool TryAdoptExistingSaucyDeckLocked(TriadNpc npc, List<TriadGameModifier> regionMods)
@@ -503,7 +503,7 @@ public partial class TriadSession
         preGameDecks[deckIdx] = deckData;
 
         DebugScreenMemory.UpdatePlayerDeck(deckData.solverDeck);
-        Svc.Log.Info($"[Saucy] Using existing profile deck \"{profileDeck.name}\" in slot {deckIdx + 1}.");
+        TriadDeferredSideEffects.Info($"[Saucy] Using existing profile deck \"{profileDeck.name}\" in slot {deckIdx + 1}.");
         if (TryExtractCardIdsFromProfileDeck(profileDeck, out var cardIds))
         {
             PersistGeneratedDeckCache(
@@ -697,7 +697,7 @@ public partial class TriadSession
         var deckName = $"{npc.Name} (Saucy)";
         if (profileGS == null || profileGS.HasErrors)
         {
-            Svc.Log.Warning("[Saucy] Profile reader unavailable; using optimized deck in memory only.");
+            TriadDeferredSideEffects.Warning("[Saucy] Profile reader unavailable; using optimized deck in memory only.");
             if (persistGeneratedDeckToCache)
             {
                 PersistGeneratedDeckCache(npc, regionMods, cardIds, estWinChance);

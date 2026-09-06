@@ -11,7 +11,7 @@ internal static class TriadDeckLog
             return;
         }
 
-        if (TriadChatDeferral.TryDefer(message))
+        if (TriadDeferredSideEffects.TryDeferChat(message))
         {
             return;
         }
@@ -21,19 +21,27 @@ internal static class TriadDeckLog
 }
 
 /// <summary>
-///     持鎖時不要直接呼叫 <c>Svc.Chat</c>：繪製端與背景工作共用同一把鎖，
-///     鎖內送聊天等於讓每個等鎖的人一起排隊。
-///     用 <see cref="Begin" /> 開一個延後範圍，範圍內要印的訊息先收下來，
-///     範圍結束（已經出鎖）之後再依原順序送出。
-///     判斷「印不印」的閘門仍然留在原本的位置與時機，只有送出這一步被移到鎖外。
+///     持鎖時不要送聊天、不要寫 log、不要存設定：_preGameLock 由繪製端、framework 執行緒
+///     與預覽模擬的背景工作共用，這三件事各自會去搶別的元件的鎖或等磁碟
+///     （Serilog sink 自己有鎖也可能寫檔、EzConfig 存檔是整份序列化＋寫入），
+///     在鎖內做等於讓每個等鎖的人一起排隊。
+///     用 <see cref="Begin" /> 開一個延後範圍，範圍內要做的這些事先收下來，
+///     範圍結束（已經出鎖）之後再做完 —— 仍然在原本那個方法回傳之前同步完成，
+///     不是延後一幀，也不換執行緒。
+///     判斷「做不做」的條件全部留在原本的位置與時機，只有「做」這一步被移到鎖外。
+///     🔑 不在延後範圍內時每個入口都當場自己做（TryDefer 回 false）——
+///     所以漏包某一條持鎖呼叫鏈的後果是「維持原本的行為」，不會變成靜默不做。
 /// </summary>
-internal static class TriadChatDeferral
+internal static class TriadDeferredSideEffects
 {
-    // 緩衝區跟著「持鎖的那一條執行緒」走，所以是 ThreadStatic：
-    // _preGameLock 由 framework 執行緒、繪製端與預覽模擬的 Task 共同競用，
-    // 共用一份緩衝區會把別條執行緒的訊息混進來。
+    // 三個佇列刻意分開、彼此不排序：聊天進遊戲聊天視窗、log 進 Serilog、存檔寫設定檔，
+    // 三個接收端之間本來就沒有可觀察的先後關係，混成一個佇列反而是憑空造出順序。
+    // 每一個佇列「內部」的先後則逐字保留。
+    // 緩衝區跟著「持鎖的那一條執行緒」走，所以是 ThreadStatic。
     [ThreadStatic] private static int deferralDepth;
-    [ThreadStatic] private static List<string>? pendingMessages;
+    [ThreadStatic] private static List<string>? pendingChat;
+    [ThreadStatic] private static List<(bool IsWarning, string Message)>? pendingLog;
+    [ThreadStatic] private static int pendingConfigSaves;
 
     public static Scope Begin()
     {
@@ -41,16 +49,60 @@ internal static class TriadChatDeferral
         return default;
     }
 
-    /// <summary>在延後範圍內就收下訊息並回報 true；不在範圍內回 false，由呼叫端自己送出。</summary>
-    public static bool TryDefer(string message)
+    /// <summary>在延後範圍內就收下聊天訊息並回報 true；不在範圍內回 false，由呼叫端自己送出。</summary>
+    public static bool TryDeferChat(string message)
     {
         if (deferralDepth <= 0)
         {
             return false;
         }
 
-        pendingMessages ??= new List<string>();
-        pendingMessages.Add(message);
+        pendingChat ??= new List<string>();
+        pendingChat.Add(message);
+        return true;
+    }
+
+    public static void Info(string message)
+    {
+        if (!TryDeferLog(false, message))
+        {
+            Svc.Log.Info(message);
+        }
+    }
+
+    public static void Warning(string message)
+    {
+        if (!TryDeferLog(true, message))
+        {
+            Svc.Log.Warning(message);
+        }
+    }
+
+    /// <summary>
+    ///     存設定。刻意用「計數」而不是旗標：原本的碼在同一次呼叫裡最多會存兩次
+    ///     （PruneLegacyOptimizedDeckBuildTimestamps 真的刪到東西時一次、外層再一次），
+    ///     用計數才能讓存檔次數與原本逐字相同。
+    /// </summary>
+    public static void SaveConfig()
+    {
+        if (deferralDepth > 0)
+        {
+            pendingConfigSaves++;
+            return;
+        }
+
+        C.Save();
+    }
+
+    private static bool TryDeferLog(bool isWarning, string message)
+    {
+        if (deferralDepth <= 0)
+        {
+            return false;
+        }
+
+        pendingLog ??= new List<(bool, string)>();
+        pendingLog.Add((isWarning, message));
         return true;
     }
 
@@ -60,23 +112,63 @@ internal static class TriadChatDeferral
         {
             if (--deferralDepth > 0)
             {
+                // 還在外層的延後範圍內（持鎖呼叫鏈有巢狀），由最外層那個統一做完。
                 return;
             }
 
             deferralDepth = 0;
+            FlushLog();
+            FlushChat();
+            FlushConfigSave();
+        }
 
-            var pending = pendingMessages;
+        // 每個 Flush 都先拍快照再清空：做的期間如果又有新的進來，不會跟這一輪混在一起。
+        private static void FlushLog()
+        {
+            var pending = pendingLog;
             if (pending == null || pending.Count == 0)
             {
                 return;
             }
 
-            // 先拍快照再清空：送出期間如果又有新訊息進來，不會跟這一輪混在一起。
+            var entries = pending.ToArray();
+            pending.Clear();
+            foreach (var (isWarning, message) in entries)
+            {
+                if (isWarning)
+                {
+                    Svc.Log.Warning(message);
+                }
+                else
+                {
+                    Svc.Log.Info(message);
+                }
+            }
+        }
+
+        private static void FlushChat()
+        {
+            var pending = pendingChat;
+            if (pending == null || pending.Count == 0)
+            {
+                return;
+            }
+
             var messages = pending.ToArray();
             pending.Clear();
             foreach (var message in messages)
             {
                 Svc.Chat.Print(message);
+            }
+        }
+
+        private static void FlushConfigSave()
+        {
+            var count = pendingConfigSaves;
+            pendingConfigSaves = 0;
+            for (var i = 0; i < count; i++)
+            {
+                C.Save();
             }
         }
     }

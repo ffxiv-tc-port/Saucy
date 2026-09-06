@@ -455,8 +455,8 @@ public partial class TriadSession
             {
                 if (ShouldBuildOptimizedDeck())
                 {
-                    // 鎖內不送聊天：這段的呼叫鏈會走到 TriadDeckLog.Print，先收起來出鎖再送。
-                    using (TriadChatDeferral.Begin())
+                    // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+                    using (TriadDeferredSideEffects.Begin())
                     {
                         lock (_preGameLock)
                         {
