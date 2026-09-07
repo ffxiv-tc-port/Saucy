@@ -101,7 +101,7 @@ internal static class TriadDeferredSideEffects
 
     /// <summary>
     ///     出鎖之後才做的動作。用在「整段都不該在持鎖時跑」的工作 —— 目前是
-    ///     StartDeckOptimizer 與 EnsurePreviewEvalForNpc，兩者的呼叫鏈會打 vnavmesh／
+    ///     StartDeckOptimizer、EnsurePreviewEvalForNpc 與 OnPrepRulesUpdated，它們的呼叫鏈會打 vnavmesh／
     ///     Lifestream／Questionable 的 IPC，而 IPC 是在呼叫端的執行緒上執行對方的程式碼，
     ///     在鎖內打等於把自己的鎖交給別的外掛持有。
     ///     🔑 不在延後範圍內時當場執行，與其他入口一樣：漏包的後果是維持原本的行為。

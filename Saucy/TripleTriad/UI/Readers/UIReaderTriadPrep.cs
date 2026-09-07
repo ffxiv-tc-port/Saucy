@@ -90,6 +90,9 @@ public class UIReaderTriadPrep
         }
         else if (!string.IsNullOrWhiteSpace(cachedState.npc) && TriadRun.SyncPrepRulesFromState(cachedState))
         {
+            // 這條路徑不在 _preGameLock 內，也不在任何 TriadDeferredSideEffects 的延後範圍內，
+            // 所以 OnPrepRulesUpdated 裡的 RunAfterLock 會就地執行，行為與以前相同。
+            // ⚠️ 日後若把這條路徑包進 Begin() 範圍，那三個動作就會延到範圍結束才跑。
             TriadRun.OnPrepRulesUpdated(TriadRun.preGameNpc!);
         }
         else if (notifyDeckEval && wasFirstShow && !string.IsNullOrWhiteSpace(cachedState.npc))

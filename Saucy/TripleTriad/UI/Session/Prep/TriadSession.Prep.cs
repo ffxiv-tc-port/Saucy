@@ -316,16 +316,30 @@ public partial class TriadSession
             return;
         }
 
-        EnsurePreviewEvalForNpc(npc, preGameMods);
-        if (ShouldBuildOptimizedDeck())
-        {
-            EnsureOptimizedDeckPreviewEval(npc);
-        }
+        // 這三個動作的呼叫鏈會走到 Vnavmesh.ShouldDeferHeavyWork()（EnsurePreviewEvalForNpc 開頭那道閘門），
+        // 而本方法可能是從 _preGameLock 內經 ResolveRegionModsForNpc 的 prep 同步子樹進來的 ——
+        // 在鎖內打別的外掛的 IPC 等於把自己的鎖交給對方持有，所以整段移到出鎖之後才做。
+        // 🔑 「做不做」仍然在這裡、用這一刻的值決定，只有「做」被搬到鎖外；
+        //    不在延後範圍內時 RunAfterLock 當場執行，行為與原本逐字相同。
+        // 🔴 preGameMods 是欄位，而且每次都是整份換掉（不是就地改內容），lambda 稍後才讀
+        //    會拿到換過的那一份，所以先拍成區域變數再帶進去。
+        var deferredMods = preGameMods;
+        var buildOptimizedDeck = ShouldBuildOptimizedDeck();
+        var ensureSaucyDeck = buildOptimizedDeck || ShouldUseCachedOptimizedDeckIfAvailable();
 
-        if (ShouldBuildOptimizedDeck() || ShouldUseCachedOptimizedDeckIfAvailable())
+        TriadDeferredSideEffects.RunAfterLock(() =>
         {
-            EnsureExistingSaucyDeckForPrep();
-        }
+            EnsurePreviewEvalForNpc(npc, deferredMods);
+            if (buildOptimizedDeck)
+            {
+                EnsureOptimizedDeckPreviewEval(npc);
+            }
+
+            if (ensureSaucyDeck)
+            {
+                EnsureExistingSaucyDeckForPrep();
+            }
+        });
     }
 
     public void OnMatchPrepDetected(UIStateTriadPrep state)
