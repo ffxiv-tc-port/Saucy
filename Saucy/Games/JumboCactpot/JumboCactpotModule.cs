@@ -33,15 +33,11 @@ public unsafe class JumboCactpotModule : Module
     /// <summary>addon 內部名，跨語言用戶端一致（非在地化字串）。</summary>
     private const string AddonName = "LotteryWeeklyInput";
 
-    /// <summary>面板消失超過這麼久就當成「重新進場」，張數計數歸零。</summary>
-    private const int VisitResetMs = 10000;
-
     /// <summary>每週可購買的張數。純粹用於狀態顯示，不當成閘門——真正的上限由伺服器決定，
     /// 本模組不做「還剩幾張」的推測。</summary>
-    private const int WeeklyTicketCount = 3;
+    private const int WeeklyTicketCount = Configuration.JumboCactpotTicketsPerWeek;
 
     private DateTime? panelReadyUtc;
-    private DateTime? addonGoneSinceUtc;
 
     /// <summary>這一次開窗是否已經送出過號碼。只在面板關閉（或重開）時解除，
     /// 所以玩家若在確認框按「否」，模組不會立刻再送一次跟他搶。</summary>
@@ -57,6 +53,9 @@ public unsafe class JumboCactpotModule : Module
     /// <summary>這次進場已經送出過幾張的號碼（不代表已成交——成交與否取決於玩家按不按確認）。</summary>
     public int TicketsSubmitted => ticketsSubmitted;
 
+    /// <summary>下一張會用第幾格號碼（0 起算）。給設定面板顯示「下一張會用哪個號碼」用。</summary>
+    public int NextTicketIndex => ticketsSubmitted;
+
     public override void Enable()
     {
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, AddonName, OnAddonEvent);
@@ -71,7 +70,6 @@ public unsafe class JumboCactpotModule : Module
         TaskManager.Abort();
         ResetWindowState();
         ticketsSubmitted = 0;
-        addonGoneSinceUtc = null;
         LastAction = "等待開啟仙人仙彩購票面板";
     }
 
@@ -87,18 +85,19 @@ public unsafe class JumboCactpotModule : Module
         if (addon == null)
         {
             MinigameInputPacing.Reset(ref panelReadyUtc);
-            addonGoneSinceUtc ??= DateTime.UtcNow;
-            if (ticketsSubmitted > 0 &&
-                (DateTime.UtcNow - addonGoneSinceUtc.Value).TotalMilliseconds >= VisitResetMs)
+
+            // 離開金碟遊樂園＝這次進場結束，張數計數重來。
+            // 🔴 舊版的判準是「面板消失超過 10 秒」。在「三張各自指定號碼」上線之前那只影響狀態列
+            // 顯示的張數，上線之後它會決定用哪一格號碼——玩家站在購票 NPC 前面發呆超過 10 秒，
+            // 第二張就會被當成第一張，於是買到兩張一模一樣的號碼。改用地圖判準之後，
+            // 只要人還在金碟遊樂園（TerritoryType 144）裡，第幾張就一直算得對。
+            if (ticketsSubmitted > 0 && !InSaucer)
             {
-                // 離開夠久＝下次是重新進場，張數計數重來。
                 ticketsSubmitted = 0;
             }
 
             return;
         }
-
-        addonGoneSinceUtc = null;
 
         if (submittedForThisWindow)
         {
@@ -118,7 +117,10 @@ public unsafe class JumboCactpotModule : Module
             return;
         }
 
-        var number = ResolveNumber();
+        // 第幾張決定用哪一格號碼：ticketsSubmitted 是「已送出幾張」，
+        // 所以它同時就是這一張的 0 起算索引。
+        var ticketIndex = ticketsSubmitted;
+        var number = ResolveNumber(ticketIndex);
 
         // 同一扇購票面板只送一次：submittedForThisWindow 已經是閂，守衛是同一件事的位址版
         // （PostSetup／PreFinalize 都會解除），被擋下就下一幀再來，行為不變。
@@ -139,13 +141,30 @@ public unsafe class JumboCactpotModule : Module
         Log($"Submitted number {number:D4} (ticket {ticketsSubmitted})");
     }
 
-    /// <summary>號碼來源：固定號碼或隨機。
+    /// <summary>號碼來源：隨機、單一固定號碼、或三張各自指定。
     /// <para>⚠️ 隨機的上界是 <c>10000</c>（exclusive），也就是真的能開出 9999。
-    /// DR 原版寫的是 <c>new Random().Next(0, 9999)</c>，永遠開不到 9999——那是差一，不是刻意的。</para></summary>
-    private static int ResolveNumber() =>
-        C.JumboCactpotUseFixedNumber
-            ? Math.Clamp(C.JumboCactpotFixedNumber, 0, Configuration.JumboCactpotMaxNumber)
-            : Random.Shared.Next(0, Configuration.JumboCactpotMaxNumber + 1);
+    /// DR 原版寫的是 <c>new Random().Next(0, 9999)</c>，永遠開不到 9999——那是差一，不是刻意的。</para>
+    /// <para>🔴 每一層讀不到設定都往「隨機」退：買彩券是真的在花使用者的金碟幣，
+    /// 寧可退回既有行為，也不要拿一個猜出來的號碼去買。</para></summary>
+    /// <param name="ticketIndex">本次進場的第幾張（0 起算）。</param>
+    private static int ResolveNumber(int ticketIndex)
+    {
+        if (!C.JumboCactpotUseFixedNumber)
+        {
+            return RandomNumber();
+        }
+
+        if (!C.JumboCactpotPerTicketNumbers)
+        {
+            return Math.Clamp(C.JumboCactpotFixedNumber, 0, Configuration.JumboCactpotMaxNumber);
+        }
+
+        return JumboCactpotNumberPlan.TryGetNumber(C, ticketIndex, out var number)
+            ? number
+            : RandomNumber();
+    }
+
+    private static int RandomNumber() => Random.Shared.Next(0, Configuration.JumboCactpotMaxNumber + 1);
 
     private void ResetWindowState()
     {

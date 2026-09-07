@@ -13,6 +13,7 @@ using Saucy.OtherGames;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using JumboNumberPlan = Saucy.JumboCactpot.JumboCactpotNumberPlan;
 namespace Saucy;
 
 public unsafe partial class PluginUI
@@ -622,32 +623,53 @@ public unsafe partial class PluginUI
         {
             using var indent = ImRaii.PushIndent();
             var useFixed = C.JumboCactpotUseFixedNumber;
-            if (ImGui.Checkbox("使用固定號碼##JumboCactpotUseFixed", ref useFixed))
+            if (ImGui.Checkbox("使用指定號碼##JumboCactpotUseFixed", ref useFixed))
             {
                 C.JumboCactpotUseFixedNumber = useFixed;
                 C.Save();
             }
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("不勾＝每張都重新隨機（0000-9999，含兩端）。\n" +
-                                 "勾起來＝每張都用你指定的同一組號碼。");
+                ImGui.SetTooltip("不勾（預設）＝每張都重新隨機（0000-9999，含兩端）。\n" +
+                                 "勾起來＝用你自己挑的號碼；要三張各用一組的話，勾起來之後再看下面那一項。");
             }
 
             if (useFixed)
             {
-                var fixedNumber = C.JumboCactpotFixedNumber;
-                ImGui.SetNextItemWidth(220);
-                if (ImGui.InputInt("固定號碼##JumboCactpotFixedNumber", ref fixedNumber))
+                using var fixedIndent = ImRaii.PushIndent();
+                var perTicket = C.JumboCactpotPerTicketNumbers;
+                if (ImGui.Checkbox("三張各自指定不同號碼##JumboCactpotPerTicket", ref perTicket))
                 {
-                    C.JumboCactpotFixedNumber = Math.Clamp(fixedNumber, 0, Configuration.JumboCactpotMaxNumber);
+                    C.JumboCactpotPerTicketNumbers = perTicket;
                     C.Save();
                 }
                 if (ImGui.IsItemHovered())
                 {
-                    ImGui.SetTooltip("0000 到 9999，超出範圍會自動夾回。");
+                    ImGui.SetTooltip("不勾（預設）＝三張都用下面那一組號碼，跟以前一樣。\n" +
+                                     "勾起來＝每週三張各自用一組；某一張沒有勾「指定號碼」的話，那張就隨機。\n" +
+                                     "「第幾張」是以這次進金碟遊樂園以來已送出的張數計算，離開遊樂園才重新從第一張算起。");
                 }
 
-                SaucyTheme.TextMuted($"目前號碼：{Math.Clamp(C.JumboCactpotFixedNumber, 0, Configuration.JumboCactpotMaxNumber):D4}");
+                if (perTicket)
+                {
+                    DrawJumboPerTicketNumbers();
+                }
+                else
+                {
+                    var fixedNumber = C.JumboCactpotFixedNumber;
+                    ImGui.SetNextItemWidth(220);
+                    if (ImGui.InputInt("固定號碼##JumboCactpotFixedNumber", ref fixedNumber))
+                    {
+                        C.JumboCactpotFixedNumber = Math.Clamp(fixedNumber, 0, Configuration.JumboCactpotMaxNumber);
+                        C.Save();
+                    }
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip("0000 到 9999，超出範圍會自動夾回。");
+                    }
+
+                    SaucyTheme.TextMuted($"目前號碼：{Math.Clamp(C.JumboCactpotFixedNumber, 0, Configuration.JumboCactpotMaxNumber):D4}");
+                }
             }
         }
 
@@ -658,6 +680,52 @@ public unsafe partial class PluginUI
 
         var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.JumboCactpot.JumboCactpotModule>();
         SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
+
+        // 「下一張會用哪個號碼」放在列上而不是 tooltip：這是使用者按下確認前唯一能核對的地方，
+        // 而且模組算的張數與他心裡想的可能不一樣（離開遊樂園才會歸零），看不見就等於猜。
+        if (enabled && module != null && C.JumboCactpotUseFixedNumber && C.JumboCactpotPerTicketNumbers)
+        {
+            var next = module.NextTicketIndex;
+            SaucyTheme.TextMuted(next < Configuration.JumboCactpotTicketsPerWeek
+                ? $"下一張是第 {next + 1} 張，會用：{JumboNumberPlan.Describe(C, next)}"
+                : "本次進場的三張都送出過了，再開面板會用隨機號碼。");
+        }
+    }
+
+    /// <summary>三張彩券各自的號碼設定。
+    /// 🔴 索引一律走 JumboCactpotNumberPlan.Normalize——設定檔是使用者改得到的 JSON，
+    /// 陣列長度與元素是不是 null 都不能假設。</summary>
+    private static void DrawJumboPerTicketNumbers()
+    {
+        var slots = JumboNumberPlan.Normalize(C);
+        for (var i = 0; i < slots.Length; i++)
+        {
+            var slot = slots[i];
+            var useSpecific = slot.UseSpecificNumber;
+            if (ImGui.Checkbox($"第 {i + 1} 張指定號碼##JumboCactpotTicketUse{i}", ref useSpecific))
+            {
+                slot.UseSpecificNumber = useSpecific;
+                C.Save();
+            }
+
+            ImGui.SameLine();
+            if (!useSpecific)
+            {
+                SaucyTheme.TextMuted("隨機");
+                continue;
+            }
+
+            ImGui.SetNextItemWidth(160);
+            var number = slot.Number;
+            if (ImGui.InputInt($"##JumboCactpotTicketNumber{i}", ref number))
+            {
+                slot.Number = Math.Clamp(number, 0, Configuration.JumboCactpotMaxNumber);
+                C.Save();
+            }
+
+            ImGui.SameLine();
+            SaucyTheme.TextMuted($"{Math.Clamp(slot.Number, 0, Configuration.JumboCactpotMaxNumber):D4}");
+        }
     }
 
     /// <summary>力量表難度下拉選單的顯示名稱——三個成員本身是怪物名(泰坦/毛爾波爾/仙人掌怪)，

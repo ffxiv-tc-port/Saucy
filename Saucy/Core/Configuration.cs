@@ -1,6 +1,7 @@
 using Dalamud.Configuration;
 using ECommons.Configuration;
 using Newtonsoft.Json;
+using Saucy.JumboCactpot;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -111,6 +112,21 @@ public class Configuration : IPluginConfiguration
     public int JumboCactpotFixedNumber { get; set; } = 0;
 
     public const int JumboCactpotMaxNumber = 9999;
+
+    /// <summary>仙人仙彩：每週可購買的張數。三張各自指定號碼時，設定陣列就是這個長度。</summary>
+    public const int JumboCactpotTicketsPerWeek = 3;
+
+    /// <summary>仙人仙彩：指定號碼模式下，三張是不是各自用不同號碼。
+    /// false（預設）＝三張都用 <see cref="JumboCactpotFixedNumber"/>，也就是升級前的既有行為；
+    /// true＝依「本次進場的第幾張」取用 <see cref="JumboCactpotTicketNumbers"/> 對應的那一格，
+    /// 那一格沒有指定號碼就該張隨機。只在 <see cref="JumboCactpotUseFixedNumber"/> 為 true 時生效。</summary>
+    public bool JumboCactpotPerTicketNumbers { get; set; } = false;
+
+    /// <summary>仙人仙彩：三張彩券各自的號碼設定。
+    /// 🔴 不要直接索引這個陣列——長度與元素非 null 由
+    /// <see cref="JumboCactpotNumberPlan.Normalize"/> 保證，取用一律走它。</summary>
+    public JumboCactpotTicketNumber[] JumboCactpotTicketNumbers { get; set; } =
+        [new(), new(), new()];
 
     /// <summary>重複幻卡交換：安全線。只有持有數超過這個值的卡才會被列為「可賣」，
     /// 確保每種卡（含牌組用的那張）至少留這麼多張。預設 1。只在 SellDuplicateCards 模組啟用時生效。</summary>
