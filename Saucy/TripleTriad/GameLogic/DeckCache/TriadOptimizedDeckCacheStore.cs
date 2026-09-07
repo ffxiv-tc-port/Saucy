@@ -433,6 +433,18 @@ internal static class TriadOptimizedDeckCacheStore
             sequence = ++saveSequence;
         }
 
+        // 出鎖之後才碰磁碟：在 _preGameLock 的延後範圍內時排到出鎖後才刪，
+        // 不在範圍內時當場刪，與原本逐字相同。
+        if (TriadDeferredSideEffects.TryDeferFileWrite(() => DeleteCacheFile(contentId, sequence)))
+        {
+            return;
+        }
+
+        DeleteCacheFile(contentId, sequence);
+    }
+
+    private static void DeleteCacheFile(ulong contentId, long sequence)
+    {
         // 刪檔與寫檔共用同一組號碼與同一把 IoLock，所以「清空」不會被一份更早拍的快照蓋回來。
         lock (IoLock)
         {
@@ -622,6 +634,14 @@ internal static class TriadOptimizedDeckCacheStore
             contentId = activeContentId;
             sequence = ++saveSequence;
             MarkCharacterViewsDirtyLocked();
+        }
+
+        // 出鎖之後才碰磁碟：在 _preGameLock 的延後範圍內時排到出鎖後才寫，
+        // 不在範圍內時當場寫，與原本逐字相同。序號閘門保證被延後的舊快照
+        // 不會蓋掉已經落地的新快照。
+        if (TriadDeferredSideEffects.TryDeferFileWrite(() => WriteCacheFile(contentId, json, sequence)))
+        {
+            return;
         }
 
         WriteCacheFile(contentId, json, sequence);

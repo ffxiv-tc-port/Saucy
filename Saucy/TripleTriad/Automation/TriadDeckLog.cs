@@ -42,6 +42,11 @@ internal static class TriadDeferredSideEffects
     [ThreadStatic] private static List<string>? pendingChat;
     [ThreadStatic] private static List<(DeferredLogLevel Level, string Message)>? pendingLog;
     [ThreadStatic] private static int pendingConfigSaves;
+
+    // 第四個佇列是「碰磁碟的動作」：牌組快取的寫檔與刪檔。
+    // 它一定排在 pendingActions 之前：出鎖後才跑的動作自己還會再改快取並寫檔，
+    // 寫檔排在動作後面的話，先拍的那一份會被序號閘門判成舊的而整份跳過。
+    [ThreadStatic] private static List<Action>? pendingFileWrites;
     [ThreadStatic] private static List<Action>? pendingActions;
 
     private enum DeferredLogLevel
@@ -129,6 +134,22 @@ internal static class TriadDeferredSideEffects
         C.Save();
     }
 
+    /// <summary>
+    ///     寫檔（牌組快取）。在延後範圍內就收下來並回報 true；不在範圍內回 false，
+    ///     由呼叫端自己當場寫 —— 漏包某一條持鎖呼叫鏈的後果是維持原本的行為。
+    /// </summary>
+    public static bool TryDeferFileWrite(Action write)
+    {
+        if (deferralDepth <= 0)
+        {
+            return false;
+        }
+
+        pendingFileWrites ??= new List<Action>();
+        pendingFileWrites.Add(write);
+        return true;
+    }
+
     private static bool TryDeferLog(DeferredLogLevel level, string message)
     {
         if (deferralDepth <= 0)
@@ -155,6 +176,7 @@ internal static class TriadDeferredSideEffects
             FlushLog();
             FlushChat();
             FlushConfigSave();
+            FlushFileWrites();
 
             // 動作排最後:它們自己還會寫 log／送聊天,此時 deferralDepth 已歸零,
             // 所以會當場輸出 —— 排在前面三個之後才不會把先後順序倒過來。
@@ -212,6 +234,22 @@ internal static class TriadDeferredSideEffects
             for (var i = 0; i < count; i++)
             {
                 C.Save();
+            }
+        }
+
+        private static void FlushFileWrites()
+        {
+            var pending = pendingFileWrites;
+            if (pending == null || pending.Count == 0)
+            {
+                return;
+            }
+
+            var writes = pending.ToArray();
+            pending.Clear();
+            foreach (var write in writes)
+            {
+                write();
             }
         }
 
