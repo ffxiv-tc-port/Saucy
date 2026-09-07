@@ -152,6 +152,10 @@ public partial class TriadSession
             return null;
         }
 
+        // 鎖內不做聊天／log／存設定／寫牌組快取檔：這段的呼叫鏈經過 ResolveRegionModsForNpc
+        // 的 prep 同步子樹會走到那幾種副作用，先收起來，出鎖之後才做。
+        using var deferScope = TriadDeferredSideEffects.Begin();
+
         RefreshPrepRulesFromLive();
         var previewRules = ResolvePreviewRulesForNpc(npc);
         if (TriadUiState.IsBoardVisible())

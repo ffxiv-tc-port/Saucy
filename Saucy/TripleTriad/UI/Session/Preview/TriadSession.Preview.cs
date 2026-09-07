@@ -185,6 +185,9 @@ public partial class TriadSession
             return null;
         }
 
+        // 鎖內不做聊天／log／存設定／寫牌組快取檔：這段的呼叫鏈經過 ResolveRegionModsForNpc
+        // 的 prep 同步子樹會走到那幾種副作用，先收起來，出鎖之後才做。
+        using var deferScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             return TryGetDeckPreviewDataLocked(npc, deckId, ResolvePreviewRulesForNpc(npc));
@@ -255,6 +258,9 @@ public partial class TriadSession
             return;
         }
 
+        // 鎖內不做聊天／log／存設定／寫牌組快取檔：這段的呼叫鏈經過 ResolveRegionModsForNpc
+        // 的 prep 同步子樹會走到那幾種副作用，先收起來，出鎖之後才做。
+        using var deferScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             if (!HasOptimizedDeckApplied || _optimizerTargetDeckId < 0)
@@ -310,6 +316,9 @@ public partial class TriadSession
 
         var parseCtx = new GameUIParser();
         List<DeckData> decksToEval;
+        // 鎖內不做 log：EnumerateSimmableProfileDecks 走到 GameUIParser 的解析失敗時會寫 Error，
+        // 先收起來，出鎖之後才寫。
+        using var deferScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             decksToEval = [.. EnumerateSimmableProfileDecks(profileDecks, parseCtx)];
@@ -340,6 +349,9 @@ public partial class TriadSession
             return false;
         }
 
+        // 鎖內不做 log：EnumerateSimmableProfileDecks 走到 GameUIParser 的解析失敗時會寫 Error，
+        // 先收起來，出鎖之後才寫。
+        using var deferScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             foreach (var flightKey in _previewEvalInFlight)
