@@ -422,7 +422,20 @@ public static unsafe class SelectYesnoHelper
             return;
         }
 
-        var text = textNode->NodeText.ToString();
+        // 🔴 NodeText.ToString() 就是 Encoding.UTF8.GetString(AsSpan())，完全不剝 SeString
+        //    payload：道具連結那種帶 0xFF 長度前綴的 payload 會解出 U+FFFD，內嵌圖示 payload
+        //    （02 12 02 <icon+1> 03）則留下可列印的雜字元 —— 後者會被下面的數字正規式當成
+        //    金額撿走。改走 GetText()（底下是 MemoryHelper.ReadSeString，只保留 TextPayload），
+        //    拿到的是玩家實際看得見的那串字。
+        // ⚠️ StringPtr 判空不能省：MemoryHelper.ReadSeString 只判 Utf8String* 本身非 null，
+        //    StringPtr 為 null 而 Length 還留著殘值時，AsSpan() 會建出一個長度非零、指向位址 0
+        //    的 Span，讀下去就是攔不到的存取違規（AVE 是 corrupted-state exception）。
+        if (!textNode->NodeText.StringPtr.HasValue)
+        {
+            return;
+        }
+
+        var text = textNode->NodeText.GetText();
         if (string.IsNullOrWhiteSpace(text))
         {
             return;
@@ -476,12 +489,17 @@ public static unsafe class SelectYesnoHelper
         }
 
         var textNode = yesno->AtkUnitBase.GetTextNodeById(PromptTextNodeId);
-        if (textNode == null)
+        // ⚠️ StringPtr 判空不能省，理由同 TryCollectDigitGroupsFromTextNode。
+        if (textNode == null || !textNode->NodeText.StringPtr.HasValue)
         {
             return string.Empty;
         }
 
-        return textNode->NodeText.ToString();
+        // 🔴 與上面主路徑（PromptText->NodeText.GetText()）同基準，一律剝掉 SeString payload。
+        //    原本這條備援用 ToString()：SelectYesno 的提示常含道具連結，payload 必定解出
+        //    U+FFFD ⇒ 餵進 AddonPressGuard.LooksCorrupted 之後守衛「永遠」成立，
+        //    等於這條備援路徑一次都按不下去，而且長得跟「視窗真的在變動」一模一樣。
+        return textNode->NodeText.GetText();
     }
 
     private static bool TryGetVisibleButtonByNodeId(AddonSelectYesno* yesno, uint nodeId, out AtkComponentButton* button)
