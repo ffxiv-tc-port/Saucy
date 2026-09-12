@@ -96,7 +96,10 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
         (cachedState.screenPos, cachedState.screenSize) = GUINodeUtils.GetNodePosAndSize(addon->AtkUnitBase.RootNode);
 
-        var descNode = addon->SelectedCardDescription;
+        // 🔴 不可以用 addon->SelectedCardDescription:CS 的 +0x4F8 在台服指到卡片族名節點,
+        // 而同一塊欄位區裡 CS 的 SelectedCardName(+0x4E8)在台服根本不存在、解參考就是 AVE。
+        // 全部改走 GSInfoCardListNodes(台服位移 + 節點清單成員資格證明)。
+        var descNode = GSInfoCardListNodes.SelectedCardDescription(addon);
         if (descNode == null)
         {
             SetStatus(Status.NodesNotReady);
@@ -428,9 +431,15 @@ public unsafe class UIReaderTriadCardList : IUIReader
     /// <remarks>
     /// 🔴 這裡擋的不是「指標是不是 null」—— addon 指標每幀都由 GetAddonByName 重查,本身沒有跨幀
     /// 保存的問題。擋的是另一件事:AtkUnitBase 還掛在 addon 清單上(所以 GetAddonByName 仍然回得到,
-    /// RootNode 欄位也還留著舊值),但 UldManager 已經把節點釋放掉了。此時 SelectedCardName /
-    /// SelectedCardNumber / SelectedCardDescription 這些欄位是「非 null 的野指標」,判空完全擋不住,
-    /// GUINodeUtils.GetNodeText 一讀 node->Type 就是 AccessViolationException。
+    /// RootNode 欄位也還留著舊值),但 UldManager 已經把節點釋放掉了。此時詳細面板那幾個欄位是
+    /// 「非 null 的野指標」,判空完全擋不住,GUINodeUtils.GetNodeText 一讀 node->Type 就是
+    /// AccessViolationException。
+    /// <para>
+    /// 🔴🔴 ⚠️ 這道閘門<b>不是</b>詳細面板節點的完整防護,而且它擋不住實機那兩次崩潰 ——
+    /// 真因是 FFXIVClientStructs 的 AddonGSInfoCardList 欄位位移在台服是錯的
+    /// (CS 的 SelectedCardName +0x4E8 在台服沒有對應欄位,連建構子都不清零),
+    /// 與 ULD 死活無關。詳細面板一律走 <see cref="GSInfoCardListNodes"/>,證據寫在那個檔。
+    /// </para>
     /// <para>
     /// 🔴 AVE 在 .NET Core 是 corrupted-state exception,try/catch 與 HookSafety.ExecuteSafe 都攔不到,
     /// 整個遊戲行程直接死,所以只能靠事前閘門,不能靠例外隔離。
