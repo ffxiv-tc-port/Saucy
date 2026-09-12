@@ -377,7 +377,11 @@ internal static unsafe class TriadCardListSelectionReader
             }
         }
 
-        AddCandidate(addon->SelectedPage, addon->SelectedCardIndex);
+        if (GSInfoCardListState.TryGetPageIndex(addon, out var pageIndex) &&
+            GSInfoCardListState.TryGetCellIndex(addon, out var cellIndex))
+        {
+            AddCandidate(pageIndex, cellIndex);
+        }
 
         if (agent != null)
         {

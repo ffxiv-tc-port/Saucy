@@ -26,12 +26,19 @@ internal static unsafe class GoldSaucerCardListUi
             return false;
         }
 
-        if (pageIndex >= 0 && pageIndex != addon->SelectedPage)
+        if (pageIndex >= 0)
         {
-            // Old FFXIVClientStructs has no separate RequestedPage hint field; the tab
-            // controller call below is what actually drives the page change.
-            addon->TabController.SetTabIndexAndCallBack(pageIndex);
-            atkUnit->Update(0);
+            // 讀不到目前頁索引就不切頁,也不按格子:不知道現況時動 UI 只會把狀態弄得更糟。
+            if (!GSInfoCardListState.TryGetPageIndex(addon, out var livePageIndex))
+            {
+                return false;
+            }
+
+            if (pageIndex != livePageIndex)
+            {
+                addon->TabController.SetTabIndexAndCallBack(pageIndex);
+                atkUnit->Update(0);
+            }
         }
 
         return TryClickCell(addonPtr, cellIndex);

@@ -5,21 +5,12 @@ using Saucy.Framework;
 using System;
 namespace Saucy.TripleTriad.UI;
 
-internal static class CardListFilterMapping
-{
-    // Old FFXIVClientStructs' AgentGoldSaucer has no CardListFilterMode field; the addon
-    // itself (AddonGSInfoCardList.FilterMode) tracks the same "which cards are shown" state.
-    public static byte ToCollectionFilter(GSInfoCardListFilterMode mode) =>
-        mode switch
-        {
-            GSInfoCardListFilterMode.DisplayOwnedCards => (byte)GameCardCollectionFilter.OnlyOwned,
-            GSInfoCardListFilterMode.DisplayUnownedCards => (byte)GameCardCollectionFilter.OnlyMissing,
-            var _ => (byte)GameCardCollectionFilter.All
-        };
-}
-
 public unsafe class UIReaderTriadCardList : IUIReader
 {
+    // 台服的 addon 沒有存篩選模式的整數欄位(CS 那個位移落在節點指標上),所以只能用中性的「全部」
+    // —— 與修正前的實際行為相同。推導見 commit 訊息。
+    private const byte UnknownCollectionFilter = (byte)GameCardCollectionFilter.All;
+
     public enum Status
     {
         NoErrors,
@@ -109,9 +100,13 @@ public unsafe class UIReaderTriadCardList : IUIReader
         (cachedState.descriptionPos, cachedState.descriptionSize) =
             GUINodeUtils.GetNodePosAndSize(&descNode->AtkResNode);
 
-        var newPageIndex = (byte)addon->SelectedPage;
-        var newCardIndex = (byte)addon->SelectedCardIndex;
-        var newFilterMode = CardListFilterMapping.ToCollectionFilter(addon->FilterMode);
+        // 讀不到就沿用上一幀的值:清單本身還有名稱／說明／編號等其他線索可用,
+        // 但「到位了沒」一律不准用推測值判定(見 atPendingCell)。
+        var hasLivePage = GSInfoCardListState.TryGetPageIndex(addon, out var livePageIndex);
+        var hasLiveCell = GSInfoCardListState.TryGetCellIndex(addon, out var liveCellIndex);
+        var newPageIndex = hasLivePage ? (byte)livePageIndex : cachedState.pageIndex;
+        var newCardIndex = hasLiveCell ? (byte)liveCellIndex : cachedState.cardIndex;
+        var newFilterMode = UnknownCollectionFilter;
 
         // 🔴 每次使用時重新取得,不沿用任何跨幀保存的 agent 指標(見 ResolveAgent)。
         // 取不到時是 null,ReadSelectedCardId 的 agent 參數本來就允許 null。
@@ -129,7 +124,8 @@ public unsafe class UIReaderTriadCardList : IUIReader
                 pendingNavGraceFrames--;
             }
 
-            var atPendingCell = newPageIndex == pendingNavPage && newCardIndex == pendingNavCell;
+            var atPendingCell = hasLivePage && hasLiveCell &&
+                                newPageIndex == pendingNavPage && newCardIndex == pendingNavCell;
 
             if (IsPendingNavigationComplete(addon))
             {
@@ -258,9 +254,9 @@ public unsafe class UIReaderTriadCardList : IUIReader
             return false;
         }
 
-        var filterMode = CardListFilterMapping.ToCollectionFilter(addon->FilterMode);
         var displayCardId = TriadCardListSelectionReader.TryParseCardIdFromDisplayLabel(addon);
-        pendingNavSourceCardId = TriadCardListSelectionReader.ReadSelectedCardId(addon, filterMode, agent, displayCardId);
+        pendingNavSourceCardId =
+            TriadCardListSelectionReader.ReadSelectedCardId(addon, UnknownCollectionFilter, agent, displayCardId);
 
         pendingNavCardId = cardId;
         pendingNavAttempts = 90;
@@ -344,7 +340,13 @@ public unsafe class UIReaderTriadCardList : IUIReader
             agent->EditDeckSelectedCardIndex = pendingNavCell;
         }
 
-        if (addon->SelectedPage != pendingNavPage)
+        // 讀不到目前頁索引就什麼都不做:寧可耗盡重試,也不要在不知道現況時亂切頁。
+        if (!GSInfoCardListState.TryGetPageIndex(addon, out var livePageIndex))
+        {
+            return;
+        }
+
+        if (livePageIndex != pendingNavPage)
         {
             // 切頁不關窗；只擋「玩家在導航進行中關掉清單」的那幾幀（已看過 PreFinalize 的實例不碰）。
             if (!AddonPressGuard.TryTouch(GoldSaucerCardListUi.AddonName, &addon->AtkUnitBase))
@@ -352,8 +354,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
                 return;
             }
 
-            // Old FFXIVClientStructs has no separate RequestedPage hint field; the tab
-            // controller call below is what actually drives the page change.
+            // 頁籤控制器這個呼叫才是真正驅動換頁的動作。
             addon->TabController.SetTabIndexAndCallBack(pendingNavPage);
             addon->AtkUnitBase.Update(0);
             return;
@@ -372,7 +373,14 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     private bool IsPendingNavigationComplete(AddonGSInfoCardList* addon)
     {
-        if (addon->SelectedPage != pendingNavPage || addon->SelectedCardIndex != pendingNavCell)
+        // 讀不到就不判定完成 —— 照舊耗盡重試,不要誤報成功。
+        if (!GSInfoCardListState.TryGetPageIndex(addon, out var pageIndex) ||
+            !GSInfoCardListState.TryGetCellIndex(addon, out var cellIndex))
+        {
+            return false;
+        }
+
+        if (pageIndex != pendingNavPage || cellIndex != pendingNavCell)
         {
             return false;
         }
