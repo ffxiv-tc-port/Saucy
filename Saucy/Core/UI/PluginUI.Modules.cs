@@ -80,15 +80,8 @@ public unsafe partial class PluginUI
     }
 
     /// <summary>
-    /// Shared "walk to the registration NPC beforehand" controls, called from the unified
-    ///「活動解說員排程」page (see PluginUI.cs DrawGateSchedulePanel) rather than from each GATE's
-    /// own panel — per user request to consolidate them ("把自動報名NPC的區塊統一移動到活動排程").
-    /// Deliberately stops at recording the NPC's position + navigating near it — targeting/talking/
-    /// confirming registration stays manual by design (per user: "3 不用做" / "NPC 可手動登記"),
-    /// and the position is never hardcoded/guessed, only ever whatever the user personally had
-    /// targeted when they hit the record button (see the DataId-guessing lessons in the
-    /// ffxiv-dalamud-plugins skill for why guessing game object identity/position here would be a
-    /// mistake).
+    /// Shared "walk to the registration NPC beforehand" controls, called from the unified 「活動解說員排程」page (see PluginUI.cs DrawGateSchedulePanel) rather than from each GATE's own panel.
+    /// Deliberately stops at recording the NPC's position + navigating near it — targeting/talking/ confirming registration stays manual by design, and the position is never hardcoded/guessed, only ever whatever the user personally had targeted when they hit the record button.
     /// </summary>
     internal static void DrawGateNpcNavigationControls(string label, string idSuffix, GateNpcSpot spot, Func<bool> getAutoNav, Action<bool> setAutoNav)
     {

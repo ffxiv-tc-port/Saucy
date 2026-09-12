@@ -42,12 +42,6 @@ public static unsafe class AgentHelper
 
     /// <summary>
     /// 診斷用：查出這個 addon 的回呼登記在誰名下。
-    ///
-    /// 為什麼需要：<see cref="IsAddonOwnedBy"/> 只能回答「是不是某個特定 agent」，
-    /// 回 false 時分不出「屬於別的 agent」與「根本不是 agent 開的」。
-    /// <c>AddonCallbackEntry</c> 的偏移 0 是個 union（<c>EventInterface</c> ／ <c>AgentInterface</c>），
-    /// 事件腳本開的視窗登記的就不是 agent —— 那正是「同一個判定在一處成立、在另一處不成立」的來源。
-    ///
     /// 🔴 這裡刻意**不**呼叫 <c>GetAgentByInternalId</c> 去逐一試 id：那是以 id 索引的原生函式。
     /// 改成讀 <c>AgentModule</c> 自己的固定大小陣列（CS 宣告 484 格）逐格比對指標，
     /// 邊界由型別保證，不存在越界問題。取到的指標**當幀用完就丟**，不保存。

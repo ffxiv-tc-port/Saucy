@@ -14,17 +14,8 @@ namespace Saucy.Framework.GoldSaucer;
 
 /// <summary>
 /// One user-triggered "go there" journey inside (or to) the Gold Saucer.
-///
-/// Replaces what the GATE panels used to do — a bare <c>Vnavmesh.TryMoveTo</c> whose result was
-/// thrown away — with an actual route: teleport into the Saucer when the player is somewhere else,
-/// hop the Saucer's own aethernet when that genuinely saves a walk, then path the rest with
-/// vnavmesh, and say something when it arrives (or when it can't).
-///
-/// Every integration is a soft dependency. With no vnavmesh installed this degrades to a map flag
-/// plus coordinates; with no Lifestream it simply walks. Neither is allowed to throw.
-///
-/// Scope: it only ever *moves* the player and (on arrival) targets the NPC. It never interacts,
-/// registers, or plays anything — those stay with each module's own existing automation.
+/// Every integration is a soft dependency. With no vnavmesh installed this degrades to a map flag plus coordinates; with no Lifestream it simply walks. Neither is allowed to throw.
+/// Scope: it only ever *moves* the player and (on arrival) targets the NPC. It never interacts, registers, or plays anything — those stay with each module's own existing automation.
 /// </summary>
 internal static class GoldSaucerNavigator
 {
@@ -76,14 +67,8 @@ internal static class GoldSaucerNavigator
     }
 
     /// <summary>
-    /// Walks to a user-recorded GateNpcSpot using the same route planning, feedback and cancellation
-    /// as the sheet-backed destinations.
-    ///
-    /// GATE registration NPCs are spawned per-GATE and have no Level rows (verified against the TC
-    /// 7.20 EXD dump), so a recorded coordinate really is the only way to know where they stand —
-    /// but there was never a reason for the *walk* to be worse than everywhere else. The old
-    /// "立即移動" button called Vnavmesh.TryMoveTo once and discarded the result, so nothing happened
-    /// and nothing was said whenever vnavmesh was missing or the navmesh was still building.
+    /// Walks to a user-recorded GateNpcSpot using the same route planning, feedback and cancellation as the sheet-backed destinations.
+    /// GATE registration NPCs are spawned per-GATE and have no Level rows (verified against the TC 7.20 EXD dump), so a recorded coordinate really is the only way to know where they stand.
     /// </summary>
     public static void StartRecordedSpot(GateNpcSpot spot)
     {

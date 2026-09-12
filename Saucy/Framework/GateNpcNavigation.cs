@@ -28,27 +28,11 @@ internal static class GateNpcNavigation
 
     public static void MarkInteracted() => lastInteractUtc = DateTime.UtcNow;
 
-    // This toggle is unconditional/always-on (unlike the GateScheduleAutomation join window,
-    // which only searches within a tight radius during the :00/:20/:40 window) — without a cap it
-    // would try to walk the player back toward this GATE's recorded spot from ANYWHERE, including
-    // right after a coordinator teleport dropped them somewhere else entirely for a different
-    // activity ("他在傳送後一直往上一個活動NPC跑"). An Event Coordinator teleport always drops the
-    // player right next to the next GATE's registration NPC, so the cap only has to catch "yes, I'm
-    // actually here" while still rejecting every other unrelated recorded spot.
-    //
-    // ⚠️ This used to be 5y, which made "自動導航至報名點" effectively dead: the interact itself
-    // already fires at CloseRange (3y), so the auto-navigate could only ever walk the player the two
-    // yalms between 5y and 3y. In practice the toggle looked like it did nothing.
-    //
-    // 25y instead, chosen from the actual spacing between the recorded venues rather than picked out
-    // of the air: the closest DISTINCT pair of registration NPCs is Air Force One (-57.9, -65.4) and
-    // Cliffhanger's first spot (-17.3, -83.2), 44y apart on the horizontal plane. 25y therefore still
-    // cannot reach a neighbouring venue (so the "walks back to the previous activity" report stays
-    // fixed) while giving the toggle a genuinely useful approach distance.
-    //
-    // Wind Blows and Slice is Right share one position (77.6/77.9, -69.8 — 0.3y apart) and so are
-    // mutually reachable at ANY radius including the old 5y; they are kept apart by GateDirector.
-    // IsInGate plus each GATE's own enable toggle, not by this distance.
+    // This toggle is unconditional/always-on (unlike the GateScheduleAutomation join window, which only searches within a tight radius during the :00/:20/:40 window) — without a cap it would try to walk the player back toward this GATE's recorded spot from ANYWHERE, including right after a coordinator teleport dropped them somewhere else entirely for a different activity.
+    // An Event Coordinator teleport always drops the player right next to the next GATE's registration NPC, so the cap only has to catch "yes, I'm actually here" while still rejecting every other unrelated recorded spot.
+    // 25y instead, chosen from the actual spacing between the recorded venues rather than picked out of the air: the closest DISTINCT pair of registration NPCs is Air Force One (-57.9, -65.4) and Cliffhanger's first spot (-17.3, -83.2), 44y apart on the horizontal plane.
+    // 25y therefore still cannot reach a neighbouring venue (so the "walks back to the previous activity" report stays fixed) while giving the toggle a genuinely useful approach distance.
+    // Wind Blows and Slice is Right share one position (77.6/77.9, -69.8 — 0.3y apart) and so are mutually reachable at ANY radius including the old 5y; they are kept apart by GateDirector. IsInGate plus each GATE's own enable toggle, not by this distance.
     private const float MaxTriggerDistance = 25f;
 
     private static readonly Dictionary<Module.GateType, bool> owners = [];

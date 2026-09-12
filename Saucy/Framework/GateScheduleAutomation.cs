@@ -38,22 +38,9 @@ internal static unsafe class GateScheduleAutomation
     private static readonly TimeSpan ManualJoinDuration = TimeSpan.FromSeconds(60);
     private static DateTime? manualJoinUntilUtc;
 
-    // Once the coordinator's actually been talked to for this window, the teleport it triggers
-    // may drop the player far from every OTHER recorded spot — re-running "nearest" every
-    // remaining tick of the same ~1-minute window would then immediately walk back toward
-    // whichever spot is nearest (often the one just left), per user feedback ("避免觸發下一個
-    // 活動時又往回跑"). Latch once handled and don't try again until the window itself resets.
-    //
-    // Persisted to Configuration (not a plain static bool) — a plugin reload mid-window used to
-    // forget "already handled" and immediately repeat the search/walk, since a fresh in-memory
-    // flag defaults back to false ("我已參加過 重載後記錄消失 又回去找NPC").
-    //
-    // "上鎖10分鐘改成30秒 避免錯過整個活動" — the actual coordinator/registration teleport only
-    // takes ~5-10s; a full 10-minute latch meant that if the interact/teleport silently failed for
-    // any reason, there was no way to retry again until the ENTIRE 20-minute-apart window had long
-    // since passed, missing that GATE/coordinator entirely. 30s is still comfortably longer than a
-    // real teleport takes (so a genuinely successful attempt won't immediately retry and interrupt
-    // itself), while letting a failed one recover well within the same ~1-minute window.
+    // Once the coordinator's actually been talked to for this window, the teleport it triggers may drop the player far from every OTHER recorded spot — re-running "nearest" every remaining tick of the same ~1-minute window would then immediately walk back toward whichever spot is nearest. Latch once handled and don't try again until the window itself resets.
+    // Persisted to Configuration (not a plain static bool) — a plugin reload mid-window used to forget "already handled" and immediately repeat the search/walk, since a fresh in-memory flag defaults back to false.
+    // the actual coordinator/registration teleport only takes ~5-10s. 30s is still comfortably longer than a real teleport takes (so a genuinely successful attempt won't immediately retry and interrupt itself), while letting a failed one recover well within the same ~1-minute window.
     private static readonly TimeSpan HandledLatchWindow = TimeSpan.FromSeconds(30);
 
     private static bool HasHandledRecently(long utcTicks) =>
@@ -163,16 +150,8 @@ internal static unsafe class GateScheduleAutomation
         var destination = new Vector3(spot.X, spot.Y, spot.Z);
         if (Vnavmesh.IsWithinHorizontalRange(destination, GateNpcNavigation.CloseRange))
         {
-            // Close enough to talk — interact rather than just standing next to them. Only ever
-            // interacts, never auto-picks a menu option afterward (unlike the GATE-join flow,
-            // which is scoped to a known-safe "start minigame" confirm) — a coordinator's menu is
-            // an area-select list, not a single yes/no, so choosing where to teleport stays manual.
-            //
-            // TryInteractWithBaseId needs to be called across MULTIPLE ticks: the first call only
-            // sets the target, a later (throttled) call actually fires InteractWithObject. Only
-            // report "done" once it reports the interact itself actually fired — returning true
-            // right after the first (targeting-only) attempt stopped this from ever being called
-            // again, so it silently got stuck after locking the target ("有鎖定 但沒有執行互動").
+            // Close enough to talk — interact rather than just standing next to them. Only ever interacts, never auto-picks a menu option afterward (unlike the GATE-join flow, which is scoped to a known-safe "start minigame" confirm) — a coordinator's menu is an area-select list, not a single yes/no, so choosing where to teleport stays manual.
+            // TryInteractWithBaseId needs to be called across MULTIPLE ticks: the first call only sets the target, a later (throttled) call actually fires InteractWithObject. Only report "done" once it reports the interact itself actually fired.
             if (spot.DataId == 0)
             {
                 return true;
@@ -208,17 +187,9 @@ internal static unsafe class GateScheduleAutomation
         return false;
     }
 
-    // The GATE NPCs the user has actually recorded via the per-GATE panels — "支援的NPC" per the
-    // user's request, i.e. GATEs this plugin can already fully play once joined. Air Force One's
-    // spot also covers Leap of Faith (confirmed shared NPC — "報名登高跳跳樂 和 報名空軍裝甲 共用
-    // NPC"), and Cliffhanger contributes every spot in its list (it has two, confirmed by user).
-    //
-    // Paired with the GateType each spot actually belongs to (not just a flat position list) so a
-    // successful join can record WHICH gate was just registered for — needed by
-    // IsWithinPostJoinSettle below.
-    // "為每個GATE單獨加上自動報名開關" — each GATE's spot(s) are only offered up to the
-    // nearest-NPC search when that GATE's own toggle is on, instead of one shared switch
-    // controlling every supported GATE at once.
+    // The GATE NPCs the user has actually recorded via the per-GATE panels: GATEs this plugin can already fully play once joined. Air Force One's spot also covers Leap of Faith, and Cliffhanger contributes every spot in its list (it has two, confirmed by user).
+    // Paired with the GateType each spot actually belongs to (not just a flat position list) so a successful join can record WHICH gate was just registered for — needed by IsWithinPostJoinSettle below.
+    // each GATE's spot(s) are only offered up to the nearest-NPC search when that GATE's own toggle is on, instead of one shared switch controlling every supported GATE at once.
     private static IEnumerable<(Module.GateType Gate, GateNpcSpot Spot)> SupportedSpots
     {
         get
@@ -346,19 +317,8 @@ internal static unsafe class GateScheduleAutomation
 
         if (nearestDist <= JoinInteractRange)
         {
-            // "觸發了不一定會推進對話到選項" — a plain narration Talk window (before the eventual
-            // yes/no confirm another plugin like YesAlready handles) doesn't advance itself. Click
-            // through it every tick we're standing right at our own registration target — safe to
-            // do broadly here since we only reach this branch while actively trying to register for
-            // a GATE we're right next to, not some unrelated conversation.
-            //
-            // Report "done" as soon as the interact itself actually fires (not just target-lock) —
-            // requiring a menu/dialogue to be visible first briefly seemed safer, but some of these
-            // NPCs teleport right off a Talk window with no SelectString at all, so that condition
-            // never became true, MarkJoinHandled() never fired, and the join flow just kept retrying
-            // forever — even after the teleport had already happened, which then fed wrong/stale
-            // state into the post-join movement logic and kicked the character back out of the arena
-            // ("NPC報名後 會跳出場").
+            // a plain narration Talk window (before the eventual yes/no confirm another plugin like YesAlready handles) doesn't advance itself. Click through it every tick we're standing right at our own registration target — safe to do broadly here since we only reach this branch while actively trying to register for a GATE we're right next to, not some unrelated conversation.
+            // Report "done" as soon as the interact itself actually fires (not just target-lock): some of these NPCs teleport right off a Talk window with no SelectString at all.
             TalkHelper.TryAdvance("Saucy.GateSchedule.JoinTalk");
 
             if (!IsRegisterOnCooldown && !GateNpcNavigation.IsInteractOnCooldown &&

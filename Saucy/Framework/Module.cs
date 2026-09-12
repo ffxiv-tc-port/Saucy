@@ -59,19 +59,9 @@ public abstract partial class Module : IModule
 
     /// <summary>
     /// 任務逾時時先把「是哪一步」寫進 log,再讓 ECommons 照原本的流程中止佇列。
-    ///
-    /// <para>
-    /// 由來:實機 2026-09-01~09-03 共 4 次 <c>TaskTimeoutException</c> 的 Warning,
-    /// 內容只有例外類別名 —— ECommons 是 <c>throw new TaskTimeoutException()</c> 之後
-    /// 直接 <c>e.LogWarning()</c>,任務名只在 <c>ShowDebug</c> 那條分支裡出現。
-    /// 於是「小仙人微彩跑完之後 7 秒有一行 WRN」完全查不出是哪一個任務。
-    /// </para>
-    ///
-    /// <para>
     /// 🔴 等級刻意維持 <c>Warning</c>:原本就是 Warning,降級只會弱化訊號。
     /// 🔴 也刻意<b>不</b>改 ECommons —— 全艦隊二十幾個消費端共用那份。
     /// ⚠️ <c>remainingTimeMS</c> 是 <c>ref</c>:改它等於偷偷延長逾時,這裡只讀不寫。
-    /// </para>
     /// </summary>
     private void OnTaskTimedOut(TaskManagerTask task, ref long remainingTimeMS)
     {

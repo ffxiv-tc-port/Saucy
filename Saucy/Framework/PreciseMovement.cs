@@ -6,14 +6,8 @@ using System.Numerics;
 namespace Saucy.Framework;
 
 /// <summary>
-/// Direct movement-input override, mirroring BossModReborn's approach
-/// (BossMod/Framework/MovementOverride.cs, confirmed working on this same TW client via its
-/// tc-7.15 branch) — hooks the game's own movement-input-read function ("RMIWalk") and writes a
-/// desired direction directly into its output, instead of simulating WASD keypresses via
-/// SendInput. Adopted after repeated precision/reliability failures with key simulation for
-/// Cliffhanger's jump-point steering ("鍵盤模擬 現在完全不能用...vnavmesh 接近後逼近也是基於鍵盤
-///模擬 反而會亂跑"). Deliberately simpler than BossModReborn's version: no legacy-movement-mode
-/// or misdirection-status handling, since neither applies to steering toward a jump takeoff point.
+/// Direct movement-input override, mirroring BossModReborn's approach — hooks the game's own movement-input-read function ("RMIWalk") and writes a desired direction directly into its output, instead of simulating WASD keypresses via SendInput.
+/// Deliberately simpler than BossModReborn's version: no legacy-movement-mode or misdirection-status handling, since neither applies to steering toward a jump takeoff point.
 /// </summary>
 internal static unsafe class PreciseMovement
 {
@@ -116,17 +110,10 @@ internal static unsafe class PreciseMovement
 
     private static bool IsLegacyMoveMode() => Svc.GameConfig.UiControl.TryGetUInt("MoveMode", out var mode) && mode == 1;
 
-    /// <summary>Same computation as BossModReborn's Camera.Update() (BossMod/Framework/Camera.cs) —
-    /// derives the camera's horizontal facing angle from the active render camera's view matrix,
-    /// without needing a per-frame Update() driver of our own.</summary>
     /// <summary>
-    /// CameraManager.GetActiveCamera() is a ClientStructs <c>[MemberFunction]</c>, and
-    /// CameraManager.Instance() just forwards to Control.Instance(), a <c>[StaticAddress]</c>. When
-    /// either signature stops resolving they <b>throw</b> InvalidOperationException (InteropGenerator's
-    /// ThrowHelper.ThrowNullAddress) rather than returning null - so a null check on Instance() was
-    /// never a guard against a broken signature. This is reached from the RMIWalk detour, so a stale
-    /// signature would mean a managed exception thrown inside a detour on every frame. Check the
-    /// resolved addresses up front and skip the whole camera path instead.
+    /// Same computation as BossModReborn's Camera.Update() (BossMod/Framework/Camera.cs): derives the camera's horizontal facing angle from the active render camera's view matrix, without needing a per-frame Update() driver of our own.
+    /// When either signature stops resolving they <b>throw</b> InvalidOperationException (InteropGenerator's ThrowHelper.ThrowNullAddress) rather than returning null - so a null check on Instance() was never a guard against a broken signature.
+    /// This is reached from the RMIWalk detour, so a stale signature would mean a managed exception thrown inside a detour on every frame. Check the resolved addresses up front and skip the whole camera path instead.
     /// </summary>
     private static bool CameraApiResolved
         => FFXIVClientStructs.FFXIV.Client.Game.Control.Control.Addresses.Instance.Value != 0

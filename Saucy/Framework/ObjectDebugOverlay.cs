@@ -7,13 +7,9 @@ using static Saucy.Framework.ImGuiScopes;
 namespace Saucy.Framework;
 
 /// <summary>
-/// General-purpose "label every nearby object with its DataId/Kind/world position" overlay, for
-/// diagnosing exactly which real-world object a prediction circle or targeting decision is keying
-/// off of — e.g. this is how the Air Force One "地下物件" bug (a decorative object sharing a real
-/// bomb/target DataId, sitting far below the play field) got tracked down: WorldToScreen alone
-/// can't tell you WHY something projected where it did, but the raw DataId + Y position can.
-/// Not tied to any single GATE — toggle from the Debug tab whenever a similar "why is this circle/
-/// target here" question comes up for any minigame.
+/// General-purpose "label every nearby object with its DataId/Kind/world position" overlay, for diagnosing exactly which real-world object a prediction circle or targeting decision is keying off of.
+/// WorldToScreen alone can't tell you WHY something projected where it did, but the raw DataId + Y position can.
+/// Not tied to any single GATE — toggle from the Debug tab whenever a similar "why is this circle/ target here" question comes up for any minigame.
 /// </summary>
 internal static class ObjectDebugOverlay
 {

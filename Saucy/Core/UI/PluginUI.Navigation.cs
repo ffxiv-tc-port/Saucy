@@ -7,13 +7,8 @@ using Saucy.IPC;
 namespace Saucy;
 
 /// <summary>
-/// "Go to" shortcuts for every Gold Saucer activity acceptance point, plus the Saucer's own
-/// aethernet stops.
-///
-/// This exists because the previous navigation only knew about GATE registration NPCs the user had
-/// personally recorded, only engaged within 5 yalms of them, and never used a teleport or the
-/// Saucer's internal aethernet. Everything listed here is resolved from the game's own sheets, so
-/// it needs no setup and shows the NPC's real in-game name.
+/// "Go to" shortcuts for every Gold Saucer activity acceptance point, plus the Saucer's own aethernet stops.
+/// Everything listed here is resolved from the game's own sheets, so it needs no setup and shows the NPC's real in-game name.
 /// </summary>
 public unsafe partial class PluginUI
 {

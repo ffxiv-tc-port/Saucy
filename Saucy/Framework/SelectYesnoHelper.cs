@@ -306,15 +306,7 @@ public static unsafe class SelectYesnoHelper
     public static bool HasYesnoButtons(AddonSelectYesno* yesno) =>
         yesno != null && (TryResolveYesNoButtons(yesno, out _, out _) || TryResolveYesButton(yesno, out _));
 
-    /// <summary>街機的「挑戰翻倍」確認框——把已經贏到的金碟幣再押一次的提示
-    /// （Addon 9329/9333：「挑戰翻倍可以有機會獲得更多的金碟幣，但是失敗的話則會什麼都得不到。
-    /// 要嘗試挑戰一下嗎？」）。這跟一般的「要不要玩一局」確認框性質完全不同，
-    /// 絕不可以被當成「安全的小遊戲是/否框」自動按下：要不要續戰必須由各模組依自己的條件決定
-    /// （孤樹無援模組就是自己讀剩餘秒數判斷後才呼叫 PressYes/PressNo）。
-    /// <para>⚠️ 2026-07-01 的 cbfd349 移除街機模組時把這個函式砍成 <c>=&gt; false</c>，
-    /// 但函式名與兩個呼叫端（IsSafeMinigameYesno、IsTriadYesNoPrompt）都留著 ——
-    /// 名字宣稱一個判斷、實作卻是無條件常數，任何照名字信任它的人都不會得到徵兆。
-    /// 這裡把它補回真正的判斷。</para></summary>
+    /// <summary>街機的「挑戰翻倍」確認框——把已經贏到的金碟幣再押一次的提示。這跟一般的「要不要玩一局」確認框性質完全不同，絕不可以被當成「安全的小遊戲是/否框」自動按下：要不要續戰必須由各模組依自己的條件決定（孤樹無援模組就是自己讀剩餘秒數判斷後才呼叫 PressYes/PressNo）。</summary>
     public static bool IsArcadeDoubleDownYesno(AddonSelectYesno* yesno)
     {
         if (yesno == null || !IsArcadeAddon(&yesno->AtkUnitBase))
@@ -328,15 +320,11 @@ public static unsafe class SelectYesnoHelper
 
     /// <summary>
     /// 純文字判定的「挑戰翻倍」提示——**刻意不看 agent 歸屬**。
-    ///
     /// 🔴 為什麼要有第二支：<see cref="IsArcadeDoubleDownYesno"/> 的第一個條件是
     /// <see cref="IsArcadeAddon"/>，所以「addon 不屬於 GoldSaucerMiniGame agent」時它會回 **false**。
     /// 那在原本的用法裡沒問題（呼叫端本來就先要求 agent 歸屬），但只要有呼叫端放寬了 agent 條件，
     /// 這個排除項就會跟著失效——**防護會隨著它保護的那個條件一起消失**，而且完全沒有徵兆。
     /// 放寬 agent 條件的呼叫端一律改用這一支。
-    ///
-    /// 台服出處：Addon 9329／9333「挑戰翻倍可以有機會獲得更多的金碟幣……要嘗試挑戰一下嗎？」，
-    /// 兩列都含「翻倍」。（9333 多一行「剩餘時間：」，那就是孤樹無援砍完一棵樹之後的續戰提示。）
     /// </summary>
     public static bool LooksLikeArcadeDoubleDownPrompt(AddonSelectYesno* yesno)
     {
@@ -519,25 +507,11 @@ public static unsafe class SelectYesnoHelper
         return button->AtkResNode->IsVisible();
     }
 
-    /// <summary>把「是／否」真的按下去——本外掛所有模組按確認框的<b>總出口</b>
-    /// （<see cref="PressYes"/>／<see cref="PressNo"/>／<see cref="TryPressArmedYes"/> 全部走這裡）。</summary>
+    /// <summary>把「是／否」真的按下去——本外掛所有模組按確認框的<b>總出口</b>（<see cref="PressYes"/>／<see cref="PressNo"/>／<see cref="TryPressArmedYes"/> 全部走這裡）。</summary>
     /// <remarks>
-    /// 🔴🔴 <b>送出之前一定要過 <see cref="AddonPressGuard.TryBeginPress"/>。</b>
-    /// 確認框被按下之後有「正在關閉中」的幾幀，這段期間 <see cref="TryGetVisible"/> 仍拿得到實例、
-    /// <c>IsAddonReady</c> 三關也全過（<b>所以那兩道判斷不是防護</b>），此時再送一次
-    /// callback 或再模擬一次點擊就是原生 AccessViolation ——
-    /// 而 AVE 在 .NET Core 是 corrupted-state exception，<b>下面那三層 <c>try</c>/<c>catch</c>
-    /// 一層都攔不到</b>，遊戲當場關閉。
-    /// <para>
-    /// 閘門下沉在這裡而不是各呼叫端，是因為本外掛按確認框的路徑全部匯流到這一支
-    /// （幻卡對話跳過、幻卡導航開局、仙人微彩購票、孤樹無援續戰／收手、跨區路線、登出確認），
-    /// 漏掉任何一個都等於沒防護。下面五條後援路徑（結構欄位按鈕、節點 id 按鈕、
-    /// <c>AddonMaster</c>、<c>Callback.Fire</c>、<c>FireCallbackInt</c>）也一併罩住。
-    /// </para>
-    /// <para>
-    /// 📌 被擋下時回 <see langword="false"/>，與「按不到任何按鈕」同一個語意
-    /// （這一幀沒做成、下一幀再試）；所有呼叫端本來就是每幀重試的，正常路徑行為零變化。
-    /// </para>
+    /// 🔴🔴 <b>送出之前一定要過 <see cref="AddonPressGuard.TryBeginPress"/>。</b>確認框被按下之後有「正在關閉中」的幾幀，這段期間 <see cref="TryGetVisible"/> 仍拿得到實例、<c>IsAddonReady</c> 三關也全過（<b>所以那兩道判斷不是防護</b>），此時再送一次callback 或再模擬一次點擊就是原生 AccessViolation，而 AVE 在 .NET Core 是 corrupted-state exception，遊戲當場關閉。
+    /// 閘門下沉在這裡而不是各呼叫端，是因為本外掛按確認框的路徑全部匯流到這一支，漏掉任何一個都等於沒防護。下面五條後援路徑（結構欄位按鈕、節點 id 按鈕、<c>AddonMaster</c>、<c>Callback.Fire</c>、<c>FireCallbackInt</c>）也一併罩住。
+    /// 📌 被擋下時回 <see langword="false"/>，與「按不到任何按鈕」同一個語意（這一幀沒做成、下一幀再試）；所有呼叫端本來就是每幀重試的，正常路徑行為零變化。
     /// </remarks>
     private static bool PressCallback(AddonSelectYesno* yesno, int callbackId, Action<AddonMaster.SelectYesno> fallback)
     {

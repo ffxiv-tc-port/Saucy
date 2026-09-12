@@ -7,20 +7,11 @@ using LuminaLevel = Lumina.Excel.Sheets.Level;
 namespace Saucy.Framework.GoldSaucer;
 
 /// <summary>
-/// Sheet-derived map of the Gold Saucer: every *static* activity acceptance point plus the six
-/// internal aethernet shards.
-///
-/// Nothing here hardcodes display text — names come from ENpcResident/EObjName and aethernet names
-/// from Aetheryte/PlaceName at runtime, so they render correctly on the TC client (and any other)
-/// without a translation step. Positions come from the Level sheet instead of user recordings, so a
-/// fresh character/install can navigate immediately with zero setup.
-///
-/// ⚠️ This deliberately covers only objects that HAVE a Level row. The GATE registration NPCs
-/// (仙人掌怪導覽員 1016306, 傲慢的咒術士 1010476, 保鑣的小弟 1031796, 束手無策的女性/少女 1010473/
-/// 1010447) exist in ENpcResident with title "G.A.T.E.事件" but have **no Level rows at all** —
-/// verified against the TC 7.20 EXD dump — because they are spawned dynamically per GATE. Their
-/// positions genuinely cannot be resolved from sheets, which is why GateNpcSpot's user-recorded
-/// coordinates remain the right mechanism for those and are left untouched.
+/// Sheet-derived map of the Gold Saucer: every *static* activity acceptance point plus the six internal aethernet shards.
+/// Nothing here hardcodes display text — names come from ENpcResident/EObjName and aethernet names from Aetheryte/PlaceName at runtime, so they render correctly on the TC client (and any other) without a translation step.
+/// Positions come from the Level sheet instead of user recordings, so a fresh character/install can navigate immediately with zero setup.
+/// ⚠️ This deliberately covers only objects that HAVE a Level row. The GATE registration NPCs exist in ENpcResident with title "G.A.T.E.事件" but have **no Level rows at all**, because they are spawned dynamically per GATE.
+/// Their positions genuinely cannot be resolved from sheets, which is why GateNpcSpot's user-recorded coordinates remain the right mechanism for those and are left untouched.
 /// </summary>
 internal static class GoldSaucerVenue
 {
@@ -41,19 +32,8 @@ internal static class GoldSaucerVenue
 
     /// <summary>
     /// The activity "acceptance points" offered in the navigation panel.
-    ///
-    /// Every row id below was verified against the TC 7.20 EXD dump (`D:\ffxiv-tc-port\exd-tc\7.20\`)
-    /// rather than guessed — the repo has been bitten twice by assumed DataIds, so the evidence is
-    /// recorded per entry on purpose.
-    ///
-    /// The decisive evidence is the **internal name of the CustomTalk handler** each object carries
-    /// (CustomTalk.Name, e.g. `CmnGscTripleTriadGuide_00238`). That is developer-authored English,
-    /// independent of client language and of any guess about what an NPC's Chinese name implies, and
-    /// it named every single entry below unambiguously. Where an entry is reached by a warp instead
-    /// of a conversation, the evidence is the Warp row's own Question text and TerritoryType.
-    /// Secondary corroboration used while narrowing things down: ENpcBase.ENpcData handler *types*
-    /// (35 = TripleTriad, 37 = LotteryDaily/仙人微彩, 38 = LotteryWeekly/仙人彩) and
-    /// ENpcResident.Title (G.A.T.E.事件 / 九宮幻卡 / 貿易人員).
+    /// Every row id below was verified against the TC 7.20 EXD dump rather than guessed; the repo has been bitten twice by assumed DataIds, so the evidence is recorded per entry on purpose.
+    /// The decisive evidence is the **internal name of the CustomTalk handler** each object carries (CustomTalk.Name, e.g. `CmnGscTripleTriadGuide_00238`).
     /// </summary>
     public static readonly GoldSaucerDestination[] Destinations =
     [

@@ -5,16 +5,9 @@ using System.Runtime.InteropServices;
 namespace Saucy.Framework;
 
 /// <summary>
-/// Confirmed live: jumping (Space) worked via SendMessage(WM_KEYDOWN/UP) to the FFXIVGAME window,
-/// but held movement (W/A/D) never actually moved the character — only spun/jumped in place. This
-/// points to FFXIV reading discrete actions (jump) through the window message queue but continuous
-/// movement through real keyboard hardware state (GetAsyncKeyState / raw input), which
-/// SendMessage/PostMessage never touches since they only enqueue a message rather than updating
-/// the OS's actual key-state table. SendInput does update that global state (it's the same API
-/// real input-injection tools use), so it's used here instead — for both movement and jump, since
-/// jump additionally needs to work while a movement key is already "held" via SendInput. As a
-/// safety measure (this simulates real global keyboard state, not a message to a specific window),
-/// key sends are skipped unless the FFXIVGAME window is currently the OS foreground window.
+/// Confirmed live: jumping (Space) worked via SendMessage(WM_KEYDOWN/UP) to the FFXIVGAME window, but held movement (W/A/D) never actually moved the character — only spun/jumped in place.
+/// This points to FFXIV reading discrete actions (jump) through the window message queue but continuous movement through real keyboard hardware state (GetAsyncKeyState / raw input), which SendMessage/PostMessage never touches since they only enqueue a message rather than updating the OS's actual key-state table.
+/// As a safety measure (this simulates real global keyboard state, not a message to a specific window), key sends are skipped unless the FFXIVGAME window is currently the OS foreground window.
 /// </summary>
 internal static class GameKeyInput
 {
