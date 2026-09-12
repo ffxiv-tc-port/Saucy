@@ -6,46 +6,9 @@ namespace Saucy.TripleTriad.UI;
 /// 卡片收藏清單(GSInfoCardList)詳細資訊面板的節點取得層 —— 台服專用位移 + 成員資格證明。
 /// </summary>
 /// <remarks>
-/// 🔴🔴 <b>存在的理由:FFXIVClientStructs 的 <c>AddonGSInfoCardList</c> 欄位位移在台服客戶端是錯的,
-/// 而其中 <c>SelectedCardName</c>(CS 宣告 +0x4E8)指向的那 8 個位元組<b>台服根本沒有這個欄位、
-/// 連建構子都不會把它清零</b> —— 讀到的是這塊堆積記憶體殘留的垃圾,再當成 <c>AtkTextNode*</c>
-/// 解參考就是 AccessViolationException。實機 2026-09-11 的 dalamud.boot.old.log 有兩次
-/// (第 46666、48487 行),兩次堆疊都停在 <c>IsMaskedUnownedSelection</c>。</b>
-/// <para>
-/// 🔑 離線證據(台服 <c>ffxiv_dx11.exe</c>,image base 0x140000000,全部可重跑):
-/// <list type="bullet">
-/// <item>類別定位:ULD 名 <c>GoldSaucerCardList</c> 的 vf46 thunk 0x1415AEE40 ⇒ vtable 0x14214C728
-/// (<c>tools/sigscan/addon_vtable.py GoldSaucerCardList</c>,G1~G5 校準全過)。</item>
-/// <item>建構子 0x1415AEB10 把 <c>rdi</c>(=0)寫進 0x3D0..0x4B8(30 格卡片按鈕,對得上 CS 的
-/// <c>FixedSizeArray30</c>)、0x4C0、0x4C8、0x4D0、<b>0x4F0、0x4F8、0x500、0x508、0x510、0x518、0x520</b>、
-/// 0x528、0x530、位元組 0x538、0x540、0x548、0x550。
-/// <b>0x4D8/0x4E0/0x4E4/0x4E8 一個都沒有被清零。</b></item>
-/// <item>OnSetup 0x1415AEE60 用 <c>AtkUnitBase::GetTextNodeById</c>(0x140642150)與
-/// <c>GetImageNodeById</c>(0x1406421B0)把節點寫進:
-/// 0x4C0=id 49、0x4C8=id 5(影像)、0x4D0=元件、<b>0x4F0=id 58、0x4F8=id 59、0x500=id 60 或 61
-/// (依客戶端分支)、0x508=id 50、0x510=id 56、0x518=id 65、0x520=id 64(影像)</b>;
-/// 0x4E0/0x4E4 是 <c>movss</c> 寫進去的<b>浮點數</b>,不是指標。</item>
-/// <item>⇒ 台服的 7 個詳細面板節點指標在 <b>0x4F0..0x520</b>,而 CS 宣告的是 0x4E8..0x518。
-/// 兩端最後一格都是<b>影像節點</b>(CS 的 <c>SelectedCardAcquisitionIcon</c> / 台服 0x520 走影像取得器),
-/// 這個型別對照獨立確認了「整塊往後位移 8 個位元組」,也就同時排除了「台服少一個欄位」的替代解釋。</item>
-/// <item>基底類別的位移<b>是對的</b>:節點取得器讀 <c>[this+0x38]</c>(= <c>AtkUnitBase.UldManager</c>@0x28
-/// + <c>Objects</c>@0x10)、<c>[+4]</c>=<c>NodeCount</c>、<c>[+8]</c>=<c>NodeList</c>、
-/// 比對 <c>[node+8]</c>=<c>AtkResNode.NodeId</c>,還先 <c>test byte [this+0xAE], 1</c>
-/// (= <c>UldManager.ResourceFlags</c>@0x86)—— 與 CS 逐欄相同。所以問題只在這個 addon 自己的欄位區。</item>
-/// </list>
-/// </para>
-/// <para>
-/// 🔴 <b>本層的安全性不依賴上面那套位移推導是否正確。</b>取到候選指標之後,
-/// 在<b>任何解參考之前</b>先證明它是「這個 addon 的 ULD 節點清單裡的一員」
-/// (<c>UldManager.Objects->NodeList</c> 逐格比位址)。這個比對<b>完全不碰候選指標指向的記憶體</b>,
-/// 所以候選值是垃圾時只會比不中被丟掉,不可能 AVE。
-/// ⇒ 位移若推錯,結果是「拿到別的節點或拿不到」,<b>不會是崩潰</b>。
-/// </para>
-/// <para>
-/// 🔴 AccessViolationException 在 .NET Core 是 corrupted-state exception,
-/// <c>try/catch</c> 與 <c>HookSafety.ExecuteSafe</c> 都攔不到,整個遊戲行程直接死 ——
-/// 所以只能靠事前證明,不能靠例外隔離。
-/// </para>
+/// 🔴🔴 存在的理由:FFXIVClientStructs 的 <c>AddonGSInfoCardList</c> 欄位位移在台服客戶端是錯的,而其中 <c>SelectedCardName</c>：台服根本沒有這個欄位、連建構子都不會把它清零——讀到的是這塊堆積記憶體殘留的垃圾,再當成 <c>AtkTextNode*</c>解參考就是 AccessViolationException。
+/// 🔴 <b>本層的安全性不依賴位移推導是否正確。</b>取到候選指標之後,在<b>任何解參考之前</b>先證明它是「這個 addon 的 ULD 節點清單裡的一員」(<c>UldManager.Objects->NodeList</c> 逐格比位址)。這個比對<b>完全不碰候選指標指向的記憶體</b>,所以候選值是垃圾時只會比不中被丟掉,不可能 AVE。⇒ 位移若推錯,結果是「拿到別的節點或拿不到」,<b>不會是崩潰</b>。
+/// 🔴 AccessViolationException 在 .NET Core 是 corrupted-state exception,<c>try/catch</c> 與 <c>HookSafety.ExecuteSafe</c> 都攔不到,整個遊戲行程直接死 ——所以只能靠事前證明,不能靠例外隔離。
 /// </remarks>
 internal static unsafe class GSInfoCardListNodes
 {

@@ -425,34 +425,12 @@ public unsafe class UIReaderTriadCardList : IUIReader
                AddonGSInfoCardListExtensions.NumSideR(addon) == expectedCard.Sides[3];
     }
 
-    /// <summary>
-    /// 進入任何節點讀取前的就緒閘門。
-    /// </summary>
+    /// <summary>進入任何節點讀取前的就緒閘門。</summary>
     /// <remarks>
-    /// 🔴 這裡擋的不是「指標是不是 null」—— addon 指標每幀都由 GetAddonByName 重查,本身沒有跨幀
-    /// 保存的問題。擋的是另一件事:AtkUnitBase 還掛在 addon 清單上(所以 GetAddonByName 仍然回得到,
-    /// RootNode 欄位也還留著舊值),但 UldManager 已經把節點釋放掉了。此時詳細面板那幾個欄位是
-    /// 「非 null 的野指標」,判空完全擋不住,GUINodeUtils.GetNodeText 一讀 node->Type 就是
-    /// AccessViolationException。
-    /// <para>
-    /// 🔴🔴 ⚠️ 這道閘門<b>不是</b>詳細面板節點的完整防護,而且它擋不住實機那兩次崩潰 ——
-    /// 真因是 FFXIVClientStructs 的 AddonGSInfoCardList 欄位位移在台服是錯的
-    /// (CS 的 SelectedCardName +0x4E8 在台服沒有對應欄位,連建構子都不清零),
-    /// 與 ULD 死活無關。詳細面板一律走 <see cref="GSInfoCardListNodes"/>,證據寫在那個檔。
-    /// </para>
-    /// <para>
-    /// 🔴 AVE 在 .NET Core 是 corrupted-state exception,try/catch 與 HookSafety.ExecuteSafe 都攔不到,
-    /// 整個遊戲行程直接死,所以只能靠事前閘門,不能靠例外隔離。
-    /// </para>
-    /// <para>
-    /// 🔑 真正能分辨死活的是 UldManager.LoadedState:節點的生命週期由它管,Unload() 會先把它設回
-    /// Unloaded 才去釋放節點,是唯一在「欄位還是非 null」時仍然正確的旗標。它是 AtkUnitBase 的內嵌
-    /// 欄位(位址就在 addon 自己身上),讀它不需要任何指標跳躍,所以放在最前面檢查是安全的。
-    /// </para>
-    /// <para>
-    /// ⚠️ 可見度沿用 UIReaderScheduler.IsAddonVisible 既有的寬鬆定義(AtkUnitBase.IsVisible 或
-    /// RootNode 自己可見),刻意不收緊成只看 AtkUnitBase.IsVisible —— 收緊等於回退既有行為。
-    /// </para>
+    /// 🔴 這裡擋的不是「指標是不是 null」—— addon 指標每幀都由 GetAddonByName 重查,本身沒有跨幀保存的問題。擋的是另一件事:AtkUnitBase 還掛在 addon 清單上(所以 GetAddonByName 仍然回得到,RootNode 欄位也還留著舊值),但 UldManager 已經把節點釋放掉了。此時詳細面板那幾個欄位是「非 null 的野指標」,判空完全擋不住,GUINodeUtils.GetNodeText 一讀 node->Type 就是AccessViolationException。
+    /// 🔴🔴 ⚠️ 這道閘門<b>不是</b>詳細面板節點的完整防護：真因是 FFXIVClientStructs 的 AddonGSInfoCardList 欄位位移在台服是錯的,與 ULD 死活無關。詳細面板一律走 <see cref="GSInfoCardListNodes"/>,證據寫在那個檔。
+    /// 🔑 真正能分辨死活的是 UldManager.LoadedState:節點的生命週期由它管,Unload() 會先把它設回Unloaded 才去釋放節點,是唯一在「欄位還是非 null」時仍然正確的旗標。它是 AtkUnitBase 的內嵌欄位(位址就在 addon 自己身上),讀它不需要任何指標跳躍,所以放在最前面檢查是安全的。
+    /// ⚠️ 可見度沿用 UIReaderScheduler.IsAddonVisible 既有的寬鬆定義(AtkUnitBase.IsVisible 或RootNode 自己可見),刻意不收緊成只看 AtkUnitBase.IsVisible —— 收緊等於回退既有行為。
     /// </remarks>
     private static bool IsAddonReadyForNodeReads(AddonGSInfoCardList* addon, out string reason)
     {
@@ -533,21 +511,8 @@ public unsafe class UIReaderTriadCardList : IUIReader
     /// 每次使用時重新取得金碟遊樂場 agent,取不到回 <c>null</c>。
     /// </summary>
     /// <remarks>
-    /// 🔴 這個方法取代了原本的 <c>cachedAddonAgentPtr</c> 欄位。原本的做法是在 OnAddonShown
-    /// 解析一次就存進欄位,之後 OnAddonUpdate / SetPageAndGridView / TickPendingCardNavigation
-    /// 全部沿用那份快取 —— 那就是「跨幀保存原生指標」:存下去那一刻起就再也不會重新解析,
-    /// 而且欄位只有 OnAddonLost 會清,addon 在兩次 shown/lost 之間被換掉、agent module 重建、
-    /// 或當初 FindAgentInterface 回的是別的 addon 的 agent,快取都不會知道。
-    /// <para>
-    /// 🔴 這裡的用途包含<b>寫入</b>(EditDeckSelectedPage / EditDeckSelectedCardIndex),
-    /// 寫到過期位址不會擲例外、也不會有任何徵兆;而 AccessViolationException 在 .NET Core 是
-    /// corrupted-state exception,try/catch 一樣攔不到。所以只能靠「每次重查」,不能靠例外隔離。
-    /// </para>
-    /// <para>
-    /// 🔑 保存的是<b>身分</b>不是位址:當幀的 addon 指標(由 GetAddonByName 重查而來)與
-    /// <see cref="AgentId.GoldSaucer" />。解析順序刻意與原本的 OnAddonShown 一致 ——
-    /// 先問 addon 對應的 agent,失敗才退到 agent module 的 failsafe 查詢。
-    /// </para>
+    /// 🔴 這裡的用途包含<b>寫入</b>(EditDeckSelectedPage / EditDeckSelectedCardIndex),寫到過期位址不會擲例外、也不會有任何徵兆;而 AccessViolationException 在 .NET Core 是corrupted-state exception,try/catch 一樣攔不到。所以只能靠「每次重查」,不能靠例外隔離。
+    /// 🔑 保存的是<b>身分</b>不是位址。
     /// </remarks>
     private static AgentGoldSaucer* ResolveAgent(nint addonPtr)
     {

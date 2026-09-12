@@ -365,18 +365,9 @@ internal static unsafe partial class TriadDeckSelectAutomation
     /// 讀不到牌組清單時的盲試：對列索引 0~4 依序送選牌組 callback ＋ 確認，<b>一次呼叫只試一副</b>。
     /// </summary>
     /// <remarks>
-    /// 🔴 <b>為什麼不能把五副擠在同一個 <c>foreach</c> 裡</b>（原本的寫法）：每一圈最後那個確認是
-    /// <b>終結動作</b>，登記之後同一位址在 <see cref="AddonPressGuard.TerminalHotFrames"/> 幀內的
-    /// 任何按法都會被守衛擋掉（對關閉中的視窗送輸入正是攔不到的存取違規）。整個 <c>foreach</c> 跑在
-    /// <b>同一幀</b>，所以第 1~4 圈的 callback 與確認<b>全部</b>落在第 0 圈確認的熱窗內被靜默丟掉。
-    /// <para>
-    /// 而這條路徑是<b>一次性</b>的：<see cref="Tick"/> 的入口只在 <c>attemptCount == 0 &amp;&amp;
-    /// AttemptedDeckIndices.Count == 0</c> 時進得來，不像另外四條後援有跨幀 stage 可以在逃生口之後補按
-    /// —— 也就是說列索引 1~4 的盲試<b>永遠不會發生</b>，而不只是延後。
-    /// </para>
-    /// 🔑 改成跨幀推進：呼叫端每 <see cref="DeckSelectRetryCooldownFrames"/> 幀進來一次、推進一副，
-    /// 整輪走完才算一次嘗試（<c>attemptCount++</c>）。守衛的熱窗（15 幀）遠短於這個節奏，
-    /// 所以每一副的 callback 都真的送得出去。
+    /// 🔴 <b>為什麼不能把五副擠在同一個 <c>foreach</c> 裡</b>（原本的寫法）：每一圈最後那個確認是<b>終結動作</b>，登記之後同一位址在 <see cref="AddonPressGuard.TerminalHotFrames"/> 幀內的任何按法都會被守衛擋掉（對關閉中的視窗送輸入正是攔不到的存取違規）。整個 <c>foreach</c> 跑在<b>同一幀</b>，所以第 1~4 圈的 callback 與確認<b>全部</b>落在第 0 圈確認的熱窗內被靜默丟掉。
+    /// 而這條路徑是<b>一次性</b>的：<see cref="Tick"/> 的入口只在 <c>attemptCount == 0 &amp;&amp;AttemptedDeckIndices.Count == 0</c> 時進得來，不像另外四條後援有跨幀 stage 可以在逃生口之後補按—— 也就是說列索引 1~4 的盲試<b>永遠不會發生</b>，而不只是延後。
+    /// 🔑 改成跨幀推進：呼叫端每 <see cref="DeckSelectRetryCooldownFrames"/> 幀進來一次、推進一副，整輪走完才算一次嘗試（<c>attemptCount++</c>）。守衛的熱窗（15 幀）遠短於這個節奏，所以每一副的 callback 都真的送得出去。
     /// </remarks>
     private static bool TryBlindDeckSelect(AtkUnitBase* addon)
     {
@@ -450,15 +441,9 @@ internal static unsafe partial class TriadDeckSelectAutomation
     /// 終結動作鏈：確認鈕 5 → 確認鈕 1 → callback 1（close）→ callback 0（close）。
     /// </summary>
     /// <remarks>
-    /// 🔴🔴 原本是同一次呼叫內「按一招 → 看 <c>IsSelectionComplete</c>／<c>IsVisible</c> 沒落 → 換下一招」的級聯，
-    /// 但關閉中的那幾幀窗還在、還可見，第二招就是打在正在關的窗上（攔不到的存取違規）。
-    /// 改成：一個守衛窗口只送一招；守衛走逃生口放行（＝窗 90 幀都沒收掉，上一招真的沒生效）時才輪到下一招。
-    /// 候選的順序與前置條件都沒變（鈕要可見可用、callback 要有牌組值），只是不再擠在同一次呼叫裡。
-    /// 前置條件在登記守衛<b>之前</b>驗——登記了卻沒按會白白封鎖到逃生口。
-    /// <para>
-    /// 回傳值沿用舊語意：點了鈕回 <see langword="true"/>（送出成功），送了 callback 回「窗是否已收掉」；
-    /// 被守衛擋下回 <see langword="false"/>（這一幀沒做成，呼叫端本來就是每幀重試）。
-    /// </para>
+    /// 🔴🔴 原本是同一次呼叫內「按一招 → 看 <c>IsSelectionComplete</c>／<c>IsVisible</c> 沒落 → 換下一招」的級聯，但關閉中的那幾幀窗還在、還可見，第二招就是打在正在關的窗上（攔不到的存取違規）。改成：一個守衛窗口只送一招；守衛走逃生口放行（＝窗 90 幀都沒收掉，上一招真的沒生效）時才輪到下一招。
+    /// 候選的順序與前置條件都沒變（鈕要可見可用、callback 要有牌組值），只是不再擠在同一次呼叫裡。前置條件在登記守衛<b>之前</b>驗——登記了卻沒按會白白封鎖到逃生口。
+    /// 回傳值沿用舊語意：點了鈕回 <see langword="true"/>（送出成功），送了 callback 回「窗是否已收掉」；被守衛擋下回 <see langword="false"/>（這一幀沒做成，呼叫端本來就是每幀重試）。
     /// </remarks>
     private static bool TryRunConfirmChain(AtkUnitBase* addon, int deckValue, bool includeButtons)
     {

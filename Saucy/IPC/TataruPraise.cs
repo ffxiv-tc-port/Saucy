@@ -5,20 +5,9 @@ namespace Saucy.IPC;
 
 /// <summary>
 /// 塔塔露誇獎（TataruPraise）的單向通知橋接：Saucy 判定出「中獎」時請它念一句。
-///
-/// <para>🔴 <b>只出不進、失敗即靜默。</b> 這條 IPC 從頭到尾不影響 Saucy 任何自動化流程：
-/// 對方沒安裝、沒載入、還在冷卻、或整個擲例外，呼叫端一律當成「沒念」繼續往下走。</para>
-///
-/// <para>⚠️ 這裡刻意<b>不</b>走本 repo 其他整合用的 ECommons <c>[IPC]</c> + <see cref="SubscriptionManager"/>
-/// 路徑。那條路徑把可用性綁在「<c>InstalledPlugins</c> 裡有這個 InternalName 而且 IsLoaded」上，
-/// 對「有裝就順便念一句、沒裝就當沒這回事」的純通知來說是多餘的耦合；而且 TataruPraise 自己
-/// 就提供了 <c>IsAvailableFor(情境)</c>（總開關開著＋這個情境沒被關掉＋這個情境真的有已合成語音），
-/// 那才是「<b>這個情境</b>現在叫得動嗎」的真值來源。</para>
-///
-/// <para>📌 契約名與情境鍵逐字取自 TataruPraise 的 <c>IpcContract.cs</c> / <c>PraiseCategory.cs</c>。
-/// 🔴 Dalamud 的 CallGate 是<b>純字串比對</b>——這幾個字串打錯不會有任何錯誤訊息，
-/// 只會永遠拿到「沒有人註冊」而靜默斷線。改字面前先去對方 repo 確認。</para>
-///
+/// <para>🔴 <b>只出不進、失敗即靜默。</b> 這條 IPC 從頭到尾不影響 Saucy 任何自動化流程：對方沒安裝、沒載入、還在冷卻、或整個擲例外，呼叫端一律當成「沒念」繼續往下走。</para>
+/// <para>⚠️ 這裡刻意<b>不</b>走本 repo 其他整合用的 ECommons <c>[IPC]</c> + <see cref="SubscriptionManager"/>路徑。那條路徑把可用性綁在「<c>InstalledPlugins</c> 裡有這個 InternalName 而且 IsLoaded」上，對「有裝就順便念一句、沒裝就當沒這回事」的純通知來說是多餘的耦合；而且 TataruPraise 自己就提供了 <c>IsAvailableFor(情境)</c>（總開關開著＋這個情境沒被關掉＋這個情境真的有已合成語音），那才是「<b>這個情境</b>現在叫得動嗎」的真值來源。</para>
+/// <para>📌 契約名與情境鍵逐字取自 TataruPraise 的 <c>IpcContract.cs</c> / <c>PraiseCategory.cs</c>。🔴 Dalamud 的 CallGate 是<b>純字串比對</b>——這幾個字串打錯不會有任何錯誤訊息，只會永遠拿到「沒有人註冊」而靜默斷線。改字面前先去對方 repo 確認。</para>
 /// <para>🔴 <b>只在主執行緒呼叫。</b> 目前的呼叫點都在 framework tick／addon 事件上。</para>
 /// </summary>
 internal static class TataruPraise
@@ -30,21 +19,12 @@ internal static class TataruPraise
     public const string IsAvailableChannel = "TataruPraise.IsAvailable";
 
     /// <summary>
-    /// <c>Func&lt;string, bool&gt;</c>：<b>指定的那個情境</b>現在出得了聲嗎
-    /// （總開關開著＋這個情境沒被關掉＋這個情境至少有一句已合成的語音）。
+    /// <c>Func&lt;string, bool&gt;</c>：<b>指定的那個情境</b>現在出得了聲嗎（總開關開著＋這個情境沒被關掉＋這個情境至少有一句已合成的語音）。
     /// </summary>
     /// <remarks>
-    /// 🔴 <b>閘門要問的是這一個，不是 <see cref="IsAvailableChannel"/>。</b>後者問的是
-    /// 「整池<b>有某個情境</b>播得出來」，於是「別的情境有語音、<b>呼叫端要的那個情境</b>一句都沒有」時
-    /// 照樣通過，接著 <c>Praise</c> 回 <c>false</c>——呼叫端就分不出「不能出聲」與「這次剛好沒出聲」。
-    /// <para>
+    /// 🔴 <b>閘門要問的是這一個，不是 <see cref="IsAvailableChannel"/>。</b>後者問的是「整池<b>有某個情境</b>播得出來」，於是「別的情境有語音、<b>呼叫端要的那個情境</b>一句都沒有」時照樣通過，接著 <c>Praise</c> 回 <c>false</c>——呼叫端就分不出「不能出聲」與「這次剛好沒出聲」。
     /// 📌 它刻意<b>不看冷卻</b>：冷卻是「這次剛好不出聲」，不是「不能出聲」。
-    /// </para>
-    /// <para>
-    /// 🔴 舊版 TataruPraise 沒有註冊這個端點，<c>InvokeFunc</c> 會擲 <c>IpcNotReadyError</c>，
-    /// 剛好落進既有的 catch＝安靜不出聲，這是正確的 fail-safe。
-    /// <b>失敗時絕不可以退回去叫 <see cref="IsAvailableChannel"/></b>——那樣就把這個端點的意義整個抵銷掉了。
-    /// </para>
+    /// 🔴 舊版 TataruPraise 沒有註冊這個端點，<c>InvokeFunc</c> 會擲 <c>IpcNotReadyError</c>，剛好落進既有的 catch＝安靜不出聲，這是正確的 fail-safe。<b>失敗時絕不可以退回去叫 <see cref="IsAvailableChannel"/></b>——那樣就把這個端點的意義整個抵銷掉了。
     /// </remarks>
     public const string IsAvailableForChannel = "TataruPraise.IsAvailableFor";
 
