@@ -9,16 +9,10 @@ using System.Text.Json;
 namespace Saucy.LeapOfFaith;
 
 /// <summary>
-/// Infers likely platform positions from OTHER players nearby, rather than trying to race or
-/// follow them directly. Every non-falling sample of every nearby player is recorded and points
-/// within a small radius are merged into one entry with a running observation count — count acts
-/// as the confidence signal ("dense points = safer") since real platforms get walked/landed-on by
-/// many players over many samples, while a spot only ever passed through briefly stays low-count.
-/// The stability check only requires the player to not be actively falling on THIS sample (not a
-/// sustained stillness window), so a jump that briefly lands on a new platform before jumping again
-/// still gets recorded — a real landing, even a split-second one, is exactly the kind of point this
-/// is meant to capture. Observed points persist to a JSON file across sessions in case the same
-/// course layout recurs (Leap of Faith only has a small number of known layout variants).
+/// Infers likely platform positions from OTHER players nearby, rather than trying to race or follow them directly.
+/// Every non-falling sample of every nearby player is recorded and points within a small radius are merged into one entry with a running observation count — count acts as the confidence signal ("dense points = safer") since real platforms get walked/landed-on by many players over many samples, while a spot only ever passed through briefly stays low-count.
+/// The stability check only requires the player to not be actively falling on THIS sample (not a sustained stillness window), so a jump that briefly lands on a new platform before jumping again still gets recorded.
+/// Observed points persist to a JSON file across sessions in case the same course layout recurs (Leap of Faith only has a small number of known layout variants).
 /// </summary>
 internal static class LeapOfFaithPlatformObserver
 {

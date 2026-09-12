@@ -12,28 +12,9 @@ namespace Saucy.LeapOfFaith;
 
 internal static unsafe class LeapOfFaithDetection
 {
-    // Confirmed via live diagnostic: Leap of Faith does NOT create a GoldSaucerManager
-    // GFateDirector like Wind Blows/Any Way the Wind Blows does — "目前沒有作用中的 GATE 導演"
-    // stayed true throughout an actual run with visible cactuar-collection progress. Instead it
-    // sets ConditionFlag 56 (BoundByDuty56), found by dumping every active ConditionFlag while
-    // mid-run. Distinct from Air Force One's BoundByDuty95.
-    //
-    // BoundByDuty56 turned out NOT unique to Leap of Faith — confirmed live via screenshot showing
-    // the platform-marker blue trail overlay drawn during an unrelated duty/FATE fight (亞瑟羅王)
-    // far outside the Gold Saucer ("登高跳跳樂的畫路徑 在其他副本中也畫了"). First attempt gated
-    // this on GateDirector.InSaucer (hardcoded TerritoryType 144, the main Gold Saucer square) —
-    // that turned out WRONG too: it broke detection during a real, late-stage Leap of Faith run
-    // ("這是已經快結束了" — platform points/GateType stayed at 0/None despite being deep into an
-    // actual attempt), meaning Leap of Faith's jump course must run in a different, non-144
-    // instanced territory. Switched to GoldSaucerManager's existence instead — but that ALSO turned
-    // out not to be zone-scoped: it stayed non-null even in Eureka, so the trail overlay showed up
-    // there too ("登高的繪至路徑 會在優雷卡顯示"). Neither BoundByDuty56 nor GoldSaucerManager
-    // presence actually distinguishes this specific minigame from unrelated content.
-    //
-    // Use the real, minigame-specific objects instead — the finish marker (FinishDataId) and the
-    // cactuar trophies (CactuarDataIds) only ever exist while an actual Leap of Faith run is live,
-    // so their presence in the object table is a far more reliable signal than any zone/manager/
-    // condition-flag check.
+    // Leap of Faith does NOT create a GoldSaucerManager GFateDirector like Wind Blows/Any Way the Wind Blows does.
+    // Neither BoundByDuty56 nor GoldSaucerManager presence actually distinguishes this specific minigame from unrelated content.
+    // Use the real, minigame-specific objects instead — the finish marker (FinishDataId) and the cactuar trophies (CactuarDataIds) only ever exist while an actual Leap of Faith run is live, so their presence in the object table is a far more reliable signal than any zone/manager/ condition-flag check.
     private static bool HasLeapOfFaithObjects()
     {
         foreach (var obj in Svc.Objects)
@@ -52,13 +33,8 @@ internal static unsafe class LeapOfFaithDetection
 }
 
 /// <summary>
-/// Best-effort auto-movement for Leap of Faith. Platform layout and cactuar-trophy positions are
-/// randomized per run and there's no navmesh over the floating platforms, so this can't do real
-/// pathfinding or obstacle-aware jumping — it only steers toward whichever known object (the
-/// finish line or a cactuar trophy) is currently visible in the object table, and jumps on a
-/// fixed timer as a rough heuristic. Movement uses simulated key taps (same mechanism already
-/// used for Air Force One's Space-to-shoot), never direct memory writes to the character.
-/// Expect this to fall off course sometimes — there is no floor/collision detection.
+/// Best-effort auto-movement for Leap of Faith. Platform layout and cactuar-trophy positions are randomized per run and there's no navmesh over the floating platforms, so this can't do real pathfinding or obstacle-aware jumping — it only steers toward whichever known object (the finish line or a cactuar trophy) is currently visible in the object table, and jumps on a fixed timer as a rough heuristic.
+/// Movement uses simulated key taps (same mechanism already used for Air Force One's Space-to-shoot), never direct memory writes to the character. Expect this to fall off course sometimes — there is no floor/collision detection.
 /// </summary>
 internal static unsafe class LeapOfFaithAutomation
 {
@@ -97,16 +73,9 @@ internal static unsafe class LeapOfFaithAutomation
         weAreHoldingKeys = false;
     }
 
-    // Standing on a cactuar/finish for ~1s picks it up — once that's happened, stop offering it
-    // as a target (both for steering and the on-screen pointer) for the rest of this run, per
-    // user feedback ("目標 踩在上面一秒後消失 該場遊戲不再顯示 避免干擾").
-    //
-    // Keyed by (GameObjectId, Position) rather than just the id — FFXIV's client recycles
-    // GameObjectId slots as objects despawn/spawn, so a BRAND NEW cactuar elsewhere in the run can
-    // end up reusing an id already in this set, making it get silently excluded from targeting the
-    // instant it appears, before the player ever got near it ("目標不見了 還沒接近他"). Requiring
-    // the position to also roughly match means only the actual consumed object (which doesn't
-    // move) gets excluded, not an unrelated new spawn that happens to inherit its old id.
+    // Standing on a cactuar/finish for ~1s picks it up — once that's happened, stop offering it as a target (both for steering and the on-screen pointer) for the rest of this run.
+    // Keyed by (GameObjectId, Position) rather than just the id — FFXIV's client recycles GameObjectId slots as objects despawn/spawn, so a BRAND NEW cactuar elsewhere in the run can end up reusing an id already in this set, making it get silently excluded from targeting the instant it appears, before the player ever got near it.
+    // Requiring the position to also roughly match means only the actual consumed object (which doesn't move) gets excluded, not an unrelated new spawn that happens to inherit its old id.
     private const float StandingOnRadius = 1.5f;
     private const double StandOnSeconds = 1.0;
     private const float ConsumedPositionTolerance = 2f;
@@ -280,14 +249,9 @@ internal static unsafe class LeapOfFaithAutomation
     }
 
     /// <summary>
-    /// No known target/track/guide-trail data to steer by. Tried pushing forward + jumping blindly
-    /// first ("standing still guarantees failure") — confirmed live it just as often ran the
-    /// character off the platform into the void instead ("會往空處跑"). Tried gating that on a
-    /// vnavmesh forward-floor check next, but vnavmesh has already been confirmed (repeatedly, live)
-    /// to return no floor data ANYWHERE inside this GATE's dynamic platforms — so that check can
-    /// only ever fail here and is dead weight, not a real safety net ("不是說在登高內無論何處
-    /// vnavmesh 都查不到地板嗎"). With no reliable floor signal of any kind available, standing
-    /// still is the only safe option left when there's truly no recorded data to go on.
+    /// No known target/track/guide-trail data to steer by.
+    /// vnavmesh has already been confirmed (repeatedly, live) to return no floor data ANYWHERE inside this GATE's dynamic platforms — so that check can only ever fail here and is dead weight, not a real safety net.
+    /// With no reliable floor signal of any kind available, standing still is the only safe option left when there's truly no recorded data to go on.
     /// </summary>
     private static void BlindExploreForward() => ReleaseKeys();
 
@@ -563,16 +527,9 @@ internal static unsafe class LeapOfFaithAutomation
         var dot = Math.Clamp(Vector3.Dot(forward, toTarget), -1f, 1f);
         var angleDiff = MathF.Acos(dot) * MathF.Sign(cross == 0 ? 1 : cross);
 
-        // This never got the fix Cliffhanger's steering did — pure "hold A/D alone to turn" never
-        // actually rotates the character in this client's control scheme (A/D strafe instead), so
-        // it just held a synthetic strafe key indefinitely: no real forward progress ("自動移動不
-        // 會動"), and since GameKeyInput uses real OS-level SendInput key state, that stuck key kept
-        // fighting the player's own manual WASD input the whole time too ("手動移動時他又會阻止我
-        // 動"). Hold W together with A/D to curve the run direction instead — same combined-
-        // movement pattern already proven on Cliffhanger, self-correcting every frame against the
-        // real updated position regardless of rotation-reading ambiguity. The now-unused "反轉轉
-        // 向" checkbox is left in Configuration but no longer read here; A/D direction was never the
-        // actual problem.
+        // pure "hold A/D alone to turn" never actually rotates the character in this client's control scheme (A/D strafe instead).
+        // Hold W together with A/D to curve the run direction instead — same combined- movement pattern already proven on Cliffhanger, self-correcting every frame against the real updated position regardless of rotation-reading ambiguity.
+        // The now-unused "反轉轉 向" checkbox is left in Configuration but no longer read here; A/D direction was never the actual problem.
         var needsCorrection = MathF.Abs(angleDiff) > TurnThresholdRadians;
         HoldKeys(needsCorrection
             ? (System.Collections.Generic.IEnumerable<int>)[GameKeyInput.VK_W, angleDiff > 0 ? GameKeyInput.VK_A : GameKeyInput.VK_D]

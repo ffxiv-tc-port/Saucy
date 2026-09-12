@@ -131,18 +131,11 @@ internal static class CliffhangerRecorder
     public readonly record struct ReplayWaypoint(Vector3 Position, bool JumpHere);
 
     /// <summary>
-    /// Builds a walkable/jumpable waypoint list from the most recently recorded attempt (highest
-    /// AttemptIndex — i.e. whatever the user played last before stopping, per "我手動跑一次(包含
-    /// 跳躍) 你照路徑試試"). Since the course is fixed per-run, replaying a real successful manual
-    /// run is far more reliable than any live heuristic (vnavmesh can't cross the gap at all here,
-    /// and there's no navmesh-independent floor data to steer by otherwise).
+    /// Builds a walkable/jumpable waypoint list from the most recently recorded attempt (highest AttemptIndex).
+    /// Since the course is fixed per-run, replaying a real successful manual run is far more reliable than any live heuristic (vnavmesh can't cross the gap at all here, and there's no navmesh-independent floor data to steer by otherwise).
     /// </summary>
-    // Spacing must stay comfortably larger than CliffhangerAutomation's arrival radii — with the
-    // old 1.5m spacing, waypoints could sit closer together than a 2m arrival radius, letting
-    // walking speed alone "arrive" at several waypoints in one frame and constantly snap the
-    // steering direction to whatever's next, which read as a heavy stutter/interruption while
-    // moving ("移動時的中斷感還是很重"). Wider spacing means each waypoint gets an actual straight
-    // run before the next direction change.
+    // Spacing must stay comfortably larger than CliffhangerAutomation's arrival radii.
+    // Wider spacing means each waypoint gets an actual straight run before the next direction change.
     public static List<ReplayWaypoint>? BuildReplayRoute(float minWaypointSpacing = 3f)
     {
         if (points.Count < 2)

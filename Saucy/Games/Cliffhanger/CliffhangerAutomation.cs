@@ -9,15 +9,9 @@ using System.Numerics;
 namespace Saucy.Cliffhanger;
 
 /// <summary>
-/// Cliffhanger (搶救小鳥大作戰) has a real GFateDirector like most other GATEs (confirmed live:
-/// GateType 1 / "Cliffhanger" shows up in the GoldSaucerGates debug panel, and a recorded run
-/// showed InGate true for the majority of samples once actually inside — unlike Leap of Faith
-/// which needed a ConditionFlag workaround). Identified from a real recording
-/// (CliffhangerObjects_20260702_130044.json): the rescue target is EventNpc DataId 1010469
-/// ("迷路的陸行鳥雛鳥"), and the main hazard is BattleNpc DataId 3782 ("炸彈", sampled thousands of
-/// times in a single ~38s run — clearly a continuously-moving active threat). Steers toward the
-/// nearest chick while trying to keep distance from any nearby bomb, using the same simulated-key
-/// movement mechanism as Leap of Faith.
+/// Cliffhanger (搶救小鳥大作戰) has a real GFateDirector like most other GATEs.
+/// the rescue target is EventNpc DataId 1010469 ("迷路的陸行鳥雛鳥"), and the main hazard is BattleNpc DataId 3782.
+/// Steers toward the nearest chick while trying to keep distance from any nearby bomb, using the same simulated-key movement mechanism as Leap of Faith.
 /// </summary>
 internal static unsafe class CliffhangerAutomation
 {
@@ -98,47 +92,14 @@ internal static unsafe class CliffhangerAutomation
     // control using the recorded direction only for the jump itself.
     private const float RouteArrivalRadius = 1f;
 
-    // "往非跳躍點移動時 可先用vnavmesh走長距離路徑 接近時 用新方法校正位置" — ordinary segments
-    // hand off from vnavmesh to precise key-steering once within this range of the waypoint.
-    //
-    // "中間有障礙" — precise key-steering walks a straight line with no obstacle awareness at all
-    // (unlike vnavmesh's real pathfinding), so a wide 3m handoff (borrowed from WindBlows/SliceIsRight's
-    // open, obstacle-free arenas) let it try to plow straight through terrain/props between two
-    // waypoints that are only a few meters apart. Keep vnavmesh responsible for pathfinding around
-    // obstacles for as much of the distance as possible; only the final short stretch — where
-    // vnavmesh's own coarser arrival tolerance stops being precise enough — switches to straight-line
-    // steering.
+    // ordinary segments hand off from vnavmesh to precise key-steering once within this range of the waypoint.
+    // precise key-steering walks a straight line with no obstacle awareness at all (unlike vnavmesh's real pathfinding).
+    // Keep vnavmesh responsible for pathfinding around obstacles for as much of the distance as possible; only the final short stretch — where vnavmesh's own coarser arrival tolerance stops being precise enough — switches to straight-line steering.
     private const float RouteManualApproachRadius = 1.2f;
 
-    // Steer directly at a jump waypoint's actual recorded position the whole approach (not
-    // vnavmesh, not a synthetic far-away aim point) and start tapping jump once within this
-    // radius — jumping mid-approach rather than after a separate stop/re-aim phase gives more
-    // accurate direction correction, per user request ("接近時按跳躍 這樣修正方向應該比較精準").
-    //
-    // 2m turned out too tight to reliably trigger at all under the old key-simulation steering
-    // ("放寬好了 沒抓到") — widened up to 3.5m as a result. Now that PreciseMovement gives much more
-    // reliable alignment, 3.5m turned out to commit to the jump too early/far out, launching before
-    // actually lined up with the far platform and missing it ("太早跳...沒跳上台階"). Tightened back
-    // down closer to the original value.
-    //
-    // Still too loose once full-speed/run-up was made to apply for the whole approach (not just
-    // once inside this radius) — many recorded jump-point segments are themselves only a couple
-    // meters long, so the character would already be "close enough" from tick one, spend its whole
-    // MinJumpRunUpMs timer standing almost still, and launch with barely any real momentum ("很小
-    // 的距離跳 加速不夠"). Shrunk down to essentially "actually touching the takeoff point" instead
-    // of a wide commit radius — this forces the character to run the ENTIRE recorded segment at
-    // full speed before the jump is even allowed to fire, matching the real desired behavior
-    // ("往二號跑 碰到時跳躍").
-    //
-    // Widened slightly (0.5→1.2) for chained jumps specifically ("有成功跳過第一次，但落地後又往回
-    // 跑") — a real recorded run's consecutive jump takeoffs can be as little as 0.6-0.8m apart, but
-    // the AUTOMATED jump's landing spot doesn't perfectly reproduce the original recording's exact
-    // landing (different run-up speed/alignment/timing), so it can land slightly past the next
-    // recorded jump waypoint. Since "close enough" is checked as a plain distance (not direction-
-    // aware), overshooting a 0.5m radius meant literally turning around and walking backward to
-    // hit that exact point before being allowed to jump again. 1.2m comfortably absorbs realistic
-    // landing variance from a genuinely nearby next takeoff without meaningfully loosening the
-    // "run the whole segment, jump on contact" behavior for normal, longer segments.
+    // Steer directly at a jump waypoint's actual recorded position the whole approach (not vnavmesh, not a synthetic far-away aim point) and start tapping jump once within this radius.
+    // Shrunk down to essentially "actually touching the takeoff point" instead of a wide commit radius — this forces the character to run the ENTIRE recorded segment at full speed before the jump is even allowed to fire.
+    // Widened slightly (0.5→1.2) for chained jumps: Since "close enough" is checked as a plain distance (not direction- aware), overshooting a 0.5m radius meant literally turning around and walking backward to hit that exact point before being allowed to jump again.
     private const float JumpApproachRadius = 1.2f;
     private static int routeIndex;
     public static int RouteIndex => routeIndex;
@@ -291,18 +252,8 @@ internal static unsafe class CliffhangerAutomation
             return false;
         }
 
-        // A jump point's whole purpose is to move AWAY from dest (jump across a gap) — the instant
-        // the player is standing right at the takeoff spot (which is exactly when this button gets
-        // clicked mid-testing, one point at a time) treating "already within arrival radius" as
-        // "done, nothing to do" meant the jump itself never actually got triggered at all
-        // ("移動到跳躍點並跳躍 沒有反應"). Jump points ignore the distance-based arrival check
-        // entirely and just keep steering/attempting the jump every tick until the timeout expires.
-        //
-        // Non-jump manual moves used the same loose RouteArrivalRadius (1m) as the real route's
-        // waypoint-advance check — fine for "close enough to continue along a route", but this
-        // button exists specifically to test PRECISE positioning, so 1m looked like "no reaction"
-        // whenever clicked from just inside that radius ("接近時 按鈕無反應"). Use a much tighter
-        // radius here instead.
+        // A jump point's whole purpose is to move AWAY from dest (jump across a gap). Jump points ignore the distance-based arrival check entirely and just keep steering/attempting the jump every tick until the timeout expires.
+        // this button exists specifically to test PRECISE positioning. Use a much tighter radius here instead.
         const float ManualMoveArrivalRadius = 0.15f;
         if (!manualMoveIsJumpPoint && DateTime.UtcNow >= manualMoveExpiresUtc)
         {
@@ -336,19 +287,8 @@ internal static unsafe class CliffhangerAutomation
                 return true;
             }
 
-            // "三點測試中的第二點 不會跳...也沒有移動" — this test button can be clicked from
-            // anywhere, including standing at the recorded "next start" point on the FAR side of
-            // the very gap this jump point is meant to cross (exactly what happens testing jump
-            // points one at a time out of order). allowJumpAcrossGap:false (used for the real
-            // route's approach segment, where a gap genuinely means "wrong path") would just
-            // refuse to move at all here instead — allow jumping across a gap during the approach
-            // for this manual test specifically, since we can't assume anything about what's on the
-            // other side when testing a single point in isolation.
-            //
-            // isJumpApproach:true for the WHOLE approach (not just once inside JumpApproachRadius)
-            // — see SteerByKeysToward's own comment for why gating full-speed/run-up purely on
-            // radius starved short segments of any real acceleration distance at all ("很小的距離跳
-            // 加速不夠 連跳躍起點都跳不到").
+            // allow jumping across a gap during the approach for this manual test specifically, since we can't assume anything about what's on the other side when testing a single point in isolation.
+            // isJumpApproach:true for the WHOLE approach (not just once inside JumpApproachRadius) — see SteerByKeysToward's own comment for why gating full-speed/run-up purely on radius starved short segments of any real acceleration distance at all.
             var jumped = SteerByKeysToward(dest, allowVnavmeshFloorCheck: true, allowJumpAcrossGap: true, isJumpApproach: true);
             if (jumped)
             {
@@ -527,15 +467,8 @@ internal static unsafe class CliffhangerAutomation
 
         if (wp.IsJumpPoint)
         {
-            // Steer continuously and precisely toward the actual recorded takeoff point itself
-            // (not vnavmesh, not a synthetic far-away aim point derived from a separately-recorded
-            // facing) — jump gets tapped as soon as close enough AND heading is aligned, so the
-            // jump happens mid-approach rather than after a separate stop/turn/re-aim phase. A
-            // real, nearby position target is inherently more precise to steer against than an
-            // extrapolated point 8m out ("接近時按跳躍 這樣修正方向應該比較精準"). No longer needs
-            // a separately-recorded jump direction/rotation at all — heading is corrected purely by
-            // steering toward the real position (SteerByKeysToward's W+A/D approach), same as every
-            // other segment, per "不要記錄方向了 靠移動時自動修正".
+            // Steer continuously and precisely toward the actual recorded takeoff point itself (not vnavmesh, not a synthetic far-away aim point derived from a separately-recorded facing) — jump gets tapped as soon as close enough AND heading is aligned, so the jump happens mid-approach rather than after a separate stop/turn/re-aim phase.
+            // No longer needs a separately-recorded jump direction/rotation at all — heading is corrected purely by steering toward the real position (SteerByKeysToward's W+A/D approach), same as every other segment.
             if (Vnavmesh.IsInstalled && Vnavmesh.IsMoving())
             {
                 Vnavmesh.StopPath();
@@ -563,16 +496,9 @@ internal static unsafe class CliffhangerAutomation
             return;
         }
 
-        // Whether the NEXT waypoint (after this one) is a jump point only matters for the FINAL
-        // short stretch right up to this waypoint (near a cliff edge, vnavmesh's pathfinding isn't
-        // guaranteed to take the expected route — the short polygon right at the edge may not be
-        // mesh-connected the way a human would walk it, sending the character down some entirely
-        // different, longer path: "沒有從跳躍點前一個點 移動到跳躍點 就直接沿路走下來了"). It does
-        // NOT mean the ENTIRE distance back to wherever the player currently is should skip vnavmesh
-        // — a route point can easily be many meters away across obstacle-filled terrain, and blind
-        // straight-line steering the whole way just walks into whatever's in between
-        // ("走到1號點後 會改用精準模式往第二點衝 但中間有障礙"). Let vnavmesh handle distance same as
-        // any ordinary segment; only skip it once already within the close-approach radius below.
+        // Whether the NEXT waypoint (after this one) is a jump point only matters for the FINAL short stretch right up to this waypoint.
+        // It does NOT mean the ENTIRE distance back to wherever the player currently is should skip vnavmesh.
+        // Let vnavmesh handle distance same as any ordinary segment; only skip it once already within the close-approach radius below.
         var nextIsJumpPoint = routeIndex + 1 < route.Count && route[routeIndex + 1].IsJumpPoint;
 
         // Ordinary segment (or the final approach into a pre-jump waypoint) — now that the 3-point
@@ -601,19 +527,11 @@ internal static unsafe class CliffhangerAutomation
         SteerByKeysToward(dest, allowVnavmeshFloorCheck: true, allowJumpAcrossGap: false, isJumpApproach: nextIsJumpPoint, canPressJump: false);
     }
 
-    /// <summary>Advances through the recorded replay route as each waypoint is reached. Returns
-    /// false once the route runs out (or none was ever recorded) so the caller falls back to live
-    /// target-chasing.</summary>
-    /// <summary>Walks the dense auto-recorded replay route the same way TickSparseRoute walks a
-    /// manually-marked one — vnavmesh for distance, precise steering close-up, and (critically)
-    /// only advancing past a jump waypoint once SteerByKeysToward reports the jump actually fired.
-    ///
-    /// The old version (TryGetReplayWaypoint + SteerToward) advanced purely on distance-to-waypoint,
-    /// which broke down specifically for jump waypoints: a jump waypoint's recorded position is the
-    /// last-ground-contact TAKEOFF spot, and after actually jumping the character lands meters past
-    /// it — often still farther than the (deliberately tight) arrival radius, so the index never
-    /// advanced and the character then steered BACKWARD toward the takeoff point it had just left,
-    /// blocking every jump after the first ("第一個跳躍點有點偏 並往回跑 造成第二次無法跳").</summary>
+    /// <summary>
+    /// Advances through the recorded replay route as each waypoint is reached. Returns false once the route runs out (or none was ever recorded) so the caller falls back to live target-chasing.
+    /// Walks the dense auto-recorded replay route the same way TickSparseRoute walks a manually-marked one — vnavmesh for distance, precise steering close-up, and (critically) only advancing past a jump waypoint once SteerByKeysToward reports the jump actually fired.
+    /// a jump waypoint's recorded position is the last-ground-contact TAKEOFF spot, and after actually jumping the character lands meters past it — often still farther than the (deliberately tight) arrival radius.
+    /// </summary>
     private static void TickReplayRoute()
     {
         if (replayRoute is not { Count: > 0 } route || replayIndex >= route.Count)
@@ -745,20 +663,10 @@ internal static unsafe class CliffhangerAutomation
         AllBombPositions = bombPositions;
     }
 
-    // Unlike Leap of Faith's dynamic floating platforms (confirmed to have NO vnavmesh floor
-    // coverage anywhere), Cliffhanger's course is static level geometry — a live vnavmesh debug
-    // overlay screenshot confirmed real, solid mesh coverage across the whole course. That means
-    // vnavmesh's own pathfinding can be trusted here instead of the guess-based manual steering
-    // Leap of Faith is stuck with, so route the main "walk to chick" movement through actual
-    // navmesh pathfinding rather than screenshot-driven route building — the real mesh IS already
-    // the route data.
-    //
-    // MUST stay <= ReplayWaypointArrivalRadius above. It used to be
-    // 1.5m while the replay-index advance check needed 1m — vnavmesh would consider itself
-    // "arrived" and stop 1-1.5m short, but the replay logic never saw that as close enough to
-    // advance to the NEXT waypoint, so the character just stood there until the player manually
-    // stepped the remaining gap ("現在要我走一步 他才會偵測到下一步"). Since jump waypoints only
-    // get selected once the index reaches them, this also silently ate every jump ("還是沒有跳").
+    // Cliffhanger's course is static level geometry.
+    // That means vnavmesh's own pathfinding can be trusted here instead of the guess-based manual steering Leap of Faith is stuck with, so route the main "walk to chick" movement through actual navmesh pathfinding rather than screenshot-driven route building — the real mesh IS already the route data.
+    // MUST stay <= ReplayWaypointArrivalRadius above.
+    // vnavmesh would consider itself "arrived" and stop 1-1.5m short, but the replay logic never saw that as close enough to advance to the NEXT waypoint.
     private const float ArrivalRange = 0.8f;
 
     private static void SteerToward(Vector3 target, bool forceJump = false)
@@ -912,30 +820,12 @@ internal static unsafe class CliffhangerAutomation
     // it. Direction stays continuously aimed at the live target position the whole way (no locked/
     // frozen bearing), per explicit request.
 
-    /// <summary>Returns true only on the tick the jump keypress actually fires (not merely "close
-    /// enough to attempt") — callers that need to advance a route index exactly when the jump
-    /// really happens (not before) should key off this, not off distance/angle alone.
-    ///
-    /// isJumpApproach means "steerTarget is a jump takeoff point" — this now drives full-speed/
-    /// no-deceleration movement (and starts the run-up timer) for the WHOLE approach, not just once
-    /// within JumpApproachRadius. Previously the caller pre-computed "close enough" and only passed
-    /// forceJump=true at that point, meaning short segments (a few meters, common in the 3-point
-    /// test tool) spent almost their entire approach already "close enough" — so the run-up timer
-    /// and full-speed movement only got a few hundred ms to actually build real momentum before the
-    /// jump fired, launching at a near-standstill ("很小的距離跳 加速不夠 連跳躍起點都跳不到").
-    /// Now the whole run toward a jump point is always full speed with the run-up clock running the
-    /// entire time; only the actual space-bar press stays gated on distance/alignment below.</summary>
-    // "跳躍點減速了" — the route segment leading right up to a jump waypoint (TickSparseRoute's
-    // "nextIsJumpPoint" branch) still called this with isJumpApproach:false (only the jump waypoint
-    // itself got full speed), so the character decelerated approaching THAT prior waypoint, then had
-    // to rebuild speed almost from scratch once the route advanced to the actual jump point —
-    // killing momentum right before the run-up that matters most. That segment now also passes
-    // isJumpApproach:true for full speed/run-up-timer purposes, but must NOT be allowed to actually
-    // fire the jump itself (it isn't standing at the real takeoff point) — canPressJump decouples
-    // "give this segment full speed and start the run-up clock early" from "this specific call may
-    // press space", so passing isJumpApproach:true without canPressJump:true can't spuriously jump
-    // just because the character happened to pass within JumpApproachRadius of a waypoint that isn't
-    // the real jump point.
+    /// <summary>
+    /// Returns true only on the tick the jump keypress actually fires (not merely "close enough to attempt") — callers that need to advance a route index exactly when the jump really happens (not before) should key off this, not off distance/angle alone.
+    /// isJumpApproach means "steerTarget is a jump takeoff point" — this now drives full-speed/ no-deceleration movement (and starts the run-up timer) for the WHOLE approach, not just once within JumpApproachRadius.
+    /// Now the whole run toward a jump point is always full speed with the run-up clock running the entire time; only the actual space-bar press stays gated on distance/alignment below.</summary>
+    // That segment now also passes isJumpApproach:true for full speed/run-up-timer purposes, but must NOT be allowed to actually fire the jump itself (it isn't standing at the real takeoff point).
+    // canPressJump decouples "give this segment full speed and start the run-up clock early" from "this specific call may press space", so passing isJumpApproach:true without canPressJump:true can't spuriously jump just because the character happened to pass within JumpApproachRadius of a waypoint that isn't the real jump point.
     private static bool SteerByKeysToward(Vector3 steerTarget, bool allowVnavmeshFloorCheck, bool allowJumpAcrossGap, bool isJumpApproach = false, bool canPressJump = true)
     {
         var toTargetRaw = steerTarget - Player.Position;
@@ -962,36 +852,18 @@ internal static unsafe class CliffhangerAutomation
 
         var angleDiff = MathF.Acos(Math.Clamp(Vector3.Dot(forward, toTarget), -1f, 1f));
 
-        // "回到三點測試 似乎是他不會急轉向 只能慢慢轉" / "立即移動會亂跑 繞地圖繞一圈後慢慢修正回
-        // 原點" — the character's body can only turn so fast per frame; commanding full-speed
-        // movement toward a target that's sharply off to the side (or behind) makes it run a wide
-        // curving loop while its facing slowly catches up, instead of turning in place first. Scale
-        // speed down the more the target is off to the side/behind, so a big heading mismatch turns
-        // into "pivot mostly in place" rather than "sprint in the wrong direction while turning".
-        //
-        // Both the distance AND angle deceleration are skipped entirely when about to jump — a
-        // jump's horizontal distance comes from however fast the character was already moving at
-        // takeoff, so slowing down for a precise stop/turn right where forceJump fires meant
-        // jumping with near-zero momentum and barely leaving the ground ("有時會原地跳"/"減速了
-        // 導致沒跳上台階"). Alignment is still required to actually PRESS jump (further below) —
-        // this only affects how fast the character runs while approaching, not whether it jumps.
-        // Only non-jump approaches need to decelerate for a precise stop.
+        // the character's body can only turn so fast per frame; commanding full-speed movement toward a target that's sharply off to the side (or behind) makes it run a wide curving loop while its facing slowly catches up, instead of turning in place first.
+        // Scale speed down the more the target is off to the side/behind, so a big heading mismatch turns into "pivot mostly in place" rather than "sprint in the wrong direction while turning".
+        // Both the distance AND angle deceleration are skipped entirely when about to jump — a jump's horizontal distance comes from however fast the character was already moving at takeoff, so slowing down for a precise stop/turn right where forceJump fires meant jumping with near-zero momentum and barely leaving the ground.
+        // Alignment is still required to actually PRESS jump (further below) — this only affects how fast the character runs while approaching, not whether it jumps. Only non-jump approaches need to decelerate for a precise stop.
         var angleSpeedScale = isJumpApproach ? 1f : Math.Clamp(1f - (angleDiff / MathF.PI), MinApproachSpeed, 1f);
         var distanceSpeedScale = isJumpApproach ? 1f : Math.Clamp(distToTarget / DecelerationDistance, MinApproachSpeed, 1f);
         var moveVector = toTarget * MathF.Min(angleSpeedScale, distanceSpeedScale);
 
-        // No real floor/collision detection here — walking straight toward a target or straight
-        // away from a bomb can walk the player off a ledge (confirmed live: "他跳樓了"). If
-        // vnavmesh is installed, refuse to move when there's no landable floor a couple meters
-        // ahead in the direction we're about to move; otherwise fall back to the old (unsafe)
-        // behavior since we have no other way to know where the edges are.
-        //
-        // Skipped entirely for a jump approach ("要移動到跳躍點才起跳 不用探測地板") — a jump
-        // waypoint's whole purpose is to run straight at a recorded takeoff point and jump once
-        // actually there; floor probing ahead of the target direction was meant to catch "walked
-        // off a ledge by accident", but for a real jump point there's SUPPOSED to be no floor ahead
-        // (that's the gap being jumped), so the probe just added noise and false "gap detected"
-        // triggers on the ordinary approach instead of ever being needed. Just steer straight there.
+        // No real floor/collision detection here — walking straight toward a target or straight away from a bomb can walk the player off a ledge.
+        // If vnavmesh is installed, refuse to move when there's no landable floor a couple meters ahead in the direction we're about to move; otherwise fall back to the old (unsafe) behavior since we have no other way to know where the edges are.
+        // Skipped entirely for a jump approach: a jump waypoint's whole purpose is to run straight at a recorded takeoff point and jump once actually there.
+        // for a real jump point there's SUPPOSED to be no floor ahead (that's the gap being jumped), so the probe just added noise and false "gap detected" triggers on the ordinary approach instead of ever being needed. Just steer straight there.
         if (allowVnavmeshFloorCheck && !isJumpApproach && Vnavmesh.IsInstalled)
         {
             var aheadPoint = Player.Position + (toTarget * 2.5f);
