@@ -262,13 +262,9 @@ internal static unsafe class PreciseMovement
         var speedScale = MathF.Min(flatLength, 1f);
         var direction = flat / flatLength;
 
-        // "立即移動會亂跑 繞地圖繞一圈後慢慢修正回原點" — always using Player.Rotation as the
-        // reference frame is only correct if the player's client is in FFXIV's "Standard" movement
-        // mode. In "Legacy" mode, W/A/D are relative to the CAMERA's facing instead of the
-        // character's body facing (BossModReborn's ForwardMovementDirection() switches between the
-        // two based on this exact same client setting — see MovementOverride.cs:204). Using the
-        // wrong reference produces a systematically-rotated direction every tick — bounded but wrong
-        // enough to send the character wandering in a wide loop before things happen to reconverge.
+        // always using Player.Rotation as the reference frame is only correct if the player's client is in FFXIV's "Standard" movement mode.
+        // In "Legacy" mode, W/A/D are relative to the CAMERA's facing instead of the character's body facing (BossModReborn's ForwardMovementDirection() switches between the two based on this exact same client setting).
+        // Using the wrong reference produces a systematically-rotated direction every tick — bounded but wrong enough to send the character wandering in a wide loop before things happen to reconverge.
         var rotation = IsLegacyMoveMode() ? GetCameraAzimuth() : Player.Rotation;
         var forward = new Vector3(MathF.Sin(rotation), 0, MathF.Cos(rotation));
         var right = new Vector3(forward.Z, 0, -forward.X);

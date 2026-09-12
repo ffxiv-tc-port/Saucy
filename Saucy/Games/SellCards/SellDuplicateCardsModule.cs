@@ -13,25 +13,10 @@ namespace Saucy.SellCards;
 
 /// <summary>
 /// 九宮幻卡「快速賣重複卡」輔助。移植自 DailyRoutines <c>AutoSellCards</c>，但**只保留顯示、丟掉自動化**。
-///
-/// <para>DR 版本做三件我方不做的事：①用 KamiToolKit 往 <c>TripleTriadCoinExchange</c> addon 注入按鈕
-/// （🔴 全艦隊零 KamiToolKit 相依，不可用）；②自動迴圈點交換＋自動確認 <c>ShopCardDialog</c>
-/// （🔴 使用者裁決：賣卡的送出與確認一律由人按，照 Saucy 仙彩／仙人微彩「錢包動作留給人」的先例）；
-/// ③發 <c>EventStartPackt</c> 遠端開啟交換視窗（🔴 封包偽造紅線，丟棄）。</para>
-///
-/// <para>本模組保留的是唯一乾淨的部分：**讀取遊戲已經解析好、正顯示在交換視窗裡的卡片清單**，
-/// 在旁邊開一個 ImGui 小視窗把「持有重複、可換 MGP」的卡整理出來（依單張 MGP 價值排序，並標出
-/// 目前用於牌組的卡），方便玩家一眼看出該賣哪些、別誤賣了牌組裡的卡。**選取、交換、確認三步全部
-/// 由玩家在遊戲原生視窗自己按**——本視窗只顯示，不送任何 callback、不發任何封包。</para>
-///
-/// <para>「至少留幾張」由 <see cref="Configuration.SellCardsKeepAtLeast"/> 控制（預設 1）：只有持有數
-/// 超過這個保底值的卡才會被列為可賣，確保每種卡（含牌組用的那張）至少留下設定的張數。</para>
-///
-/// <para>資料來源是 addon 自己的 <c>AtkValues</c>（欄位排列沿用 ECommons
-/// <c>ReaderTripleTriadCoinExchange</c> 已知的欄位版面，但改成型別容錯、逐格邊界檢查的讀法，
-/// 避免 Int/UInt 型別差異在台服版本上直接擲例外）。全程零 hook、零 sig、零封包：讀不到就靜默降級
-/// 成「讀取失敗」提示並寫一行 Information log 給玩家回報，不會崩潰。</para>
-///
+/// <para>DR 版本做三件我方不做的事：①用 KamiToolKit 往 <c>TripleTriadCoinExchange</c> addon 注入按鈕（🔴 全艦隊零 KamiToolKit 相依，不可用）；②自動迴圈點交換＋自動確認 <c>ShopCardDialog</c>（🔴 使用者裁決：賣卡的送出與確認一律由人按，照 Saucy 仙彩／仙人微彩「錢包動作留給人」的先例）；③發 <c>EventStartPackt</c> 遠端開啟交換視窗（🔴 封包偽造紅線，丟棄）。</para>
+/// <para>本模組保留的是唯一乾淨的部分：**讀取遊戲已經解析好、正顯示在交換視窗裡的卡片清單**，在旁邊開一個 ImGui 小視窗把「持有重複、可換 MGP」的卡整理出來（依單張 MGP 價值排序，並標出目前用於牌組的卡），方便玩家一眼看出該賣哪些、別誤賣了牌組裡的卡。**選取、交換、確認三步全部由玩家在遊戲原生視窗自己按**——本視窗只顯示，不送任何 callback、不發任何封包。</para>
+/// <para>「至少留幾張」由 <see cref="Configuration.SellCardsKeepAtLeast"/> 控制（預設 1）：只有持有數超過這個保底值的卡才會被列為可賣，確保每種卡（含牌組用的那張）至少留下設定的張數。</para>
+/// <para>資料來源是 addon 自己的 <c>AtkValues</c>（欄位排列沿用 ECommons<c>ReaderTripleTriadCoinExchange</c> 已知的欄位版面，但改成型別容錯、逐格邊界檢查的讀法，避免 Int/UInt 型別差異在台服版本上直接擲例外）。全程零 hook、零 sig、零封包：讀不到就靜默降級成「讀取失敗」提示並寫一行 Information log 給玩家回報，不會崩潰。</para>
 /// <para>模組未啟用時不掛任何 Draw 監聽；停用時立刻取消訂閱並清空快取，不留殘骸。</para>
 /// </summary>
 public unsafe class SellDuplicateCardsModule : Module

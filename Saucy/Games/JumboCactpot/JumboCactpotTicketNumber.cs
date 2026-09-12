@@ -4,13 +4,8 @@ namespace Saucy.JumboCactpot;
 
 /// <summary>
 /// 仙人仙彩：單張彩券的號碼設定。
-///
-/// <para>拆成獨立類別（而不是在 <see cref="Configuration"/> 攤平成六個欄位），是為了讓
-/// 「本次進場的第幾張」可以直接用索引取用。</para>
-///
-/// <para>🔴 EzConfig 的序列化對 <c>[DefaultValue]</c> 不生效（既有使用者的 JSON 一定會把值蓋回來），
-/// 所以預設值一律寫在欄位初始式上；而且兩個欄位的預設都等同「不指定」，
-/// 升級的既有使用者行為完全不變。</para>
+/// <para>拆成獨立類別（而不是在 <see cref="Configuration"/> 攤平成六個欄位），是為了讓「本次進場的第幾張」可以直接用索引取用。</para>
+/// <para>🔴 EzConfig 的序列化對 <c>[DefaultValue]</c> 不生效（既有使用者的 JSON 一定會把值蓋回來），所以預設值一律寫在欄位初始式上；而且兩個欄位的預設都等同「不指定」，升級的既有使用者行為完全不變。</para>
 /// </summary>
 [Serializable]
 public class JumboCactpotTicketNumber

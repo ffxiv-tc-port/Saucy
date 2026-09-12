@@ -17,12 +17,8 @@ public enum LimbDifficulty
 }
 
 /// <summary>單次砍伐的「手感」回饋。遊戲以系統訊息回報（Addon 表 9710/9711/9712/9713），
-/// 值越大代表離最佳位置越近；<see cref="Unobserved"/> 代表這個位置還沒試過。
-/// 順序有意義——解題器直接拿列舉值當分數比大小。
-///
-/// 📌 **這是主要回饋來源**（2026-08-06 實機修正）。21 刀的實機 log 裡它 21/21 都拿得到，
-/// 而原本被當成主來源的量表落差 21 刀只動過 1 次。
-/// 這四級也正好對應 DailyRoutines 用的四級結果（Fail／Normal／Great／Perfect）。</summary>
+/// 值越大代表離最佳位置越近；<see cref="Unobserved"/> 代表這個位置還沒試過。順序有意義——解題器直接拿列舉值當分數比大小。
+/// 📌 **這是主要回饋來源**。這四級也正好對應 DailyRoutines 用的四級結果（Fail／Normal／Great／Perfect）。</summary>
 [Obfuscation(Exclude = true)]
 public enum HitPower
 {
@@ -41,11 +37,7 @@ public class HitResult(int position, HitPower power)
 
     /// <summary>在這個位置砍下去，樹的量表（<c>AtkValue[12]</c>）掉了多少。
     /// null＝這個位置沒量到量表變化。
-    /// 📌 2026-08-07 更正：舊註解寫「台服 7.20 實測幾乎永遠是 null」是**從壞掉的版本量到的**——
-    /// 那時每一刀都沒手感、沒手感就是 0 傷害。解題器修好之後量表確實每刀在動
-    /// （見 <see cref="LimbBoard.ReadGauge"/>）。
-    /// ⚠️ 但它仍然只是 <see cref="Power"/> 的**補強**：盲掃階段砍不中就沒有傷害可量，
-    /// 而四級手感每一刀都會到。</summary>
+    /// ⚠️ 但它仍然只是 <see cref="Power"/> 的**補強**：盲掃階段砍不中就沒有傷害可量，而四級手感每一刀都會到。</summary>
     public int? Damage;
 
     /// <summary>這個位置有沒有任何形式的觀測結果。</summary>

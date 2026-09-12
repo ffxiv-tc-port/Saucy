@@ -14,11 +14,7 @@ using AgentId = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId;
 namespace Saucy.MiniCactpot;
 
 /// <summary>
-/// 仙人微彩（Mini Cactpot，金蝶遊樂園每日刮刮樂）自動完成。互動序列依 DailyRoutines
-/// AutoMiniCactpot 的設計重寫：LotteryDaily 面板開啟時，依期望值自動翻 3 格
-/// （Callback(1, 格節點值)）、選線並確認（回寫選線欄位後 Callback(2, 線節點值)）、
-/// 全部翻開後領獎關窗（Callback(-1) + Close），關窗後（可選）自動按下「購買下一張」
-/// 確認框，把當日彩券一次完成。
+/// 仙人微彩（Mini Cactpot，金蝶遊樂園每日刮刮樂）自動完成。互動序列依 DailyRoutinesAutoMiniCactpot 的設計重寫：LotteryDaily 面板開啟時，依期望值自動翻 3 格（Callback(1, 格節點值)）、選線並確認（回寫選線欄位後 Callback(2, 線節點值)）、全部翻開後領獎關窗（Callback(-1) + Close），關窗後（可選）自動按下「購買下一張」確認框，把當日彩券一次完成。
 /// 全程零 hook、零封包：只用 AddonLifecycle 事件 + addon callback 合成事件。
 /// 階段判定不依賴 AgentLotteryDaily（API13 世代 FFXIVClientStructs 沒有這個 struct），
 /// 改讀 addon 自己的 GameNumbers 盤面（0=未翻開）由已翻開格數推導：
@@ -227,19 +223,9 @@ public unsafe class MiniCactpotModule : Module
     }
 
     /// <summary>取得建議翻開的格子；沒有現成答案就開一次背景求解並回 false。
-    /// <para>🔴 原本的寫法是在 <c>EzThrottler.Throttle</c> **之前**直接呼叫
-    /// <c>solver.SuggestCell(board)</c>。首步求解實測約 30 ms 而且跑在 framework 執行緒上，
-    /// 又因為只有點擊成功才會設 <c>pendingCell</c>，只要點擊一直沒成功、或是正處在兩次點擊之間的
-    /// 節流窗內，就會**每一幀都重算一次** —— 800 ms 的節流窗等於連續數十幀各掉一次影格。</para>
-    /// <para>🔑 結果的版本號用**盤面本身**（9 格各 4 bit 編碼成 ulong），不是已翻開的格數：
-    /// 同一次進場會連續玩好幾張彩券，而每張新彩券都從「翻開 1 格」重新開始，
-    /// 光用格數當版本號會把上一張彩券的答案誤認成這一張的。盤面編碼是精確身分，
-    /// 背景結果回來時只要盤面已經變了就對不上，自動被忽略。</para>
-    /// <para>⚠️ 執行緒安全：同一時間只允許一個背景求解（<c>solveInFlight</c> 閘門），所以
-    /// <c>SuggestCell</c> 內部的記憶化字典不會被並行存取。選線階段的 <c>SuggestLane</c> 仍在
-    /// framework 執行緒上同步呼叫，兩者可能同時發生——目前安全，因為 <c>SuggestLane</c> 完全
-    /// 不碰那個字典（只用 static 的賠付表與線表）。**若日後要為 SuggestLane 加記憶化，
-    /// 必須連同這裡的執行緒模型一起改。**</para></summary>
+    /// <para>🔴 原本的寫法是在 <c>EzThrottler.Throttle</c> **之前**直接呼叫<c>solver.SuggestCell(board)</c>。首步求解實測約 30 ms 而且跑在 framework 執行緒上，又因為只有點擊成功才會設 <c>pendingCell</c>，只要點擊一直沒成功、或是正處在兩次點擊之間的節流窗內，就會**每一幀都重算一次** —— 800 ms 的節流窗等於連續數十幀各掉一次影格。</para>
+    /// <para>🔑 結果的版本號用**盤面本身**（9 格各 4 bit 編碼成 ulong），不是已翻開的格數：同一次進場會連續玩好幾張彩券，而每張新彩券都從「翻開 1 格」重新開始，光用格數當版本號會把上一張彩券的答案誤認成這一張的。盤面編碼是精確身分，背景結果回來時只要盤面已經變了就對不上，自動被忽略。</para>
+    /// <para>⚠️ 執行緒安全：同一時間只允許一個背景求解（<c>solveInFlight</c> 閘門），所以<c>SuggestCell</c> 內部的記憶化字典不會被並行存取。選線階段的 <c>SuggestLane</c> 仍在framework 執行緒上同步呼叫，兩者可能同時發生——目前安全，因為 <c>SuggestLane</c> 完全不碰那個字典（只用 static 的賠付表與線表）。**若日後要為 SuggestLane 加記憶化，必須連同這裡的執行緒模型一起改。**</para></summary>
     private bool TryGetSuggestedCell(ReadOnlySpan<int> board, out int cell)
     {
         cell = -1;
@@ -388,14 +374,10 @@ public unsafe class MiniCactpotModule : Module
         }
     }
 
-    /// <summary>
-    /// 開獎後的「中獎」通知：算出這一張的實際派彩，達門檻就請 TataruPraise 念一句。
-    /// </summary>
+    /// <summary>開獎後的「中獎」通知：算出這一張的實際派彩，達門檻就請 TataruPraise 念一句。</summary>
     /// <remarks>
     /// 🔴 <b>純讀取、零副作用。</b> 不碰盤面、不影響翻格/選線/關窗任何一步；IPC 失敗一律忽略。
-    /// <para>📌 派彩是<b>查表</b>算出來的（線和 → 派彩表），不解析面板文字，所以與在地化無關。
-    /// 只在模組自己送出過選線（<c>confirmedLane &gt;= 0</c>）時才算——玩家自己手動選線的話
-    /// 模組不知道他選了哪一條，寧可不念也不猜。</para>
+    /// <para>📌 派彩是<b>查表</b>算出來的（線和 → 派彩表），不解析面板文字，所以與在地化無關。只在模組自己送出過選線（<c>confirmedLane &gt;= 0</c>）時才算——玩家自己手動選線的話模組不知道他選了哪一條，寧可不念也不猜。</para>
     /// <para>⚠️ 一張只處理一次，成功與否都設旗標：這個階段每幀都會進來，重試等於洗 IPC。</para>
     /// </remarks>
     private void HandleJackpot(ReadOnlySpan<int> board)

@@ -31,13 +31,8 @@ internal static unsafe class RideShootingAim
         SetCursorPos((int)screen.X, (int)screen.Y);
 
     /// <summary>
-    /// Global mouse_event/SetCursorPos-based clicking was confirmed NOT to register as a shot in
-    /// game (even though SetCursorPos-based aiming does work) — the game reads clicks through its
-    /// window message queue rather than global hardware input. Mirrors the same mechanism already
-    /// confirmed working for keyboard input elsewhere in this plugin (ECommons'
-    /// WindowFunctions.SendKeypress): locate the "FFXIVGAME" window belonging to this process and
-    /// SendMessage WM_LBUTTONDOWN/WM_LBUTTONUP directly to it, with lParam encoding the client-area
-    /// cursor position (required for mouse messages, unlike keyboard ones).
+    /// Global mouse_event/SetCursorPos-based clicking was confirmed NOT to register as a shot in game (even though SetCursorPos-based aiming does work) — the game reads clicks through its window message queue rather than global hardware input.
+    /// locate the "FFXIVGAME" window belonging to this process and SendMessage WM_LBUTTONDOWN/WM_LBUTTONUP directly to it, with lParam encoding the client-area cursor position (required for mouse messages, unlike keyboard ones).
     /// </summary>
     public static void FireClick(Vector2 screen)
     {

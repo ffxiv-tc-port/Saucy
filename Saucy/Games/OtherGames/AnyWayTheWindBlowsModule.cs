@@ -43,19 +43,10 @@ public class AnyWayTheWindBlows : Module
 
     private void OnUpdate(IFramework _)
     {
-        // "傳送後 會立刻跳下場地回去找報名NPC" — right after registering/teleporting in, IsInGate
-        // can briefly still read false while the GATE state finishes settling. GateNpcNavigation.Tick
-        // only checks IsInGate itself, so during that brief window it thinks registration hasn't
-        // happened yet and starts walking back toward the (now far outside the arena) registration
-        // NPC — same settle window already used to hold off SafeSpot movement covers this too.
-        //
-        // Merely SKIPPING the Tick call here wasn't enough — a pre-registration vnavmesh path can
-        // already be in flight (started just before the teleport, still "owned") and Tick is also
-        // what's responsible for stopping it; skipping the call left that stale path issuing move
-        // commands toward pre-teleport coordinates completely unmanaged during the whole settle
-        // window, walking the character off the new arena trying to reach a position that belongs
-        // to an entirely different area ("從傳送前位置導航 所以會跳下場地"). Explicitly release any
-        // owned path instead of just no-opping.
+        // right after registering/teleporting in, IsInGate can briefly still read false while the GATE state finishes settling.
+        // GateNpcNavigation.Tick only checks IsInGate itself, so during that brief window it thinks registration hasn't happened yet and starts walking back toward the (now far outside the arena) registration NPC.
+        // Merely SKIPPING the Tick call here wasn't enough: a pre-registration vnavmesh path can already be in flight (started just before the teleport, still "owned") and Tick is also what's responsible for stopping it.
+        // Explicitly release any owned path instead of just no-opping.
         if (GateScheduleAutomation.IsWithinPostJoinSettle(GateType.AnyWayTheWindBlows, PostJoinSettleSeconds))
         {
             GateNpcNavigation.ReleaseIfOwned(GateType.AnyWayTheWindBlows);

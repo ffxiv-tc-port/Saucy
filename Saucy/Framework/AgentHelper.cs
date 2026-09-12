@@ -42,9 +42,7 @@ public static unsafe class AgentHelper
 
     /// <summary>
     /// 診斷用：查出這個 addon 的回呼登記在誰名下。
-    /// 🔴 這裡刻意**不**呼叫 <c>GetAgentByInternalId</c> 去逐一試 id：那是以 id 索引的原生函式。
-    /// 改成讀 <c>AgentModule</c> 自己的固定大小陣列（CS 宣告 484 格）逐格比對指標，
-    /// 邊界由型別保證，不存在越界問題。取到的指標**當幀用完就丟**，不保存。
+    /// 🔴 這裡刻意**不**呼叫 <c>GetAgentByInternalId</c> 去逐一試 id：那是以 id 索引的原生函式。改成讀 <c>AgentModule</c> 自己的固定大小陣列（CS 宣告 484 格）逐格比對指標，邊界由型別保證，不存在越界問題。取到的指標**當幀用完就丟**，不保存。
     /// </summary>
     /// <param name="agentId">命中的 agent 內部 id（也就是 <see cref="AgentId"/> 的數值）。</param>
     /// <param name="eventKind">回呼登記的事件種類，沒有登記時為 0。</param>

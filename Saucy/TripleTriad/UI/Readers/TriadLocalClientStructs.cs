@@ -75,13 +75,7 @@ internal struct AddonTripleTriadResult
     [FieldOffset(0)] public AtkUnitBase AtkUnitBase;
 }
 
-// Verified against the working FFTriadBuddyDalamud plugin (D:\FFTriadBuddyDalamud, confirmed by
-// user to correctly read both players' board state live) — not guessed, not memory-scanned. Its
-// offsets exactly cross-validate the earlier live-diff finding too: the diffed card's real stats
-// address (addon-relative 0xAA0) equals Board start (0x8d0) + slot 2 (2*0xA8=0x150) + the real
-// intra-slot stat offset (0x80) = 0x8d0+0x150+0x80 = 0xAA0. So Board really does start at 0x8d0
-// as first assumed; the earlier mistake was assuming stats sit at the START of each 0xA8 slot
-// (+0x0) instead of well inside it (+0x80).
+// Verified against the working FFTriadBuddyDalamud plugin: not guessed, not memory-scanned.
 [StructLayout(LayoutKind.Explicit, Size = 0x1000)]
 internal unsafe struct AddonTripleTriad
 {

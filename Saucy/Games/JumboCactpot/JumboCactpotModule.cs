@@ -10,22 +10,9 @@ namespace Saucy.JumboCactpot;
 
 /// <summary>
 /// 仙人仙彩（Jumbo Cactpot，金碟遊樂園每週彩券）購票輔助。
-///
-/// <para>只做一件事：<c>LotteryWeeklyInput</c> 購票面板開著時，把號碼填進去並推進到購買確認框，
-/// 然後**停手**。互動序列參考 DailyRoutines <c>AutoJumboCactpot</c>
-/// （<c>D:/ffxiv-tc-port/_dr-src/DailyRoutines.ModulesPublic/</c>）的 addon callback 寫法，
-/// 全程零 hook、零封包。</para>
-///
-/// <para>🔴 **花費金碟幣的那一次確認永遠由玩家自己按。** 這是本模組與 DR 版本最大的差異：
-/// DR 在送出號碼後緊接著呼叫 <c>ClickSelectYesnoYes()</c> 自動確認扣款，本模組**刻意不做**，
-/// 連帶也不呼叫 <see cref="SelectYesnoHelper.PressYes"/>。台服的確認框是 Addon 9276
-/// 「確定要以 N 金碟幣的價格購買 NNNN 號仙人仙彩嗎？［所持金碟幣：N］」——
-/// 錢包動作留給人，模組只負責把號碼打好、把確認框叫出來。</para>
-///
-/// <para>觸發方式是「面板開著 + 模組啟用」，不是事件驅動接手鏈：模組不會自己去找 NPC、
-/// 不會自己點對話選單、也不會在購票完成後自己開下一張。每週三張的做法是玩家照常在 NPC
-/// 選單選「購買彩券」，每開一次面板模組就幫忙填一次號碼，玩家按三次確認即可。</para>
-///
+/// <para>只做一件事：<c>LotteryWeeklyInput</c> 購票面板開著時，把號碼填進去並推進到購買確認框，然後**停手**。互動序列參考 DailyRoutines <c>AutoJumboCactpot</c>（<c>D:/ffxiv-tc-port/_dr-src/DailyRoutines.ModulesPublic/</c>）的 addon callback 寫法，全程零 hook、零封包。</para>
+/// <para>🔴 **花費金碟幣的那一次確認永遠由玩家自己按。** 這是本模組與 DR 版本最大的差異：DR 在送出號碼後緊接著呼叫 <c>ClickSelectYesnoYes()</c> 自動確認扣款，本模組**刻意不做**，連帶也不呼叫 <see cref="SelectYesnoHelper.PressYes"/>。台服的確認框是 Addon 9276「確定要以 N 金碟幣的價格購買 NNNN 號仙人仙彩嗎？［所持金碟幣：N］」——錢包動作留給人，模組只負責把號碼打好、把確認框叫出來。</para>
+/// <para>觸發方式是「面板開著 + 模組啟用」，不是事件驅動接手鏈：模組不會自己去找 NPC、不會自己點對話選單、也不會在購票完成後自己開下一張。每週三張的做法是玩家照常在 NPC選單選「購買彩券」，每開一次面板模組就幫忙填一次號碼，玩家按三次確認即可。</para>
 /// <para>模組未啟用時不註冊任何監聽——手動購票不會被搶操作。</para>
 /// </summary>
 public unsafe class JumboCactpotModule : Module

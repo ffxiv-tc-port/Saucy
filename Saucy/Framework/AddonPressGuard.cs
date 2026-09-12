@@ -8,9 +8,7 @@ using System.Linq;
 
 namespace Saucy.Framework;
 
-/// <summary>
-/// 「同一扇視窗的同一個按法按過就不要再按，直到它真的收掉」的共用閘門。
-/// </summary>
+/// <summary>「同一扇視窗的同一個按法按過就不要再按，直到它真的收掉」的共用閘門。</summary>
 /// <remarks>
 /// 🔴🔴 <b>存在的唯一理由是「按下之後那幾幀又被按第二次」會讓遊戲當場關閉</b>：AVE 在 .NET Core 是 corrupted-state exception，各呼叫端那幾層 <c>try</c>/<c>catch</c> <b>攔不到</b>，<b>唯一的防護是「不要送第二次」，不是「送了再接住」</b>。
 /// 📌 <b>粒度＝（窗，位址，按法）</b>而不是「一扇窗只按一次」。🔴 全程只做<b>位址等值比較，永遠不解參</b>——被記下的那個位址隨時可能已經失效。<b>例外是「終結動作」</b>（<see cref="WholeWindowKey"/>）：同一位址<b>任何</b>按法在<see cref="TerminalHotFrames"/> 幀內都不准，因為那幾幀這扇窗可能正在關閉。
@@ -29,12 +27,9 @@ internal static unsafe class AddonPressGuard
     /// </remarks>
     public const int ReleaseEscapeFrames = 90;
 
-    /// <summary>
-    /// 給「按一次翻一頁、窗不會因為被按而消失」的多次互動窗用的短逃生口（15 幀）。
-    /// </summary>
+    /// <summary>給「按一次翻一頁、窗不會因為被按而消失」的多次互動窗用的短逃生口（15 幀）。</summary>
     /// <remarks>
-    /// Talk 是代表；機台的揮擊鈕、幻卡棋盤出牌、仙人微彩翻格也是這個形狀。
-    /// 走這個逃生口是常態，放行 log 寫 Debug。（2026-09-02 艦隊政策：Talk 類一律 15 幀。）
+    /// Talk 是代表；機台的揮擊鈕、幻卡棋盤出牌、仙人微彩翻格也是這個形狀。走這個逃生口是常態，放行 log 寫 Debug。
     /// </remarks>
     public const int RoutineRePressEscapeFrames = 15;
 
@@ -123,14 +118,10 @@ internal static unsafe class AddonPressGuard
     public static bool TryBeginPress(string addonName, AtkUnitBase* addon) =>
         TryBeginPress(addonName, addon, WholeWindowKey, ReleaseEscapeFrames, out _);
 
-    /// <summary>
-    /// 登記「即將對這扇視窗送出這一種按法」。<b>回 <see langword="false"/> ＝這一幀絕對不能送。</b>
-    /// </summary>
+    /// <summary>登記「即將對這扇視窗送出這一種按法」。<b>回 <see langword="false"/> ＝這一幀絕對不能送。</b></summary>
     /// <param name="addonName">視窗名稱（解除封鎖的監聽器與輪詢都以它為準）。</param>
     /// <param name="addon">目標實例。<b>只當作識別用的位址，本方法不解參。</b></param>
-    /// <param name="pressKey">
-    /// 這一次的「按法」（參數組）。同一扇窗上不同的按法互不干擾；要擋的是<b>同一個按法重複送</b>。傳 <see cref="WholeWindowKey"/> 代表終結動作：登記後同一位址的任何按法都不准。
-    /// </param>
+    /// <param name="pressKey">這一次的「按法」（參數組）。同一扇窗上不同的按法互不干擾；要擋的是<b>同一個按法重複送</b>。傳 <see cref="WholeWindowKey"/> 代表終結動作：登記後同一位址的任何按法都不准。</param>
     /// <param name="escapeFrames">逃生口幀數：單答終結窗用 <see cref="ReleaseEscapeFrames"/>，Talk 類多次互動窗用 <see cref="RoutineRePressEscapeFrames"/>。</param>
     public static bool TryBeginPress(string addonName, AtkUnitBase* addon, string pressKey,
                                      int escapeFrames = ReleaseEscapeFrames) =>
