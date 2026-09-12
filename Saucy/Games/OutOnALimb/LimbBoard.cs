@@ -7,35 +7,11 @@ namespace Saucy.OutOnALimb;
 
 /// <summary>
 /// 唯讀讀取 <c>MiniGameBotanist</c>／<c>MiniGameAimg</c> 兩個 addon 的畫面狀態。
-///
-/// 🔴 這裡刻意**不用** ECommons 的 <c>AtkReader</c>：那個實作在索引越界或型別不符時會丟例外
-/// （<c>ArgumentOutOfRangeException</c>／<c>InvalidCastException</c>），而我們每一幀都會讀，
-/// 型別只要在某個改版換掉就會變成每幀丟例外。本檔一律回傳可空值、永不丟例外。
-///
-/// 所有讀取都是「當幀取得 addon 指標 → 立刻用完丟掉」，**不跨幀保存任何原生指標**。
-///
-/// 【欄位來源】以下四點是 2026-08-06 對台服 <c>ffxiv_dx11.exe</c> 離線反組譯得到的，
-/// 不是從別的外掛抄來的猜測：
-/// <list type="bullet">
-/// <item>指針位置＝<c>NumberArrayData[104].IntArray[0]</c>，值域 0–10000。
-///   <c>AddonGoldSaucerGatheringMiniGameBase::OnRequestedUpdate</c> 取 <c>numberArrays[104]</c>
-///   的 <c>IntArray[0]</c>，再以 <c>pos / 10000.0f</c> 算指針旋轉角
-///   （除數 10000.0f 就在該函式的 rip 相對常數裡）。</item>
-/// <item><c>AtkValue[0]</c>＝階段。3＝輪到玩家（輸入解鎖）。
-///   🔴 **舊註解寫「砍伐迴圈是 3 ↔ 4」是錯的，而且是 2026-08-06「一直失敗」的主因。**
-///   台服 7.20 實機面板傾印顯示一刀的完整循環是 <c>3 →(4)→ 5 → 7 → 3</c>：
-///   5＝揮擊／結算，7＝結果顯示（<c>AtkValue[11]</c> 就是在這一格遞減），4 只在部分刀出現。
-///   ⇒ **不可以用「階段不在某個集合裡」推論「換了一棵樹」**——5 與 7 每一刀都會出現。</item>
-/// <item><c>AtkValue[11]</c>＝本輪剩餘揮擊次數（實機 10→1 單調遞減，換樹回到 10）。
-///   <c>AtkValue[12]</c>／<c>AtkValue[13]</c> ×100 後餵給量表元件的「目前值」與「最大值」。
-///   實機 221 筆傾印：<c>[13]</c> 恆為 10，<c>[12]</c> 隨每一刀的傷害遞減，見 <see cref="ReadGauge"/>。</item>
-/// <item>📌 實機傾印順帶釘死、但**判斷邏輯刻意沒有依賴**的兩件事：
-///   <c>AtkValue[10]</c> 的型別是 <b>Bool</b>（所以「讀 [10] 當四級結果」這條路走不通），
-///   <c>AtkValue[2]</c> 只有 375／750 兩種值、且停中最窄那一格的那一局是 375（疑似指針速度）。
-///   ⚠️ 兩者都只有觀察、沒有反組譯佐證，不要拿來寫判斷式。</item>
-/// <item>力量表的三段寬度＝<c>[AtkValue[4], AtkValue[5]-AtkValue[4], 10000-AtkValue[5]]</c>，
-///   命中判定見 <see cref="TryGetPowerZones"/>。</item>
-/// </list>
+/// 🔴 這裡刻意**不用** ECommons 的 <c>AtkReader</c>：那個實作在索引越界或型別不符時會丟例外（<c>ArgumentOutOfRangeException</c>／<c>InvalidCastException</c>），而我們每一幀都會讀，型別只要在某個改版換掉就會變成每幀丟例外。本檔一律回傳可空值、永不丟例外。所有讀取都是「當幀取得 addon 指標 → 立刻用完丟掉」，**不跨幀保存任何原生指標**。
+/// 指針位置＝<c>NumberArrayData[104].IntArray[0]</c>，值域 0–10000。力量表的三段寬度＝<c>[AtkValue[4], AtkValue[5]-AtkValue[4], 10000-AtkValue[5]]</c>，命中判定見 <see cref="TryGetPowerZones"/>。
+/// <c>AtkValue[0]</c>＝階段。3＝輪到玩家（輸入解鎖）。台服 7.20 實機面板傾印顯示一刀的完整循環是 <c>3 →(4)→ 5 → 7 → 3</c>：5＝揮擊／結算，7＝結果顯示（<c>AtkValue[11]</c> 就是在這一格遞減），4 只在部分刀出現。⇒ **不可以用「階段不在某個集合裡」推論「換了一棵樹」**——5 與 7 每一刀都會出現。
+/// <c>AtkValue[11]</c>＝本輪剩餘揮擊次數（實機 10→1 單調遞減，換樹回到 10）。<c>AtkValue[12]</c>／<c>AtkValue[13]</c> ×100 後餵給量表元件的「目前值」與「最大值」。<c>[13]</c> 恆為 10，<c>[12]</c> 隨每一刀的傷害遞減，見 <see cref="ReadGauge"/>。
+/// 📌 實機傾印順帶釘死、但**判斷邏輯刻意沒有依賴**的兩件事：<c>AtkValue[10]</c> 的型別是 <b>Bool</b>（所以「讀 [10] 當四級結果」這條路走不通），<c>AtkValue[2]</c> 只有 375／750 兩種值、且停中最窄那一格的那一局是 375（疑似指針速度）。⚠️ 兩者都只有觀察、沒有反組譯佐證，不要拿來寫判斷式。
 /// </summary>
 internal static unsafe class LimbBoard
 {
@@ -169,20 +145,7 @@ internal static unsafe class LimbBoard
     internal static uint? ReadSwingsLeft(AtkUnitBase* addon) => ReadUInt(addon, SwingsLeftIndex);
 
     /// <summary>樹的量表目前值（<c>AtkValue[12]</c>）＝樹的剩餘血量，滿值 10。
-    ///
-    /// 📌 **2026-08-07 更正：它確實是「每刀變動」的欄位。** 舊註解寫「實機 21 刀全程都是 10，
-    /// 所以不是每刀變動的欄位」——**觀察是真的，推論是錯的**。那 21 刀出自解題器壞掉的版本，
-    /// 每一刀都砍在刻度 18–22 且回饋全是「沒手感」，**沒手感的刀就是 0 傷害**，所以量表當然不動。
-    /// 修好之後的同一份 log（22:10–22:14）直接推翻舊推論：
-    /// <c>[12]</c> 在 221 筆傾印裡出現 9 種值（10／9／8／6／5／2／1／0…），
-    /// 而且與砍伐結果對得上（<c>10→0</c> 一刀砍倒、<c>10→6</c>、<c>6→5</c>）。
-    /// ⇒ 舊註解自己列的兩種解讀裡，**「樹的血量，沒手感的刀就是 0 傷害」那一種成立。**
-    ///
-    /// 🔑 這是「一致的全 0 要先懷疑查詢，不要急著下結論」的同一個形狀：
-    /// 量表不動是**解題器沒打中**的果，不是量表沒用的因。
-    ///
-    /// ⚠️ 但**主要判據仍然是四級手感**，這一點不變：手感每刀必到（實機 100%），
-    /// 量表只有在真的造成傷害時才動，盲掃階段拿不到訊號。兩者是互補不是取代。</summary>
+    /// ⚠️ 但**主要判據仍然是四級手感**，這一點不變：手感每刀必到（實機 100%），量表只有在真的造成傷害時才動，盲掃階段拿不到訊號。兩者是互補不是取代。</summary>
     internal static int? ReadGauge(AtkUnitBase* addon) => ReadRawInt(addon, GaugeIndex);
 
     /// <summary>樹的量表最大值（<c>AtkValue[13]</c>）。實機量到的是固定 10。
@@ -243,13 +206,7 @@ internal static unsafe class LimbBoard
     }
 
     /// <summary>目前指針落在 0–10000 刻度盤的哪裡。
-    ///
-    /// 這是遊戲自己讀的同一個欄位（<c>NumberArrayData[104].IntArray[0]</c>，
-    /// <c>NumberArrayType.GoldSaucerArcadeMachine</c>），砍伐畫面與力量表共用。
-    /// 舊版是拿指針節點的 <c>Rotation</c> 反推，並且把兩端角度寫死成 ±0.733——
-    /// 那個值其實是用戶端執行期從 uld 讀出來的節點原始角度，寫死等於改版一動就靜默失準，
-    /// 而且把解析度從 10000 階砍成 100 階。
-    ///
+    /// 這是遊戲自己讀的同一個欄位（<c>NumberArrayData[104].IntArray[0]</c>，<c>NumberArrayType.GoldSaucerArcadeMachine</c>），砍伐畫面與力量表共用。
     /// 取不到（陣列還沒建、還沒進遊戲）一律回 null，呼叫端就不出手。</summary>
     internal static int? ReadCursor()
     {
@@ -293,18 +250,8 @@ internal static unsafe class LimbBoard
 
     /// <summary>
     /// 力量表的三段區間，用**遊戲自己的判定式**算出來。
-    ///
-    /// <c>AddonMiniGameAimg::OnRequestedUpdate</c> 的判定是：
-    /// <code>
-    /// cum = 0;
-    /// for (i = 2; i &gt;= 0; i--) { cum += width[i]; if (pos &lt;= cum) return slot i; }
-    /// </code>
-    /// 其中 <c>width = [AtkValue[4], AtkValue[5] - AtkValue[4], 10000 - AtkValue[5]]</c>
-    /// （<c>OnSetup</c> 寫進去的）。所以指針低端那一段是 <c>width[2]</c>，高端那一段是 <c>width[0]</c>。
-    ///
-    /// 回傳的三格**依寬度由小到大排序**：最窄的＝最難停中＝泰坦，最寬的＝仙人掌怪。
-    /// 這比寫死節點編號可靠：段落寬度是伺服器在開場時給的，不是常數。
-    ///
+    /// 其中 <c>width = [AtkValue[4], AtkValue[5] - AtkValue[4], 10000 - AtkValue[5]]</c>（<c>OnSetup</c> 寫進去的）。所以指針低端那一段是 <c>width[2]</c>，高端那一段是 <c>width[0]</c>。
+    /// 回傳的三格**依寬度由小到大排序**：最窄的＝最難停中＝泰坦，最寬的＝仙人掌怪。這比寫死節點編號可靠：段落寬度是伺服器在開場時給的，不是常數。
     /// 任何一個欄位不合理（不是 <c>0 &lt; v4 &lt; v5 &lt; 10000</c>）就回 false，呼叫端不動作。
     /// </summary>
     internal static bool TryGetPowerZones(AtkUnitBase* addon, out LimbZone[] zonesBySize)
