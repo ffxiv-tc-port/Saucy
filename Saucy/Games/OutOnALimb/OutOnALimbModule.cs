@@ -287,8 +287,7 @@ public unsafe class OutOnALimbModule : Module
     }
 
     /// <summary>換了一棵新的樹：盤面清空、丟掉還在等回饋的那一刀（它屬於上一棵樹）。
-    /// <paramref name="reason"/> 會寫進 log —— 2026-08-06 那次就是靠「為什麼認定換樹」這個欄位
-    /// 才發現每一刀都在誤判，所以它必須一直留著。</summary>
+    /// <paramref name="reason"/> 會寫進 log——所以它必須一直留著。</summary>
     private void StartNewTree(string reason, uint? swingsLeft, int? gauge, int? gaugeMax)
     {
         solver.Reset(Cfg.Step);

@@ -98,9 +98,9 @@ internal static unsafe class TriadCardListSelectionReader
             displayCardId = TryParseCardIdFromDisplayLabel(addon);
         }
 
-        // 🔴🔴 這一行原本是 addon->SelectedCardName(CS +0x4E8)。台服在 +0x4E8 沒有這個欄位,
+        // 🔴🔴 這一行原本是 addon->SelectedCardName。台服沒有這個欄位,
         // 連建構子都不清零 ⇒ 讀到堆積殘留的垃圾、判空擋不住、解參考就是 AVE。
-        // 實機 2026-09-11 兩次 Fatal error 都停在本方法。改走已證明成員資格的取得層。
+        // 改走已證明成員資格的取得層。
         var nameNode = GSInfoCardListNodes.SelectedCardName(addon);
         var name = nameNode != null
             ? GUINodeUtils.GetNodeText(&nameNode->AtkResNode)?.Trim()

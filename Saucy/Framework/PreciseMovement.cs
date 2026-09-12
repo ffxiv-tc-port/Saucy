@@ -111,7 +111,6 @@ internal static unsafe class PreciseMovement
     private static bool IsLegacyMoveMode() => Svc.GameConfig.UiControl.TryGetUInt("MoveMode", out var mode) && mode == 1;
 
     /// <summary>
-    /// Same computation as BossModReborn's Camera.Update() (BossMod/Framework/Camera.cs): derives the camera's horizontal facing angle from the active render camera's view matrix, without needing a per-frame Update() driver of our own.
     /// When either signature stops resolving they <b>throw</b> InvalidOperationException (InteropGenerator's ThrowHelper.ThrowNullAddress) rather than returning null - so a null check on Instance() was never a guard against a broken signature.
     /// This is reached from the RMIWalk detour, so a stale signature would mean a managed exception thrown inside a detour on every frame. Check the resolved addresses up front and skip the whole camera path instead.
     /// </summary>
@@ -119,6 +118,9 @@ internal static unsafe class PreciseMovement
         => FFXIVClientStructs.FFXIV.Client.Game.Control.Control.Addresses.Instance.Value != 0
         && FFXIVClientStructs.FFXIV.Client.Game.Control.CameraManager.Addresses.GetActiveCamera.Value != 0;
 
+    /// <summary>
+    /// Same computation as BossModReborn's Camera.Update() (BossMod/Framework/Camera.cs): derives the camera's horizontal facing angle from the active render camera's view matrix, without needing a per-frame Update() driver of our own.
+    /// </summary>
     private static float GetCameraAzimuth()
     {
         var cameraManager = CameraApiResolved
@@ -133,7 +135,7 @@ internal static unsafe class PreciseMovement
 
         var view = renderCamera->ViewMatrix;
         // Legacy mode's forward reference is the camera's facing rotated 180° (BossModReborn:
-        // MovementOverride.cs:204, `CameraAzimuth.Radians() + 180f.Degrees()`).
+        // MovementOverride.cs, `CameraAzimuth.Radians() + 180f.Degrees()`).
         return MathF.Atan2(view.M13, view.M33) + MathF.PI;
     }
 

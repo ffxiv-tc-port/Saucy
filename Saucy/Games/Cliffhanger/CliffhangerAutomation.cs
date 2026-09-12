@@ -528,7 +528,6 @@ internal static unsafe class CliffhangerAutomation
     }
 
     /// <summary>
-    /// Advances through the recorded replay route as each waypoint is reached. Returns false once the route runs out (or none was ever recorded) so the caller falls back to live target-chasing.
     /// Walks the dense auto-recorded replay route the same way TickSparseRoute walks a manually-marked one — vnavmesh for distance, precise steering close-up, and (critically) only advancing past a jump waypoint once SteerByKeysToward reports the jump actually fired.
     /// a jump waypoint's recorded position is the last-ground-contact TAKEOFF spot, and after actually jumping the character lands meters past it — often still farther than the (deliberately tight) arrival radius.
     /// </summary>
