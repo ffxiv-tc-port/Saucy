@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using ECommons.Automation;
+using ECommons.LanguageHelpers;
 using Saucy.Framework;
 using Saucy.OtherGames;
 using System;
@@ -102,7 +103,6 @@ internal static class TriadRunSession
 
     public static void EnableFromNavigation()
     {
-        GoldSaucerArcadeMachineHelper.DisableConflictingModules();
         ModuleEnabled = true;
         BeginAutomationSession();
     }
@@ -124,7 +124,7 @@ internal static class TriadRunSession
             npcInfo != null &&
             TriadCardFarmSession.HasAllNpcRewardsOwned(npcInfo))
         {
-            Svc.Chat.Print($"[Saucy] You already have every card from {npc.Name}. Farming MGP instead.");
+            Svc.Chat.Print("[Saucy] " + "You already have every card from ??. Farming MGP instead.".Loc(npc.Name));
             goal = TriadNavigationGoal.FarmMgp;
         }
 
@@ -286,6 +286,7 @@ internal static class TriadRunSession
 
     public static void StopAllAutomation(bool announce = true)
     {
+        TriadLogoutAfterRun.Cancel("停止自動化");
         GateShared.StopAll();
         TriadMapNavigation.CancelActiveNavigation();
         ModuleEnabled = false;
@@ -301,7 +302,7 @@ internal static class TriadRunSession
         TriadDeckOptimizerJobs.CancelActive(userCancelled: true);
         if (announce)
         {
-            Svc.Chat.Print("[Saucy] Stopped navigation, travel, and triad automation.");
+            Svc.Chat.Print("[Saucy] " + "Stopped navigation, travel, and triad automation.".Loc());
         }
     }
 
@@ -384,17 +385,4 @@ internal static class TriadRunSession
         MatchesCompletedThisSession > 0 ||
         TriadCardFarmSession.GetCompletedCount() > 0 ||
         PlayUntilAnyCardDropped;
-
-    public static bool Logout()
-    {
-        if (!Svc.Condition.Any())
-        {
-            return true;
-        }
-
-        Chat.SendMessage("/logout");
-        return true;
-    }
-
-    public static bool SelectYesLogout() => SelectYesnoHelper.TryPressArmedYes();
 }

@@ -34,7 +34,12 @@ public class UIReaderTriadGame : IUIReader
         addonPtr = nint.Zero;
     }
 
-    public void OnAddonShown(nint addonPtr) => this.addonPtr = addonPtr;
+    public void OnAddonShown(nint addonPtr)
+    {
+        this.addonPtr = addonPtr;
+        TriadMgpTracker.SnapshotAtMatchStart();
+        TriadRun.matchNpc = null;
+    }
 
     public unsafe void OnAddonUpdate(nint addonPtr)
     {

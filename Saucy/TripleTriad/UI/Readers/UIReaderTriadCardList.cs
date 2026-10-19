@@ -1,21 +1,16 @@
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Component.GUI;
+using Saucy.Framework;
 using System;
 namespace Saucy.TripleTriad.UI;
 
-internal static class CardListFilterMapping
-{
-    public static byte ToCollectionFilter(CardListFilterMode mode) =>
-        mode switch
-        {
-            CardListFilterMode.OwnedOnly => (byte)GameCardCollectionFilter.OnlyOwned,
-            CardListFilterMode.MissingOnly => (byte)GameCardCollectionFilter.OnlyMissing,
-            var _ => (byte)GameCardCollectionFilter.All
-        };
-}
-
 public unsafe class UIReaderTriadCardList : IUIReader
 {
+    // 台服的 addon 沒有存篩選模式的整數欄位(CS 那個位移落在節點指標上),所以只能用中性的「全部」。
+    // 推導見 commit 訊息。
+    private const byte UnknownCollectionFilter = (byte)GameCardCollectionFilter.All;
+
     public enum Status
     {
         NoErrors,
@@ -23,8 +18,6 @@ public unsafe class UIReaderTriadCardList : IUIReader
         AddonNotVisible,
         NodesNotReady
     }
-
-    private nint cachedAddonAgentPtr;
 
     public UIStateTriadCardList cachedState = new();
     private int lastNotifiedCardId = -1;
@@ -36,6 +29,8 @@ public unsafe class UIReaderTriadCardList : IUIReader
     private int pendingNavGraceFrames;
     private int pendingNavPage = -1;
     private int pendingNavSourceCardId = -1;
+    private bool readyGateBlocked;
+    private string readyGateReason = "";
 
     public Status status = Status.AddonNotFound;
     public bool IsVisible => status is not Status.AddonNotFound and not Status.AddonNotVisible;
@@ -45,27 +40,25 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     public void OnAddonLost()
     {
-        cachedAddonAgentPtr = nint.Zero;
         ClearPendingNavigation();
         SetStatus(Status.AddonNotFound);
     }
 
     public void OnAddonShown(nint addonPtr)
     {
-        cachedAddonAgentPtr = (addonPtr != nint.Zero) ? Svc.GameGui.FindAgentInterface(addonPtr) : nint.Zero;
-
-        if (cachedAddonAgentPtr == nint.Zero)
-        {
-            cachedAddonAgentPtr = LoadFailsafeAgent();
 #if DEBUG
-            Svc.Log.Info($"using agentPtr from failsafe: {(ulong)cachedAddonAgentPtr:X}");
-#endif
+        // agent 指標不快取(見 ResolveAgent),這裡只是「走了 failsafe 路徑」的診斷。
+        nint shownAgentPtr = (addonPtr != nint.Zero) ? Svc.GameGui.FindAgentInterface(addonPtr) : nint.Zero;
+        if (shownAgentPtr == nint.Zero)
+        {
+            Svc.Log.Info($"using agentPtr from failsafe: {(ulong)LoadFailsafeAgent():X}");
         }
+#endif
 
         if (addonPtr != nint.Zero)
         {
             var addon = (AddonGSInfoCardList*)addonPtr;
-            if (addon->AtkUnitBase.RootNode != null)
+            if (IsAddonReadyForNodeReads(addon, out _))
             {
                 (cachedState.screenPos, cachedState.screenSize) =
                     GUINodeUtils.GetNodePosAndSize(addon->AtkUnitBase.RootNode);
@@ -77,10 +70,27 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     public void OnAddonUpdate(nint addonPtr)
     {
+        if (addonPtr == nint.Zero)
+        {
+            SetStatus(Status.AddonNotFound);
+            return;
+        }
+
         var addon = (AddonGSInfoCardList*)addonPtr;
+
+        // 🔴 這道閘門必須留在「每次進入」的位置:拆除可以發生在任何一幀,而且 addon 指標是每幀
+        // 重查的,所以「上一幀就緒」對這一幀沒有任何保證。
+        if (!EnsureAddonReadyForNodeReads(addon))
+        {
+            return;
+        }
+
         (cachedState.screenPos, cachedState.screenSize) = GUINodeUtils.GetNodePosAndSize(addon->AtkUnitBase.RootNode);
 
-        var descNode = addon->SelectedCardDescription;
+        // 🔴 不可以用 addon->SelectedCardDescription:CS 的 +0x4F8 在台服指到卡片族名節點,
+        // 而同一塊欄位區裡 CS 的 SelectedCardName(+0x4E8)在台服根本不存在、解參考就是 AVE。
+        // 全部改走 GSInfoCardListNodes(台服位移 + 節點清單成員資格證明)。
+        var descNode = GSInfoCardListNodes.SelectedCardDescription(addon);
         if (descNode == null)
         {
             SetStatus(Status.NodesNotReady);
@@ -90,16 +100,17 @@ public unsafe class UIReaderTriadCardList : IUIReader
         (cachedState.descriptionPos, cachedState.descriptionSize) =
             GUINodeUtils.GetNodePosAndSize(&descNode->AtkResNode);
 
-        var newPageIndex = (byte)addon->SelectedPage;
-        var newCardIndex = (byte)addon->SelectedCardIndex;
-        var newFilterMode = CardListFilterMapping.ToCollectionFilter(CardListFilterMode.All);
+        // 讀不到就沿用上一幀的值:清單本身還有名稱／說明／編號等其他線索可用,
+        // 但「到位了沒」一律不准用推測值判定(見 atPendingCell)。
+        var hasLivePage = GSInfoCardListState.TryGetPageIndex(addon, out var livePageIndex);
+        var hasLiveCell = GSInfoCardListState.TryGetCellIndex(addon, out var liveCellIndex);
+        var newPageIndex = hasLivePage ? (byte)livePageIndex : cachedState.pageIndex;
+        var newCardIndex = hasLiveCell ? (byte)liveCellIndex : cachedState.cardIndex;
+        var newFilterMode = UnknownCollectionFilter;
 
-        AgentGoldSaucer* agent = null;
-        if (cachedAddonAgentPtr != nint.Zero)
-        {
-            agent = (AgentGoldSaucer*)cachedAddonAgentPtr;
-            newFilterMode = CardListFilterMapping.ToCollectionFilter(agent->CardListFilterMode);
-        }
+        // 🔴 每次使用時重新取得,不沿用任何跨幀保存的 agent 指標(見 ResolveAgent)。
+        // 取不到時是 null,ReadSelectedCardId 的 agent 參數本來就允許 null。
+        var agent = ResolveAgent(addonPtr);
 
         var displayCardId = TriadCardListSelectionReader.TryParseCardIdFromDisplayLabel(addon);
         var gameSelectedCardId = TriadCardListSelectionReader.ReadSelectedCardId(addon, newFilterMode, agent, displayCardId);
@@ -113,7 +124,8 @@ public unsafe class UIReaderTriadCardList : IUIReader
                 pendingNavGraceFrames--;
             }
 
-            var atPendingCell = newPageIndex == pendingNavPage && newCardIndex == pendingNavCell;
+            var atPendingCell = hasLivePage && hasLiveCell &&
+                                newPageIndex == pendingNavPage && newCardIndex == pendingNavCell;
 
             if (IsPendingNavigationComplete(addon))
             {
@@ -143,22 +155,22 @@ public unsafe class UIReaderTriadCardList : IUIReader
                                cachedState.cardIndex != newCardIndex ||
                                cachedState.filterMode != newFilterMode ||
                                cachedState.selectionMasked != newSelectionMasked ||
-                               cachedState.iconId != addon->CardIconId ||
-                               cachedState.numU != addon->NumSideU ||
-                               cachedState.numL != addon->NumSideL ||
-                               cachedState.numD != addon->NumSideD ||
-                               cachedState.numR != addon->NumSideR ||
-                               cachedState.rarity != addon->CardRarity ||
-                               cachedState.type != (byte)addon->CardType ||
+                               cachedState.iconId != AddonGSInfoCardListExtensions.CardIconId(addon) ||
+                               cachedState.numU != AddonGSInfoCardListExtensions.NumSideU(addon) ||
+                               cachedState.numL != AddonGSInfoCardListExtensions.NumSideL(addon) ||
+                               cachedState.numD != AddonGSInfoCardListExtensions.NumSideD(addon) ||
+                               cachedState.numR != AddonGSInfoCardListExtensions.NumSideR(addon) ||
+                               cachedState.rarity != AddonGSInfoCardListExtensions.CardRarity(addon) ||
+                               cachedState.type != (byte)AddonGSInfoCardListExtensions.CardType(addon) ||
                                cachedState.selectedCardId != selectedCardId;
 
-        cachedState.numU = addon->NumSideU;
-        cachedState.numL = addon->NumSideL;
-        cachedState.numD = addon->NumSideD;
-        cachedState.numR = addon->NumSideR;
-        cachedState.rarity = addon->CardRarity;
-        cachedState.type = (byte)addon->CardType;
-        cachedState.iconId = addon->CardIconId;
+        cachedState.numU = AddonGSInfoCardListExtensions.NumSideU(addon);
+        cachedState.numL = AddonGSInfoCardListExtensions.NumSideL(addon);
+        cachedState.numD = AddonGSInfoCardListExtensions.NumSideD(addon);
+        cachedState.numR = AddonGSInfoCardListExtensions.NumSideR(addon);
+        cachedState.rarity = AddonGSInfoCardListExtensions.CardRarity(addon);
+        cachedState.type = (byte)AddonGSInfoCardListExtensions.CardType(addon);
+        cachedState.iconId = AddonGSInfoCardListExtensions.CardIconId(addon);
         cachedState.pageIndex = newPageIndex;
         cachedState.cardIndex = newCardIndex;
         cachedState.filterMode = newFilterMode;
@@ -223,16 +235,28 @@ public unsafe class UIReaderTriadCardList : IUIReader
         var addonPtr = ResolveAddonPtr();
         OnAddonShown(addonPtr);
 
-        if (addonPtr == nint.Zero || cachedAddonAgentPtr == nint.Zero)
+        if (addonPtr == nint.Zero)
+        {
+            return false;
+        }
+
+        // 🔴 每次使用時重新取得,不沿用跨幀快取(見 ResolveAgent)。
+        // 判斷點刻意留在就緒閘門之前:agent 取不到就直接 return false。
+        var agent = ResolveAgent(addonPtr);
+        if (agent == null)
         {
             return false;
         }
 
         var addon = (AddonGSInfoCardList*)addonPtr;
-        var agent = (AgentGoldSaucer*)cachedAddonAgentPtr;
-        var filterMode = CardListFilterMapping.ToCollectionFilter(agent->CardListFilterMode);
+        if (!EnsureAddonReadyForNodeReads(addon))
+        {
+            return false;
+        }
+
         var displayCardId = TriadCardListSelectionReader.TryParseCardIdFromDisplayLabel(addon);
-        pendingNavSourceCardId = TriadCardListSelectionReader.ReadSelectedCardId(addon, filterMode, agent, displayCardId);
+        pendingNavSourceCardId =
+            TriadCardListSelectionReader.ReadSelectedCardId(addon, UnknownCollectionFilter, agent, displayCardId);
 
         pendingNavCardId = cardId;
         pendingNavAttempts = 90;
@@ -306,16 +330,31 @@ public unsafe class UIReaderTriadCardList : IUIReader
         }
 
         var addon = (AddonGSInfoCardList*)addonPtr;
-        if (cachedAddonAgentPtr != nint.Zero)
+
+        // 🔴 這裡是「寫」不是「讀」:寫到一個過期的 agent 位址不會擲例外也不會有任何徵兆,
+        // 所以更不能用快取指標。每次重查。
+        var agent = ResolveAgent(addonPtr);
+        if (agent != null)
         {
-            var agent = (AgentGoldSaucer*)cachedAddonAgentPtr;
             agent->EditDeckSelectedPage = pendingNavPage;
             agent->EditDeckSelectedCardIndex = pendingNavCell;
         }
 
-        if (addon->SelectedPage != pendingNavPage)
+        // 讀不到目前頁索引就什麼都不做:寧可耗盡重試,也不要在不知道現況時亂切頁。
+        if (!GSInfoCardListState.TryGetPageIndex(addon, out var livePageIndex))
         {
-            addon->RequestedPage = pendingNavPage;
+            return;
+        }
+
+        if (livePageIndex != pendingNavPage)
+        {
+            // 切頁不關窗；只擋「玩家在導航進行中關掉清單」的那幾幀（已看過 PreFinalize 的實例不碰）。
+            if (!AddonPressGuard.TryTouch(GoldSaucerCardListUi.AddonName, &addon->AtkUnitBase))
+            {
+                return;
+            }
+
+            // 頁籤控制器這個呼叫才是真正驅動換頁的動作。
             addon->TabController.SetTabIndexAndCallBack(pendingNavPage);
             addon->AtkUnitBase.Update(0);
             return;
@@ -334,7 +373,14 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     private bool IsPendingNavigationComplete(AddonGSInfoCardList* addon)
     {
-        if (addon->SelectedPage != pendingNavPage || addon->SelectedCardIndex != pendingNavCell)
+        // 讀不到就不判定完成 —— 照舊耗盡重試,不要誤報成功。
+        if (!GSInfoCardListState.TryGetPageIndex(addon, out var pageIndex) ||
+            !GSInfoCardListState.TryGetCellIndex(addon, out var cellIndex))
+        {
+            return false;
+        }
+
+        if (pageIndex != pendingNavPage || cellIndex != pendingNavCell)
         {
             return false;
         }
@@ -359,7 +405,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
             return true;
         }
 
-        if (TriadCardListSelectionReader.IconMatchesCard(addon->CardIconId, pendingNavCardId))
+        if (TriadCardListSelectionReader.IconMatchesCard(AddonGSInfoCardListExtensions.CardIconId(addon), pendingNavCardId))
         {
             return AddonStatsMatchCard(addon, pendingNavCardId);
         }
@@ -369,7 +415,7 @@ public unsafe class UIReaderTriadCardList : IUIReader
 
     private static bool AddonStatsMatchCard(AddonGSInfoCardList* addon, int cardId)
     {
-        var hasSideStats = addon->NumSideU != 0 || addon->NumSideL != 0 || addon->NumSideD != 0 || addon->NumSideR != 0;
+        var hasSideStats = AddonGSInfoCardListExtensions.NumSideU(addon) != 0 || AddonGSInfoCardListExtensions.NumSideL(addon) != 0 || AddonGSInfoCardListExtensions.NumSideD(addon) != 0 || AddonGSInfoCardListExtensions.NumSideR(addon) != 0;
         if (!hasSideStats)
         {
             return true;
@@ -381,10 +427,78 @@ public unsafe class UIReaderTriadCardList : IUIReader
             return true;
         }
 
-        return addon->NumSideU == expectedCard.Sides[0] &&
-               addon->NumSideL == expectedCard.Sides[1] &&
-               addon->NumSideD == expectedCard.Sides[2] &&
-               addon->NumSideR == expectedCard.Sides[3];
+        return AddonGSInfoCardListExtensions.NumSideU(addon) == expectedCard.Sides[0] &&
+               AddonGSInfoCardListExtensions.NumSideL(addon) == expectedCard.Sides[1] &&
+               AddonGSInfoCardListExtensions.NumSideD(addon) == expectedCard.Sides[2] &&
+               AddonGSInfoCardListExtensions.NumSideR(addon) == expectedCard.Sides[3];
+    }
+
+    /// <summary>進入任何節點讀取前的就緒閘門。</summary>
+    /// <remarks>
+    /// 🔴 這裡擋的不是「指標是不是 null」—— addon 指標每幀都由 GetAddonByName 重查,本身沒有跨幀保存的問題。擋的是另一件事:AtkUnitBase 還掛在 addon 清單上(所以 GetAddonByName 仍然回得到,RootNode 欄位也還留著舊值),但 UldManager 已經把節點釋放掉了。此時詳細面板那幾個欄位是「非 null 的野指標」,判空完全擋不住,GUINodeUtils.GetNodeText 一讀 node->Type 就是AccessViolationException。
+    /// 🔴🔴 ⚠️ 這道閘門<b>不是</b>詳細面板節點的完整防護：真因是 FFXIVClientStructs 的 AddonGSInfoCardList 欄位位移在台服是錯的,與 ULD 死活無關。詳細面板一律走 <see cref="GSInfoCardListNodes"/>,證據寫在那個檔。
+    /// 🔑 真正能分辨死活的是 UldManager.LoadedState:節點的生命週期由它管,Unload() 會先把它設回Unloaded 才去釋放節點,是唯一在「欄位還是非 null」時仍然正確的旗標。它是 AtkUnitBase 的內嵌欄位(位址就在 addon 自己身上),讀它不需要任何指標跳躍,所以放在最前面檢查是安全的。
+    /// ⚠️ 可見度沿用 UIReaderScheduler.IsAddonVisible 既有的寬鬆定義(AtkUnitBase.IsVisible 或RootNode 自己可見),刻意不收緊成只看 AtkUnitBase.IsVisible —— 收緊等於回退既有行為。
+    /// </remarks>
+    private static bool IsAddonReadyForNodeReads(AddonGSInfoCardList* addon, out string reason)
+    {
+        if (addon == null)
+        {
+            reason = "addon 指標為 null";
+            return false;
+        }
+
+        if (addon->AtkUnitBase.UldManager.LoadedState != AtkLoadState.Loaded)
+        {
+            reason = $"ULD 尚未載入或已卸載(LoadedState={addon->AtkUnitBase.UldManager.LoadedState})";
+            return false;
+        }
+
+        if (addon->AtkUnitBase.RootNode == null)
+        {
+            reason = "RootNode 為 null";
+            return false;
+        }
+
+        if (!addon->AtkUnitBase.IsVisible && !addon->AtkUnitBase.RootNode->IsVisible())
+        {
+            reason = "addon 不可見";
+            return false;
+        }
+
+        reason = "";
+        return true;
+    }
+
+    /// <summary>
+    /// <see cref="IsAddonReadyForNodeReads"/> 的具狀態包裝:未就緒時設定狀態並安靜 return。
+    /// </summary>
+    /// <remarks>
+    /// 只在「就緒 ↔ 未就緒」轉換時印一行 Information(要使用者回報的診斷),
+    /// 所以逐幀阻擋不會刷版面。
+    /// </remarks>
+    private bool EnsureAddonReadyForNodeReads(AddonGSInfoCardList* addon)
+    {
+        if (IsAddonReadyForNodeReads(addon, out var reason))
+        {
+            if (readyGateBlocked)
+            {
+                readyGateBlocked = false;
+                Svc.Log.Information($"[卡片收藏] GSInfoCardList 已就緒,恢復讀取節點(先前擋下的原因:{readyGateReason})。");
+            }
+
+            return true;
+        }
+
+        if (!readyGateBlocked || readyGateReason != reason)
+        {
+            readyGateBlocked = true;
+            readyGateReason = reason;
+            Svc.Log.Information($"[卡片收藏] GSInfoCardList 尚未就緒,跳過本幀所有節點讀取:{reason}");
+        }
+
+        SetStatus(Status.NodesNotReady);
+        return false;
     }
 
     private static nint ResolveAddonPtr()
@@ -392,13 +506,34 @@ public unsafe class UIReaderTriadCardList : IUIReader
         for (var i = 0; i < 8; i++)
         {
             var handle = Svc.GameGui.GetAddonByName("GSInfoCardList", i);
-            if (handle.Address != nint.Zero)
+            if (handle != nint.Zero)
             {
-                return handle.Address;
+                return handle;
             }
         }
 
         return nint.Zero;
+    }
+
+    /// <summary>
+    /// 每次使用時重新取得金碟遊樂場 agent,取不到回 <c>null</c>。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 這裡的用途包含<b>寫入</b>(EditDeckSelectedPage / EditDeckSelectedCardIndex),寫到過期位址不會擲例外、也不會有任何徵兆;而 AccessViolationException 在 .NET Core 是corrupted-state exception,try/catch 一樣攔不到。所以只能靠「每次重查」,不能靠例外隔離。
+    /// 🔑 保存的是<b>身分</b>不是位址。
+    /// </remarks>
+    private static AgentGoldSaucer* ResolveAgent(nint addonPtr)
+    {
+        // ⚠️ 型別要寫死 nint:FindAgentInterface 回的是 AgentInterfacePtr,與 nint 互為隱含轉換,
+        // 用 var 接會是 CS0172(條件運算式型別無法判定)。
+        nint agentPtr = (addonPtr != nint.Zero) ? Svc.GameGui.FindAgentInterface(addonPtr) : nint.Zero;
+
+        if (agentPtr == nint.Zero)
+        {
+            agentPtr = LoadFailsafeAgent();
+        }
+
+        return (AgentGoldSaucer*)agentPtr;
     }
 
     public static nint LoadFailsafeAgent()

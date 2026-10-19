@@ -1,4 +1,6 @@
-#nullable disable
+﻿#nullable disable
+using ECommons.LanguageHelpers;
+
 namespace Saucy.TripleTriad.UI;
 
 public partial class TriadSession
@@ -9,19 +11,19 @@ public partial class TriadSession
 
         if (npc == null)
         {
-            blockReason = "No NPC selected.";
+            blockReason = "No NPC selected.".Loc();
             return false;
         }
 
         if (!dataLoader.IsDataReady)
         {
-            blockReason = "Card data is still loading.";
+            blockReason = "Card data is still loading.".Loc();
             return false;
         }
 
         if (!C.UseSimmedDeck)
         {
-            blockReason = "Turn on Auto-pick best deck in Triad settings.";
+            blockReason = "Turn on Auto-pick best deck in Triad settings.".Loc();
             return false;
         }
 
@@ -29,13 +31,13 @@ public partial class TriadSession
 
         if (PlayerSettingsDB.Get().ownedCards.Count == 0)
         {
-            blockReason = "No owned cards found in the collection cache.";
+            blockReason = "No owned cards found in the collection cache.".Loc();
             return false;
         }
 
         if (OptimizerInProgress && !IsPremadeOptimizerForNpc(npc))
         {
-            blockReason = "Another deck optimization is already running.";
+            blockReason = "Another deck optimization is already running.".Loc();
             return false;
         }
 
@@ -75,7 +77,7 @@ public partial class TriadSession
 
         if (!C.UseSimmedDeck)
         {
-            return "Enable Auto-pick best deck in Triad settings.";
+            return "Enable Auto-pick best deck in Triad settings.".Loc();
         }
 
         if (OptimizerInProgress && IsPremadeOptimizerForNpc(npc) &&
@@ -84,20 +86,20 @@ public partial class TriadSession
             var best = job.FormatBestWinChance();
             if (string.IsNullOrEmpty(best) || best == "…")
             {
-                return $"Building deck… {job.ProgressPercent}%";
+                return "Building deck… ??%".Loc(job.ProgressPercent);
             }
 
-            return $"Building deck… {job.ProgressPercent}% ({best})";
+            return "Building deck… ??% (??)".Loc(job.ProgressPercent, best);
         }
 
         if (HasPremadeDeckReadyForNpc(npc))
         {
-            return $"Ready in profile slot {SaucyProfileDeckSlotIndex + 1}";
+            return "Ready in profile slot ??".Loc(SaucyProfileDeckSlotIndex + 1);
         }
 
         if (_optimizerTimedOut && preGameNpc?.Id == npc.Id)
         {
-            return "Last build timed out; try again.";
+            return "Last build timed out; try again.".Loc();
         }
 
         return string.Empty;

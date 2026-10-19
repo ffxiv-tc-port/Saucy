@@ -3,6 +3,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using ECommons.LanguageHelpers;
 using System;
 using System.Numerics;
 namespace Saucy.TripleTriad;
@@ -20,7 +21,7 @@ public class TriadCardInfoWindow : Window, IDisposable
     private TriadCard? selectedCard;
     private GameCardInfo? selectedCardInfo;
 
-    public TriadCardInfoWindow(UIReaderTriadCardList uiReaderCardList, TriadCardSearchWindow cardSearchWindow) : base("Card Info")
+    public TriadCardInfoWindow(UIReaderTriadCardList uiReaderCardList, TriadCardSearchWindow cardSearchWindow) : base("Card Info".Loc())
     {
         this.uiReaderCardList = uiReaderCardList;
         this.cardSearchWindow = cardSearchWindow;
@@ -80,6 +81,8 @@ public class TriadCardInfoWindow : Window, IDisposable
 
     public override void PreDraw()
     {
+        base.PreDraw();
+
         uiReaderCardList.RefreshLiveSelectionState();
         SyncSelectedCardFromReader();
 
@@ -152,7 +155,7 @@ public class TriadCardInfoWindow : Window, IDisposable
                 ImGui.AlignTextToFramePadding();
             }
 
-            ImGui.Text("Reward from:");
+            ImGui.Text("Reward from:".Loc());
 
             if (selectedCardInfo != null && rewardNpc != null && rewardNpcInfo != null && rewardNpcInfo.Location != null)
             {
@@ -171,14 +174,14 @@ public class TriadCardInfoWindow : Window, IDisposable
                 }
                 else
                 {
-                    TriadNpcMapUi.DrawMapLocationRow(rewardNpcInfo.Location, "Show on map", rewardNpc);
+                    TriadNpcMapUi.DrawMapLocationRow(rewardNpcInfo.Location, "Show on map".Loc(), rewardNpc);
                 }
 
                 ImGui.TextColored(colorGray, rewardNpcRules);
             }
             else
             {
-                ImGui.TextColored(colorGray, "Not available");
+                ImGui.TextColored(colorGray, "Not available".Loc());
             }
         }
     }
@@ -194,7 +197,7 @@ public class TriadCardInfoWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-            ImGui.SetTooltip("Show in NPC tab");
+            ImGui.SetTooltip("Show in NPC tab".Loc());
         }
     }
 

@@ -2,6 +2,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.LanguageHelpers;
 using ECommons.Reflection;
 using Saucy.IPC;
 using System;
@@ -12,23 +13,26 @@ namespace Saucy;
 
 internal static class PluginDependenciesUi
 {
-    public const string VeynRepositoryUrl = "https://puni.sh/api/repository/veyn";
+    // 這裡絕對不能指國際服的外掛庫：那些庫裡的 vnavmesh、Lifestream、Questionable
+    // 內部名與台服版完全相同，按下去會把 API15 的版本裝進台服環境並撞同一個已安裝鍵。
+    // 一律指本艦隊的 feed。
+    public const string TcRepositoryUrl = "https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/repo.json";
 
     public static DependencyEntry Vnavmesh(string description) =>
         new(
             "vnavmesh",
             "vnavmesh",
             description,
-            VeynRepositoryUrl,
+            TcRepositoryUrl,
             [],
             () => IPC.Vnavmesh.IsInstalled);
 
     public static DependencyEntry BossModPlugin(string description) =>
         new(
-            "Boss Mod",
+            "Bossmod Reborn",
             IPCNames.BossMod,
             description,
-            VeynRepositoryUrl,
+            TcRepositoryUrl,
             [],
             () => BossMod.IsInstalled);
 
@@ -37,10 +41,8 @@ internal static class PluginDependenciesUi
             "Lifestream",
             "Lifestream",
             description,
-            "https://github.com/NightmareXIV/MyDalamudPlugins/raw/main/pluginmaster.json",
-            [
-                "https://raw.githubusercontent.com/NightmareXIV/MyDalamudPlugins/main/pluginmaster.json"
-            ],
+            TcRepositoryUrl,
+            [],
             () => Lifestream.IsInstalled);
 
     public static DependencyEntry QuestionablePlugin(string description) =>
@@ -48,7 +50,7 @@ internal static class PluginDependenciesUi
             "Questionable",
             "Questionable",
             description,
-            "https://love.puni.sh/ment.json",
+            TcRepositoryUrl,
             [],
             () => Questionable.IsInstalled);
 
@@ -93,14 +95,14 @@ internal static class PluginDependenciesUi
 
         if (showAddRepo)
         {
-            if (ImGui.Button("Add repository"))
+            if (ImGui.Button("Add repository".Loc()))
             {
                 TryAddRepository(entry);
             }
 
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip($"Add {entry.PrimaryRepositoryUrl} to Custom Plugin Repositories.");
+                ImGui.SetTooltip("Add ?? to Custom Plugin Repositories.".Loc(entry.PrimaryRepositoryUrl));
             }
 
             firstButton = false;
@@ -113,14 +115,14 @@ internal static class PluginDependenciesUi
                 ImGui.SameLine();
             }
 
-            if (ImGui.Button("Install plugin"))
+            if (ImGui.Button("Install plugin".Loc()))
             {
                 TryInstallPlugin(entry);
             }
 
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip($"Install {entry.DisplayName} from its plugin repository.");
+                ImGui.SetTooltip("Install ?? from its plugin repository.".Loc(entry.DisplayName));
             }
         }
 
@@ -144,14 +146,14 @@ internal static class PluginDependenciesUi
     {
         if (DalamudReflector.HasRepo(entry.PrimaryRepositoryUrl))
         {
-            Svc.Chat.Print($"[Saucy] {entry.DisplayName} repository is already added.");
+            Svc.Chat.Print("[Saucy] " + "?? repository is already added.".Loc(entry.DisplayName));
             return;
         }
 
         DalamudReflector.AddRepo(entry.PrimaryRepositoryUrl, true);
         DalamudReflector.SaveDalamudConfig();
         DalamudReflector.ReloadPluginMasters();
-        Svc.Chat.Print($"[Saucy] Added {entry.DisplayName} repository.");
+        Svc.Chat.Print("[Saucy] " + "Added ?? repository.".Loc(entry.DisplayName));
     }
 
     private static void TryInstallPlugin(DependencyEntry entry)
@@ -164,11 +166,11 @@ internal static class PluginDependenciesUi
     {
         if (await DalamudReflector.AddPlugin(repoUrl, entry.InternalName))
         {
-            Svc.Chat.Print($"[Saucy] Installed {entry.DisplayName}.");
+            Svc.Chat.Print("[Saucy] " + "Installed ??.".Loc(entry.DisplayName));
         }
         else
         {
-            Svc.Chat.PrintError($"[Saucy] Could not install {entry.DisplayName}. Check the plugin installer for details.");
+            Svc.Chat.PrintError("[Saucy] " + "Could not install ??. Check the plugin installer for details.".Loc(entry.DisplayName));
         }
     }
 
@@ -177,18 +179,18 @@ internal static class PluginDependenciesUi
         switch (state)
         {
             case DependencyState.Ready:
-                DrawStatusLine(FontAwesomeIcon.Check, ImGuiColors.HealerGreen, "Installed");
+                DrawStatusLine(FontAwesomeIcon.Check, ImGuiColors.HealerGreen, "Installed".Loc());
                 break;
             case DependencyState.InstalledNotLoaded:
-                DrawStatusLine(FontAwesomeIcon.ExclamationTriangle, ImGuiColors.DalamudYellow, "Installed but not loaded");
+                DrawStatusLine(FontAwesomeIcon.ExclamationTriangle, ImGuiColors.DalamudYellow, "Installed but not loaded".Loc());
                 ImGui.SameLine();
-                if (ImGui.Button("Open installer"))
+                if (ImGui.Button("Open installer".Loc()))
                 {
                     Svc.PluginInterface.OpenPluginInstallerTo(PluginInstallerOpenKind.InstalledPlugins, string.Empty);
                 }
                 break;
             default:
-                DrawStatusLine(FontAwesomeIcon.Times, ImGuiColors.DalamudRed, "Not installed");
+                DrawStatusLine(FontAwesomeIcon.Times, ImGuiColors.DalamudRed, "Not installed".Loc());
                 break;
         }
     }

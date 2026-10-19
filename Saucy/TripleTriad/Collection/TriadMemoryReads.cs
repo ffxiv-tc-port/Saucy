@@ -34,7 +34,7 @@ public static class TriadMemoryReads
         }
     }
 
-    public static unsafe bool TryIsNpcBeatenOnce(int triadSheetRowId)
+    public static bool TryIsNpcBeatenOnce(int triadSheetRowId)
     {
         if (triadSheetRowId < 0x230002)
         {
@@ -43,13 +43,10 @@ public static class TriadMemoryReads
 
         try
         {
-            var uiState = UIState.Instance();
-            if (uiState == null)
-            {
-                return false;
-            }
-
-            return uiState->IsTripleTriadNpcBeaten((uint)triadSheetRowId);
+            // Old FFXIVClientStructs has no UIState.IsTripleTriadNpcBeaten convenience method;
+            // Triple Triad NPC "beaten once" completion is tracked via the same quest-completion
+            // flag storage as regular quests.
+            return QuestManager.IsQuestComplete((uint)triadSheetRowId);
         }
         catch (Exception ex)
         {

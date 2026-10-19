@@ -1,4 +1,5 @@
 using ECommons.GameHelpers;
+using Saucy.Framework;
 using Saucy.IPC;
 using System;
 using System.Numerics;
@@ -7,99 +8,53 @@ namespace Saucy.OtherGames;
 internal static class WindBlowsGateMovement
 {
     private const float FloorSnapHalfExtent = 1.5f;
-    private const float MaxSnapDrift = 1f;
     private const float PlatformYTolerance = 0.35f;
 
-    private static bool _ownsPath;
-    private static Vector3? _snappedDestination;
-
+    // The post-teleport spawn and the safe spot always sit on a straight line with nothing in between, so this
+    // never needs vnavmesh pathfinding at all. With Vnavmesh.TryMoveTo, a tick during the post-join settle
+    // window (before the teleport landed) would plan a path from the stale pre-teleport position and walk the
+    // player straight off the arena edge trying to reach it. Steering directly via PreciseMovement removes
+    // that class of bug entirely — there's no path to plan, just a direction to walk.
     public static bool TryMoveTo(Vector3 destination, float closeRange = 0.25f)
     {
-        if (!Vnavmesh.IsInstalled)
+        if (Vector3.Distance(Player.Position, destination) <= closeRange)
         {
-            return false;
-        }
-
-        var pathDestination = ResolveDestination(destination);
-        if (pathDestination == null)
-        {
-            ReleaseIfOwned();
-            return false;
-        }
-
-        if (!IsOnPlatform(Player.Position))
-        {
-            ReleaseIfOwned();
-            return false;
-        }
-
-        if (Vnavmesh.IsWithinHorizontalRange(pathDestination.Value, closeRange))
-        {
-            ReleaseIfOwned();
+            PreciseMovement.SetDesiredDirection(null);
             return true;
         }
 
-        if (_ownsPath)
-        {
-            if (!IsOnPlatform(Player.Position))
-            {
-                ReleaseIfOwned();
-                return false;
-            }
-
-            return Vnavmesh.IsMoving() || Vnavmesh.TryMoveTo(pathDestination.Value, false, closeRange);
-        }
-
-        if (Vnavmesh.IsMoving())
-        {
-            return false;
-        }
-
-        if (!Vnavmesh.TryMoveTo(pathDestination.Value, false, closeRange))
-        {
-            return false;
-        }
-
-        _ownsPath = true;
+        SteerPrecisely(destination);
         return true;
     }
 
-    public static void ReleaseIfOwned()
+    // Uses PreciseMovement, which hooks the
+    // game's own movement-input read directly instead of simulating keypresses (same technique
+    // BossModReborn uses); simulated WASD via GameKeyInput was not reliable. No manual turn/strafe correction
+    // needed; PreciseMovement resolves the world-space direction against facing itself.
+    private static void SteerPrecisely(Vector3 destination)
     {
-        if (!_ownsPath || !Vnavmesh.IsInstalled)
+        var toTarget = destination - Player.Position;
+        toTarget.Y = 0;
+        if (toTarget.LengthSquared() < 0.0001f)
         {
-            _ownsPath = false;
-            _snappedDestination = null;
+            PreciseMovement.SetDesiredDirection(null);
             return;
         }
 
-        _ownsPath = false;
-        _snappedDestination = null;
-        Vnavmesh.StopPath();
+        PreciseMovement.SetDesiredDirection(toTarget);
     }
 
-    private static Vector3? ResolveDestination(Vector3 destination)
-    {
-        if (_snappedDestination is { } cached)
-        {
-            return cached;
-        }
+    /// <summary>Same straight-line steering as TryMoveTo — kept as a separate entry point for the
+    /// "強制移動測試" button so it stays independent of whatever gating the caller normally
+    /// applies (IsInGate, settle window, etc.), for isolating whether movement itself works at
+    /// all.</summary>
+    public static bool ForceMoveTo(Vector3 destination, float closeRange) => TryMoveTo(destination, closeRange);
 
-        var snapped = Vnavmesh.TryGetPointOnFloor(destination, halfExtentXz: FloorSnapHalfExtent);
-        if (snapped == null)
-        {
-            return null;
-        }
+    public static void ReleaseIfOwned() => PreciseMovement.SetDesiredDirection(null);
 
-        var drift = snapped.Value - destination;
-        if ((drift.X * drift.X) + (drift.Z * drift.Z) > MaxSnapDrift * MaxSnapDrift)
-        {
-            return null;
-        }
-
-        _snappedDestination = snapped;
-        return snapped;
-    }
+    /// <summary>Diagnostic-only mirror of the internal IsOnPlatform gate, for the panel to show
+    /// why movement might be refusing to start (e.g. TryMoveTo silently no-ops if this is false).</summary>
+    public static bool DebugIsOnPlatform(Vector3 position) => IsOnPlatform(position);
 
     private static bool IsOnPlatform(Vector3 position)
     {
@@ -108,13 +63,12 @@ internal static class WindBlowsGateMovement
             return false;
         }
 
+        // vnavmesh may have no floor data on this platform — fall back to the player's
+        // own live Y against the known platform floor height instead of requiring a floor query
+        // that may never succeed on this platform.
         var snapped = Vnavmesh.TryGetPointOnFloor(position, halfExtentXz: FloorSnapHalfExtent);
-        if (snapped == null)
-        {
-            return false;
-        }
-
-        return MathF.Abs(snapped.Value.Y - AnyWayTheWindBlows.Stage.PlatformFloorY) <= PlatformYTolerance;
+        var y = snapped?.Y ?? position.Y;
+        return MathF.Abs(y - AnyWayTheWindBlows.Stage.PlatformFloorY) <= PlatformYTolerance;
     }
 
     private static bool IsWithinHorizontalRange(Vector3 position, Vector3 center, float range)

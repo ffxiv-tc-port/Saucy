@@ -1,27 +1,9 @@
 using Saucy.AirForce;
-using Saucy.Framework;
-using System;
+using Saucy.IPC;
 namespace Saucy;
 
 public sealed partial class Saucy
 {
-    private void CheckLimbResults(UIStateLimbResults results)
-    {
-        if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb))
-        {
-            StatsSessionClock.MarkLimbActive();
-            C.UpdateStats(stats =>
-            {
-                stats.LimbMGP += StatsBonusHelper.ApplyMgpBonus(results.numMGP);
-                stats.LimbGamesPlayed++;
-            });
-
-            uiReaderGamesResults.SetIsResultsUI(false);
-            C.Save();
-            TryDismissGoldSaucerReward();
-        }
-    }
-
     private void CheckAirForceResults(UIStateAirForceResults results)
     {
         if (!C.IsModuleEnabled(ModuleNames.AirForceOne) || !AirForceAutomation.ShouldTrackReward)
@@ -41,75 +23,11 @@ public sealed partial class Saucy
         C.Save();
     }
 
-    private void CheckCuffResults(UIStateCuffResults obj)
-    {
-        try
-        {
-            if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Cuff))
-            {
-                StatsSessionClock.MarkCuffActive();
-                C.UpdateStats(stats =>
-                {
-                    stats.CuffMGP += StatsBonusHelper.ApplyMgpBonus(obj.numMGP);
-                    if (obj.isPunishing)
-                    {
-                        stats.CuffPunishings += 1;
-                    }
-                    if (obj.isBrutal)
-                    {
-                        stats.CuffBrutals += 1;
-                    }
-                    if (obj.isBruising)
-                    {
-                        stats.CuffBruisings += 1;
-                    }
-
-                    stats.CuffGamesPlayed += 1;
-                });
-
-                uiReaderGamesResults.SetIsResultsUI(false);
-                C.Save();
-                TryDismissGoldSaucerReward();
-            }
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Error(ex, "cuff results handling failed");
-        }
-    }
-
-    private static void TryDismissGoldSaucerReward() => GoldSaucerRewardHelper.TryDismiss();
-
-    internal void DisableArcadeModule(string moduleName)
-    {
-        if (moduleName == ModuleNames.CuffACur)
-        {
-            C.SetModuleEnabled(ModuleNames.CuffACur, false);
-            GoldSaucerArcadeRunSession.ClearStopForDutyFinder(GoldSaucerArcadeMachine.Cuff);
-            GoldSaucerArcadeFakeBreak.Clear(GoldSaucerArcadeMachine.Cuff);
-        }
-        else if (moduleName == ModuleNames.OutOnALimb)
-        {
-            C.SetModuleEnabled(ModuleNames.OutOnALimb, false);
-            GoldSaucerArcadeRunSession.ClearStopForDutyFinder(GoldSaucerArcadeMachine.Limb);
-            GoldSaucerArcadeFakeBreak.Clear(GoldSaucerArcadeMachine.Limb);
-        }
-
-        C.Save();
-
-        if (C.PlaySound)
-        {
-            PlaySound();
-        }
-
-        if (C.LogOutAfterTriadRun)
-        {
-            ScheduleLogout();
-        }
-    }
-
     private void CheckResults(UIStateTriadResults obj)
     {
+        // NPC 統計涵蓋每一場（含手動對戰），不只 Saucy 代打的場次。
+        _triadCollectionHost?.RecordMatchResult(obj);
+
         if (TriadRunSession.ModuleEnabled)
         {
             StatsSessionClock.MarkTriadActive();
@@ -118,7 +36,7 @@ public sealed partial class Saucy
                 stats.GamesPlayedWithSaucy++;
                 stats.MGPWon += StatsBonusHelper.ApplyMgpBonus(obj.numMGP);
 
-                var npcName = TriadRun.lastGameNpc?.Name ?? "Unknown";
+                var npcName = NpcNameText.Normalize(TriadRun.lastGameNpc?.Name ?? "Unknown");
                 if (stats.NPCsPlayed.TryGetValue(npcName, out var plays))
                 {
                     stats.NPCsPlayed[npcName] += 1;
@@ -142,11 +60,21 @@ public sealed partial class Saucy
             {
                 C.UpdateStats(stats => stats.GamesWonWithSaucy++);
 
+                // 🔴 純通知：贏了就請塔塔露念一句，對方沒安裝／還在冷卻都只是回 false，
+                // 不影響底下的掉卡處理與連戰流程。這個回呼一場對戰只會進來一次
+                // （同一個位置在累加勝場統計），所以不必自己做去重。
+                if (C.TriadWinTataruPraise)
+                {
+                    TataruPraise.TryPraiseJackpot();
+                }
+
                 var cardStatsRecorded = false;
                 if (TriadCardFarmSession.IsModeActive())
                 {
                     TriadCardFarmSession.DetectAndProcessDrops(obj.cardItemId);
-                    cardStatsRecorded = obj.cardItemId > 0;
+                    // Only count as handled when the drop maps to a farm target;
+                    // duplicates of owned cards fall through to the generic recorder.
+                    cardStatsRecorded = TriadCardFarmSession.IsFarmRewardItem(obj.cardItemId);
                     if (!TriadCardFarmSession.IsComplete() &&
                         TriadCardFarmSession.ShouldScheduleDropVerification(obj.cardItemId))
                     {

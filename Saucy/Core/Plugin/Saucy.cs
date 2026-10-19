@@ -1,13 +1,12 @@
 using Dalamud.Plugin;
 using ECommons;
 using ECommons.Configuration;
+using ECommons.LanguageHelpers;
 using ECommons.SimpleGui;
 using NAudio.Wave;
 using PunishLib;
-using Saucy.CuffACur;
 using Saucy.Framework;
 using Saucy.IPC;
-using Saucy.OutOnALimb;
 using System;
 using System.Collections.Specialized;
 using Module = ECommons.Module;
@@ -35,36 +34,41 @@ public sealed partial class Saucy : IDalamudPlugin
     private Mp3FileReader? _currentReader;
     private WaveOutEvent? _currentWaveOut;
     private TriadCollectionHost? _triadCollectionHost;
+    private StopAllIpc? _stopAllIpc;
 
-    public LimbManager LimbManager = null!;
     public Saucy(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this, Module.All);
-        PunishLibMain.Init(pluginInterface, "Saucy", new AboutPlugin());
+
+        // 確認框防重按閘門的幀計數器：在掛上任何其他 Framework.Update 處理常式之前先掛，
+        // 讓它排在本外掛多播委派的最前面（本 pin 是整條委派共用一個 try／catch，
+        // 前面的人擲例外會讓後面的人整個 tick 不被呼叫）。拆除在 ForceTeardown()。
+        AddonPressGuard.EnsureClock();
+
+        ECommons.LanguageHelpers.Localization.Init("ChineseTraditional");
+        PunishLibMain.Init(pluginInterface, "Saucy", new AboutPlugin() { IconPath = LocalIconPath(pluginInterface) });
         EzConfig.Migrate<Configuration>();
         C = EzConfig.Init<Configuration>();
         C.MigrateToBackgroundCpuCores();
+        var renamedNpcKeys = C.NormalizeNpcNameKeys();
+        if (renamedNpcKeys > 0)
+        {
+            Svc.Log.Information($"[Saucy] 對戰次數統計有 {renamedNpcKeys} 個 NPC 名是 7.25 前的舊中間點寫法，已改成新寫法（同一個 NPC 兩種寫法的次數已相加）");
+        }
+
         TriadRunSession.ModuleEnabled = false;
         TriadCardFarmSession.DeactivateSession(clearProgress: true);
         TriadRunSession.ResetRunModeForPluginLoad();
-        C.SetModuleEnabled(ModuleNames.OutOnALimb, false);
-        C.SetModuleEnabled(ModuleNames.CuffACur, false);
         C.Save();
         PrepareTriadSessionForPluginLoad();
         P = this;
-        ArcadeMachineSession.WireCompleteShutdown(
-            GoldSaucerArcadeMachine.Cuff,
-            () => P.DisableArcadeModule(ModuleNames.CuffACur));
-        ArcadeMachineSession.WireCompleteShutdown(
-            GoldSaucerArcadeMachine.Limb,
-            () => P.DisableArcadeModule(ModuleNames.OutOnALimb));
 
         EzConfigGui.Init(_pluginUi);
         Svc.PluginInterface.UiBuilder.OpenMainUi += EzConfigGui.Open;
 
         Svc.Commands.AddHandler(commandName, new(OnCommand)
         {
-            HelpMessage = "Opens the Saucy menu. Use /saucy d for debug, /saucy stop to halt navigation and automation."
+            HelpMessage = "Opens the Saucy menu. Use /saucy d for debug, /saucy stop to halt navigation and automation.".Loc()
         });
 
         dataLoader = new();
@@ -89,8 +93,6 @@ public sealed partial class Saucy : IDalamudPlugin
         uiReaderMatchResults.OnUpdated += CheckResults;
 
         uiReaderGamesResults = new();
-        uiReaderGamesResults.OnCuffUpdated += CheckCuffResults;
-        uiReaderGamesResults.OnLimbUpdated += CheckLimbResults;
         uiReaderGamesResults.OnAirForceUpdated += CheckAirForceResults;
 
         uiReaderScheduler = new(Svc.GameGui);
@@ -100,7 +102,6 @@ public sealed partial class Saucy : IDalamudPlugin
         uiReaderScheduler.AddObservedAddon(uiReaderMatchResults);
         uiReaderScheduler.AddObservedAddon(uiReaderGamesResults);
 
-        LimbManager = new(C.LimbConfig);
         ModuleManager = new();
         C.EnabledModules.CollectionChanged += OnChange;
 
@@ -109,15 +110,37 @@ public sealed partial class Saucy : IDalamudPlugin
         SubscriptionManager.Prepare();
         SubscriptionManager.Subscribe();
         Svc.Framework.Update += RunBot;
+        Svc.PluginInterface.UiBuilder.Draw += ObjectDebugOverlay.Draw;
+        PreciseMovement.Init();
+        _stopAllIpc = new();
     }
+
+    /// <summary>
+    /// 出貨包裡與外掛庫圖示相同的 images/about-icon.png；不存在時回 null（關於分頁沿用 manifest 的 IconUrl）。
+    /// 不用 csproj 既有的 images/icon.png：DalamudPackager 打包時會把那個檔名從 latest.zip 剔除。
+    /// </summary>
+    private static string? LocalIconPath(IDalamudPluginInterface pluginInterface)
+    {
+        var dir = pluginInterface.AssemblyLocation.DirectoryName;
+        if (dir is null) return null;
+        var path = System.IO.Path.Combine(dir, "images/about-icon.png");
+        return System.IO.File.Exists(path) ? path : null;
+    }
+
     public string Name => "Saucy";
     public static Configuration C { get; private set; } = null!;
 
     public void Dispose()
     {
+        _stopAllIpc?.Dispose();
         Svc.Commands.RemoveHandler(commandName);
         Svc.PluginInterface.UiBuilder.OpenMainUi -= EzConfigGui.Open;
         Svc.Framework.Update -= RunBot;
+        Svc.PluginInterface.UiBuilder.Draw -= ObjectDebugOverlay.Draw;
+        // 確認框防重按閘門掛著 AddonLifecycle 監聽器：在 ECommonsMain.Dispose() 之前拆乾淨，
+        // 不留任何指向本組件的委派。
+        AddonPressGuard.ForceTeardown();
+        PreciseMovement.Shutdown();
         PrepareTriadSessionForPluginUnload();
         _triadCollectionHost?.Dispose();
         YesAlready.ResumeIfPausedBySaucy();
@@ -125,7 +148,6 @@ public sealed partial class Saucy : IDalamudPlugin
         TriadMapNavigation.CancelActiveNavigation();
         _triadCollectionHost = null;
         lock (_lockObj) { DisposeAudio(); }
-        CuffACurAutomation.FuncHook?.Dispose();
         ModuleManager.Dispose();
         ECommonsMain.Dispose();
         P = null!;
@@ -133,6 +155,7 @@ public sealed partial class Saucy : IDalamudPlugin
 
     private void OnChange(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        GateEmergencyHold.OnModulesChanging();
         foreach (var m in ModuleManager.Modules)
         {
             if (C.EnabledModules.Contains(m.InternalName) && !m.IsEnabled)
@@ -180,7 +203,7 @@ public sealed partial class Saucy : IDalamudPlugin
         {
             TriadRunSession.ModuleEnabled = true;
             TriadRunSession.BeginAutomationSession();
-            Svc.Chat.Print("[Saucy] Triad Module Enabled!");
+            Svc.Chat.Print("[Saucy] " + "Triad Module Enabled!".Loc());
             return;
         }
 
@@ -195,11 +218,11 @@ public sealed partial class Saucy : IDalamudPlugin
             if (int.TryParse(args[2], out var val))
             {
                 TriadRunSession.ApplyRunMode(TriadRunMode.PlayXTimes, matchCount: val);
-                Svc.Chat.Print("[Saucy] Play X Amount of Times Enabled!");
+                Svc.Chat.Print("[Saucy] " + "Play X Amount of Times Enabled!".Loc());
             }
             else
             {
-                Svc.Chat.Print($"[Saucy] Incorrect value specified: {args[2]}");
+                Svc.Chat.Print("[Saucy] " + "Incorrect value specified: ??".Loc(args[2]));
             }
             return;
         }
@@ -209,13 +232,13 @@ public sealed partial class Saucy : IDalamudPlugin
             if (args[2].ToLower() == "any")
             {
                 TriadRunSession.ApplyRunMode(TriadRunMode.PlayUntilAnyCard);
-                Svc.Chat.Print("[Saucy] Play Until Any Cards Drop Enabled!");
+                Svc.Chat.Print("[Saucy] " + "Play Until Any Cards Drop Enabled!".Loc());
             }
 
             if (args[2].ToLower() == "all")
             {
                 TriadRunSession.ApplyRunMode(TriadRunMode.PlayUntilAllCards);
-                Svc.Chat.Print("[Saucy] Play Until All Cards Drop from NPC at Least X Times Enabled!");
+                Svc.Chat.Print("[Saucy] " + "Play Until All Cards Drop from NPC at Least X Times Enabled!".Loc());
             }
 
             if (args.Length >= 4 && int.TryParse(args[3], out var val))

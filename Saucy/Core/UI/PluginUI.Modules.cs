@@ -1,79 +1,40 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
+using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
+using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Saucy.AirForce;
-using Saucy.CuffACur;
+using Saucy.Cliffhanger;
+using Saucy.Framework;
+using Saucy.IPC;
+using Saucy.LeapOfFaith;
 using Saucy.OtherGames;
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using JumboNumberPlan = Saucy.JumboCactpot.JumboCactpotNumberPlan;
 namespace Saucy;
 
 public unsafe partial class PluginUI
 {
-    private void DrawCuffPanel()
-    {
-        DrawPanelHeader("Cuff-a-Cur", "punch the cactuar");
-        ImGuiEx.EzTabBar("###Cuff",
-            ("Main", CuffACurAutomation.DrawSettings, null, false),
-            ("Debug", CuffACurAutomation.DrawDebug, null, false));
-    }
-
-    private void DrawLimbPanel()
-    {
-        DrawPanelHeader("Out on a Limb", "swing the hatchet");
-        ImGuiEx.EzTabBar("###Limb",
-            ("Main", P.LimbManager.DrawSettings, null, false),
-            ("Debug", P.LimbManager.DrawDebug, null, false));
-    }
-
-    private static void DrawSliceIsRightPanel()
-    {
-        DrawPanelHeader("Slice is Right", "dodge the falling slices");
-        var enabled = C.IsModuleEnabled(ModuleNames.SliceIsRight);
-        if (ImGui.Checkbox("Enable##Slice", ref enabled))
-        {
-            C.SetModuleEnabled(ModuleNames.SliceIsRight, enabled);
-            C.Save();
-        }
-
-        ImGui.TextWrapped("Draws slice and AoE markers during the GATE.");
-
-        if (enabled)
-        {
-            using var indent = ImRaii.PushIndent();
-            var autoMove = C.GoldSaucerGates.SliceIsRightAutoMovement;
-            if (ImGui.Checkbox("Automatic movement (Boss Mod VBM AI)##SliceAuto", ref autoMove))
-            {
-                C.GoldSaucerGates.SliceIsRightAutoMovement = autoMove;
-                C.Save();
-            }
-
-            if (autoMove)
-            {
-                SaucyTheme.TextMuted("Activates the VBM AI preset so Boss Mod's Slice is Right module can path you out of hazards.");
-            }
-        }
-
-        ImGui.Dummy(new(0, 4));
-        SaucyTheme.DrawCard("Dependencies", "Optional integrations", GoldSaucerGateDependenciesUi.DrawSliceIsRight);
-    }
-
     private static void DrawWindBlowsPanel()
     {
-        DrawPanelHeader("Any Way the Wind Blows", "statistical safe spot");
+        DrawPanelHeader("Wind Blows".Loc(), "Statistical safe spot".Loc());
         var enabled = C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows);
-        if (ImGui.Checkbox("Enable##Wind", ref enabled))
+        if (ImGui.Checkbox("啟用##Wind", ref enabled))
         {
             C.SetModuleEnabled(ModuleNames.AnyWayTheWindBlows, enabled);
             C.Save();
         }
 
-        ImGui.TextWrapped("Shows the statistical safe spot during the GATE.");
+        ImGui.TextWrapped("在 GATE 期間顯示統計上的安全站位點。");
 
         if (enabled)
         {
             using var indent = ImRaii.PushIndent();
             var autoMove = C.GoldSaucerGates.WindBlowsAutoMovement;
-            if (ImGui.Checkbox("Automatic movement (vnavmesh)##WindAuto", ref autoMove))
+            if (ImGui.Checkbox("自動移動（vnavmesh）##WindAuto", ref autoMove))
             {
                 C.GoldSaucerGates.WindBlowsAutoMovement = autoMove;
                 C.Save();
@@ -81,26 +42,97 @@ public unsafe partial class PluginUI
 
             if (autoMove)
             {
-                SaucyTheme.TextMuted("Pathfinds you onto the safe spot while you are off it.");
+                SaucyTheme.TextMuted("當你不在安全點上時，會自動導航你移動到安全點。");
+            }
+
+            if (ImGui.Button("強制移動測試（忽略 GATE/安全點判定）##WindForceMove"))
+            {
+                AnyWayTheWindBlows.TriggerForceMove();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("暴風倖存者還是沒自動移動時用這個測試——按一下觸發一次移動嘗試，跳過 GATE/安全點判定。");
             }
         }
 
         ImGui.Dummy(new(0, 4));
-        SaucyTheme.DrawCard("Dependencies", "Optional integrations", GoldSaucerGateDependenciesUi.DrawWindBlows);
+        var expectedGateType = global::Saucy.Framework.Module.GateType.AnyWayTheWindBlows;
+        var currentGate = GateDirector.InSaucer && GateDirector.IsPlayerOnStage()
+            ? GateDirector.GetCurrentGate()
+            : global::Saucy.Framework.Module.GateType.None;
+        SaucyTheme.TextMuted($"目前偵測到的 GateType：{currentGate}（本模組認定的暴風倖存者值：{expectedGateType}）");
+        SaucyTheme.TextMuted($"vnavmesh 已安裝：{Vnavmesh.IsInstalled}　導航就緒：{Vnavmesh.IsNavReady()}　移動中：{Vnavmesh.IsMoving()}");
+        SaucyTheme.TextMuted($"在安全點上：{AnyWayTheWindBlows.Stage.SafeSpot.On}　靠近安全點：{AnyWayTheWindBlows.Stage.SafeSpot.Near}");
+        if (Player.Available)
+        {
+            SaucyTheme.TextMuted($"IsOnPlatform 判定：{WindBlowsGateMovement.DebugIsOnPlatform(Player.Position)}　" +
+                                  $"與安全點距離：{Vector3.Distance(Player.Position, AnyWayTheWindBlows.Stage.SafeSpot.Position):F2}");
+        }
+        if (Vnavmesh.IsInstalled && Player.Available)
+        {
+            var floorHere = Vnavmesh.TryGetPointOnFloor(Player.Position, allowUnlandable: false, halfExtentXz: 1.5f);
+            var floorText = floorHere is { } f ? $"有 (Y={f.Y:F1}，玩家 Y={Player.Position.Y:F1})" : "沒有（會改用玩家實際 Y 判斷）";
+            SaucyTheme.TextMuted($"vnavmesh 在玩家目前位置查得到地板：{floorText}");
+        }
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.DrawCard("相依項目", "選用整合功能", GoldSaucerGateDependenciesUi.DrawWindBlows);
+    }
+
+    /// <summary>
+    /// Shared "walk to the registration NPC beforehand" controls, called from the unified 「活動解說員排程」page (see PluginUI.cs DrawGateSchedulePanel) rather than from each GATE's own panel.
+    /// Deliberately stops at recording the NPC's position + navigating near it — targeting/talking/ confirming registration stays manual by design, and the position is never hardcoded/guessed, only ever whatever the user personally had targeted when they hit the record button.
+    /// </summary>
+    internal static void DrawGateNpcNavigationControls(string label, string idSuffix, GateNpcSpot spot, Func<bool> getAutoNav, Action<bool> setAutoNav)
+    {
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted($"{label}　報名 NPC 自動導航（走到附近後會自動互動，確認參加交給其他插件處理）：");
+        ImGui.TextWrapped(spot.Recorded
+            ? $"已記錄：{spot.NpcName}（{spot.X:F1}, {spot.Y:F1}, {spot.Z:F1}）"
+            : "尚未記錄 NPC 位置——請先在遊戲中鎖定該 NPC。");
+
+        if (ImGui.Button($"記錄目前鎖定的 NPC 位置##{idSuffix}"))
+        {
+            if (GateNpcNavigation.TryRecordCurrentTarget(spot, out var message))
+            {
+                Svc.Chat.Print($"[Saucy] {message}");
+            }
+            else
+            {
+                Svc.Chat.PrintError($"[Saucy] {message}");
+            }
+        }
+
+        using var disabled = ImRaii.Disabled(!spot.Recorded);
+        var autoNav = getAutoNav();
+        if (ImGui.Checkbox($"自動導航至報名點##{idSuffix}", ref autoNav))
+        {
+            setAutoNav(autoNav);
+            C.Save();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button($"立即互動##{idSuffix}"))
+        {
+            GateNpcNavigation.TryInteractNow(spot);
+        }
+
+        // Goes through the navigator rather than a one-shot Vnavmesh.TryMoveTo: it waits for the mesh, reports
+        // success/failure, and can be stopped from the Navigation panel.
+        DrawRecordedSpotNavigationRow(spot, idSuffix);
     }
 
     private static void DrawAirForcePanel()
     {
-        DrawPanelHeader("Air Force One", "ride shooting minigame");
+        DrawPanelHeader("Air Force One".Loc(), "Rail shooter minigame".Loc());
         ImGuiEx.EzTabBar("###AirForce",
-            ("Main", DrawAirForceMain, null, false),
-            ("Debug", AirForceAutomation.DrawDebug, null, false));
+            ("Main".Loc(), DrawAirForceMain, null, false),
+            ("Debug".Loc(), AirForceAutomation.DrawDebug, null, false));
     }
 
     private static void DrawAirForceMain()
     {
         var enabled = C.IsModuleEnabled(ModuleNames.AirForceOne);
-        if (ImGui.Checkbox("Enable##AirForce", ref enabled))
+        if (ImGui.Checkbox("啟用##AirForce", ref enabled))
         {
             C.SetModuleEnabled(ModuleNames.AirForceOne, enabled);
             if (!enabled)
@@ -111,57 +143,904 @@ public unsafe partial class PluginUI
             C.Save();
         }
 
-        ImGui.TextWrapped("Runs automatically when enabled. Plays the Air Force One ride-shooting minigame for you.");
+        ImGui.TextWrapped("啟用後將自動執行，為你自動遊玩 Air Force One 射擊乘坐小遊戲。");
+
+        ImGui.Dummy(new(0, 4));
+        var bombRadius = C.GoldSaucerGates.AirForceBombAvoidRadius;
+        if (ImGui.SliderFloat("炸彈避讓半徑（像素）##AirForceBombRadius", ref bombRadius, 40f, 400f, "%.0f"))
+        {
+            C.GoldSaucerGates.AirForceBombAvoidRadius = bombRadius;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("目標畫面上跟炸彈距離小於這個值就會跳過不打，太常打到炸彈就調大，目標一直跳過不打就調小。");
+        }
+
+        var showCircles = C.GoldSaucerGates.AirForceShowPredictionCircles;
+        if (ImGui.Checkbox("顯示炸彈/目標預測圈##AirForceShowCircles", ref showCircles))
+        {
+            C.GoldSaucerGates.AirForceShowPredictionCircles = showCircles;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("關閉可提升畫面幀數，僅影響顯示，不影響自動避讓/鎖定邏輯。");
+        }
+    }
+
+    private static void DrawLeapOfFaithPanel()
+    {
+        DrawPanelHeader("Leap of Faith".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.LeapOfFaith);
+        if (ImGui.Checkbox("啟用##LeapOfFaith", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.LeapOfFaith, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("開啟後會在畫面上標出目前偵測到的終點或仙人掌盃位置與距離。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var autoMove = C.GoldSaucerGates.LeapOfFaithAutoMovement;
+            if (ImGui.Checkbox("自動移動＋跳躍（實驗性）##LeapOfFaithAuto", ref autoMove))
+            {
+                C.GoldSaucerGates.LeapOfFaithAutoMovement = autoMove;
+                C.Save();
+            }
+
+            if (autoMove)
+            {
+                SaucyTheme.TextMuted("沒有跳台碰撞偵測，只會朝目標方向移動並定時跳躍，可能會摔落，請留意。");
+                SaucyTheme.TextMuted("跳躍時機改為觀察已記錄的藍色軌道自動判斷，不再是固定間隔。");
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("路徑繪製選項（畫太多會讓幀數大幅下降，可依需要關閉）：");
+        var showPlatforms = C.GoldSaucerGates.LeapOfFaithShowPlatformMarkers;
+        if (ImGui.Checkbox("顯示平台推測標記##LeapOfFaithShowPlatforms", ref showPlatforms))
+        {
+            C.GoldSaucerGates.LeapOfFaithShowPlatformMarkers = showPlatforms;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("點數量多時最耗效能的一項，優先關閉這個。");
+        }
+
+        var showOwnTrail = C.GoldSaucerGates.LeapOfFaithShowOwnTrail;
+        if (ImGui.Checkbox("顯示自己的路徑##LeapOfFaithShowOwnTrail", ref showOwnTrail))
+        {
+            C.GoldSaucerGates.LeapOfFaithShowOwnTrail = showOwnTrail;
+            C.Save();
+        }
+
+        var showOtherTrails = C.GoldSaucerGates.LeapOfFaithShowOtherPlayerTrails;
+        if (ImGui.Checkbox("顯示其他玩家路徑##LeapOfFaithShowOtherTrails", ref showOtherTrails))
+        {
+            C.GoldSaucerGates.LeapOfFaithShowOtherPlayerTrails = showOtherTrails;
+            C.Save();
+        }
+
+        var showPointer = C.GoldSaucerGates.LeapOfFaithShowTargetPointer;
+        if (ImGui.Checkbox("顯示目標指標##LeapOfFaithShowPointer", ref showPointer))
+        {
+            C.GoldSaucerGates.LeapOfFaithShowTargetPointer = showPointer;
+            C.Save();
+        }
+
+        ImGui.Dummy(new(0, 4));
+        var expectedGateType = global::Saucy.Framework.Module.GateType.LeapOfFaith;
+        SaucyTheme.TextMuted($"偵測到的 GateType：{LeapOfFaith.LeapOfFaithAutomation.LastObservedGateType}" +
+                              $"（本模組認定的 Leap of Faith 值：{expectedGateType}）");
+        SaucyTheme.TextMuted($"已記錄平台點數：{LeapOfFaith.LeapOfFaithPlatformObserver.ObservedPlatforms.Count}");
+        if (ImGui.Button("清除已記錄平台點##LeapOfFaithClearPlatforms"))
+        {
+            LeapOfFaith.LeapOfFaithPlatformObserver.Clear();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("清掉舊版偵測邏輯留下的雜訊點（例如深淵/半空中的點），之後會用新邏輯重新累積。");
+        }
+
+        // Checks live whether vnavmesh's navmesh actually has floor data over Leap of Faith's platforms
+        // (its navmesh is baked from static collision and these platforms may be dynamic/instance-only).
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted($"vnavmesh 已安裝：{Vnavmesh.IsInstalled}　導航就緒：{Vnavmesh.IsNavReady()}");
+        if (Vnavmesh.IsInstalled && Player.Available)
+        {
+            var floorHere = Vnavmesh.TryGetPointOnFloor(Player.Position, allowUnlandable: false, halfExtentXz: 2f);
+            var floorText = floorHere is { } f ? $"有 (Y={f.Y:F1}，玩家 Y={Player.Position.Y:F1})" : "沒有";
+            SaucyTheme.TextMuted($"vnavmesh 在玩家目前位置查得到地板：{floorText}");
+        }
+    }
+
+    private static void DrawCliffhangerPanel()
+    {
+        DrawPanelHeader("Cliffhanger".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.Cliffhanger);
+        if (ImGui.Checkbox("啟用##Cliffhanger", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.Cliffhanger, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後會朝最近的迷路陸行鳥雛鳥移動，並在炸彈太靠近時嘗試遠離。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var autoMove = C.GoldSaucerGates.CliffhangerAutoMovement;
+            if (ImGui.Checkbox("自動移動（實驗性）##CliffhangerAuto", ref autoMove))
+            {
+                C.GoldSaucerGates.CliffhangerAutoMovement = autoMove;
+                C.Save();
+            }
+
+            if (autoMove)
+            {
+                SaucyTheme.TextMuted("沒有跳躍/碰撞偵測，只會朝雛鳥方向移動並嘗試遠離炸彈，請留意安全。");
+
+                if (ImGui.Button("啟動移動（從路線第一點開始跑）##CliffhangerStartTestRun"))
+                {
+                    CliffhangerAutomation.StartTestRun();
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("不等 GATE 實際開始，直接在目前位置從已錄製路線的第一個點開始跑；按一次就會重新從頭開始。");
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("停止測試##CliffhangerStopTestRun"))
+                {
+                    CliffhangerAutomation.TestRunActive = false;
+                }
+                ImGui.SameLine();
+                SaucyTheme.TextMuted(CliffhangerAutomation.TestRunActive ? "測試中" : "未在測試");
+
+                DrawCliffhangerSparseRoute();
+
+                SaucyTheme.TextMuted($"診斷：vnavmesh 已安裝={Vnavmesh.IsInstalled}　導航就緒={Vnavmesh.IsNavReady()}　" +
+                                      $"移動中={Vnavmesh.IsMoving()}　目前路點索引={CliffhangerAutomation.RouteIndex}/{C.GoldSaucerGates.CliffhangerRoute.Count}");
+
+                var route = C.GoldSaucerGates.CliffhangerRoute;
+                var idx = CliffhangerAutomation.RouteIndex;
+                if (Player.Available && idx >= 0 && idx < route.Count)
+                {
+                    var wp = route[idx];
+                    var dest = new Vector3(wp.X, wp.Y, wp.Z);
+                    var dist = Vector3.Distance(Player.Position, dest);
+                    SaucyTheme.TextMuted($"目前路點：{wp.Label}（跳躍點={wp.IsJumpPoint}）　" +
+                                          $"跟玩家距離={dist:F2}m　炸彈阻擋中={CliffhangerAutomation.IsBlockedByBomb}");
+                }
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        var blastRadius = C.GoldSaucerGates.CliffhangerBombBlastRadiusGuess;
+        if (ImGui.SliderFloat("炸彈波及範圍猜測（公尺）##CliffhangerBlastRadius", ref blastRadius, 1f, 15f, "%.1f"))
+        {
+            C.GoldSaucerGates.CliffhangerBombBlastRadiusGuess = blastRadius;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("實際爆炸範圍未知，這只是畫面上紅色圓圈的猜測值，可依實際遊玩觀察調整。");
+        }
+
+        var bombDisplaySeconds = C.GoldSaucerGates.CliffhangerBombDisplaySeconds;
+        if (ImGui.SliderFloat("炸彈標示顯示時間（秒）##CliffhangerBombDisplay", ref bombDisplaySeconds, 0.5f, 10f, "%.1f"))
+        {
+            C.GoldSaucerGates.CliffhangerBombDisplaySeconds = bombDisplaySeconds;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("炸彈出現後標記/範圍圈只顯示這麼久就自動消失（閃避邏輯本身不受影響，一直到炸彈消失都會避開）。");
+        }
+
+        var showOwnTrail = C.GoldSaucerGates.CliffhangerShowOwnTrail;
+        if (ImGui.Checkbox("顯示自己的路徑##CliffhangerShowOwnTrail", ref showOwnTrail))
+        {
+            C.GoldSaucerGates.CliffhangerShowOwnTrail = showOwnTrail;
+            C.Save();
+        }
+
+        var showBlast = C.GoldSaucerGates.CliffhangerShowBombBlastCircles;
+        if (ImGui.Checkbox("顯示炸彈範圍圈##CliffhangerShowBlast", ref showBlast))
+        {
+            C.GoldSaucerGates.CliffhangerShowBombBlastCircles = showBlast;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("關閉可提升畫面幀數，僅影響顯示，不影響炸彈閃避邏輯。");
+        }
+
+        ImGui.Dummy(new(0, 4));
+        ImGui.TextWrapped("路線固定但有炸彈障礙物。若要重新確認目標/炸彈 DataId，可到「除錯」分頁用" +
+                           "「搶救小鳥大作戰 路徑記錄」再錄一次手動遊玩紀錄。");
+
+        var expectedGateType = global::Saucy.Framework.Module.GateType.Cliffhanger;
+        SaucyTheme.TextMuted($"目前偵測到的 GateType：{CliffhangerAutomation.LastObservedGateType}" +
+                              $"（本模組認定的 Cliffhanger 值：{expectedGateType}）");
+    }
+
+    /// <summary>
+    /// Sparse, user-marked route (start / jump points / end)
+    /// — takes priority over the dense
+    /// auto-recorded replay when set up. Order in the list IS the walking order; add points one at
+    /// a time by standing at each spot and clicking "新增目前位置".
+    /// </summary>
+    private static void DrawCliffhangerSparseRoute()
+    {
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("手動標記路線（起點/跳躍點/終點，依清單順序走）：");
+
+        var route = C.GoldSaucerGates.CliffhangerRoute;
+        SaucyTheme.TextMuted("只要清單裡有路點，「自動移動」開啟時就會強制優先使用這條路線（取代自動錄製重播），不需要另外開關。");
+
+        for (var i = 0; i < route.Count; i++)
+        {
+            var wp = route[i];
+            ImGui.PushID(i);
+            ImGui.TextUnformatted($"{i + 1}. {wp.Label}（{wp.X:F1}, {wp.Y:F1}, {wp.Z:F1}）");
+
+            var isJumpPoint = wp.IsJumpPoint;
+            if (ImGui.Checkbox("跳躍點##IsJumpPoint", ref isJumpPoint))
+            {
+                wp.IsJumpPoint = isJumpPoint;
+                C.Save();
+            }
+
+            if (wp.IsJumpPoint)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("移動到跳躍點並跳躍##CliffhangerRouteJump"))
+                {
+                    // Without forcing these on, OnUpdate's `inGate` check (real
+                    // GATE state OR TestRunActive) can be false while just testing the route outside
+                    // an actual run, so it exits before ever reaching the manual-move logic at all.
+                    CliffhangerAutomation.TestRunActive = true;
+                    C.SetModuleEnabled(ModuleNames.Cliffhanger, true);
+                    CliffhangerAutomation.TryMoveNowToAndJump(new(wp.X, wp.Y, wp.Z));
+                }
+            }
+            else
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("立即移動##CliffhangerRouteMove"))
+                {
+                    CliffhangerAutomation.TestRunActive = true;
+                    C.SetModuleEnabled(ModuleNames.Cliffhanger, true);
+                    CliffhangerAutomation.TryMoveNowTo(new(wp.X, wp.Y, wp.Z));
+                }
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("刪除"))
+            {
+                route.RemoveAt(i);
+                C.Save();
+                ImGui.PopID();
+                break;
+            }
+
+            ImGui.PopID();
+        }
+
+        if (ImGui.Button("新增目前位置到路線結尾##AddCliffhangerRoutePoint"))
+        {
+            if (Player.Available)
+            {
+                route.Add(new()
+                {
+                    X = Player.Position.X, Y = Player.Position.Y, Z = Player.Position.Z,
+                    Label = route.Count == 0 ? "起點" : $"路點 {route.Count + 1}"
+                });
+                C.Save();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("清空路線##ClearCliffhangerRoute"))
+        {
+            route.Clear();
+            C.Save();
+        }
+    }
+
+    private static void DrawSliceIsRightPanel()
+    {
+        DrawPanelHeader("Slice is Right".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.SliceIsRight);
+        if (ImGui.Checkbox("啟用##SliceIsRight", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.SliceIsRight, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("這關的實際機制由 BossModReborn 接管，這裡只負責啟用/停用；報名 NPC 導航設定已統一移到「活動解說員排程」頁面。");
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("進入 GATE 後先移動到場地邊界，再讓 BossModReborn 接管（不會再碰移動）：");
+        var startSpot = C.GoldSaucerGates.SliceIsRightStartSpot;
+        ImGui.TextWrapped(startSpot.Recorded
+            ? $"已記錄：{startSpot.NpcName}（{startSpot.X:F1}, {startSpot.Y:F1}, {startSpot.Z:F1}）"
+            : "尚未記錄場地邊界位置——請先進入 GATE 站到你要的位置。");
+
+        if (ImGui.Button("記錄目前站立位置##SliceIsRightStartSpot"))
+        {
+            GateNpcNavigation.RecordCurrentPosition(startSpot, "場地邊界");
+        }
+
+        using var disabled = ImRaii.Disabled(!startSpot.Recorded);
+        var startAutoNav = C.GoldSaucerGates.SliceIsRightStartAutoNavigate;
+        if (ImGui.Checkbox("進入 GATE 後自動移動至此##SliceIsRightStartAutoNavigate", ref startAutoNav))
+        {
+            C.GoldSaucerGates.SliceIsRightStartAutoNavigate = startAutoNav;
+            C.Save();
+        }
     }
 
     private static void DrawMiniCactpotPanel()
     {
-        DrawPanelHeader("Mini-Cactpot", "daily 3\u00d73 scratcher");
+        DrawPanelHeader("Mini Cactpot".Loc(), "Daily scratch lottery".Loc());
         var enabled = C.IsModuleEnabled(ModuleNames.MiniCactpot);
-        if (ImGui.Checkbox("Enable##Mini", ref enabled))
+        if (ImGui.Checkbox("啟用##MiniCactpot", ref enabled))
         {
             C.SetModuleEnabled(ModuleNames.MiniCactpot, enabled);
             C.Save();
-            if (ModuleManager.GetModule<MiniCactpot.MiniCactpot>() is { } miniCactpot)
+        }
+
+        ImGui.TextWrapped("啟用後，開啟仙人微彩（每日刮刮樂）面板時會自動依期望值翻格、選線並領獎。" +
+                          "未啟用時不註冊任何監聽，手動遊玩不會被搶操作。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var playAgain = C.MiniCactpotAutoPlayAgain;
+            if (ImGui.Checkbox("自動購買下一張（一次完成當日全部彩券）##MiniCactpotPlayAgain", ref playAgain))
             {
-                if (enabled && !miniCactpot.IsEnabled)
+                C.MiniCactpotAutoPlayAgain = playAgain;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("一張完成關窗後，自動在「要購買下一張彩票嗎」按確認。" +
+                                 "只會按仙人微彩自己的購票確認框（長按式按鈕版面），其他對話框一律不碰。");
+            }
+
+            var autoTalk = C.MiniCactpotAutoTalkOnArrival;
+            if (ImGui.Checkbox("After arriving from Navigation, talk to the broker and play today's tickets".Loc() +
+                               "##MiniCactpotAutoTalk", ref autoTalk))
+            {
+                C.MiniCactpotAutoTalkOnArrival = autoTalk;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(("Only runs when you press Go on the Mini Cactpot row of the Navigation panel and the walk reaches the broker.\n" +
+                                  "It talks to the broker and picks the join option, nothing more. The broker's dialog and the purchase confirmation (10 MGP a ticket) must be handled by YesAlready or by you; Saucy never presses them.\n" +
+                                  "This module then reveals, picks a line and collects; later tickets follow \"auto-buy the next ticket\" as before.\n" +
+                                  "While picking the join option it asks YesAlready to pause its list selection for a few seconds, so the two never pick at the same time.\n" +
+                                  "If today's tickets are already known to be used up, it does not talk and prints one line instead. If no ticket opens within 30 seconds, it stops and says why.\n" +
+                                  "Other dialogs, NPCs and destinations are never touched. Stop it any time with Stop on the Navigation panel.").Loc());
+            }
+
+            ImGui.Dummy(new(0, 4));
+
+            var clickInterval = C.MiniCactpotClickIntervalMs;
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.SliderInt("點擊間隔（毫秒）##MiniCactpotClickInterval", ref clickInterval,
+                    Configuration.MiniCactpotMinClickIntervalMs, Configuration.MiniCactpotMaxClickIntervalMs))
+            {
+                C.MiniCactpotClickIntervalMs = clickInterval;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("每次翻格／選線之間至少間隔這麼久。\n" +
+                                 "下限刻意設在 400 毫秒：金碟遊樂園的自動操作是伺服器看得見的行為，" +
+                                 "「看起來像人在操作」本身就有價值，不建議為了快而壓到極限。");
+            }
+
+            var closeDelay = C.MiniCactpotCloseDelayMs;
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.SliderInt("開獎後關窗延遲（毫秒）##MiniCactpotCloseDelay", ref closeDelay,
+                    0, Configuration.MiniCactpotMaxCloseDelayMs))
+            {
+                C.MiniCactpotCloseDelayMs = closeDelay;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("全部翻開後等這麼久再領獎關窗，讓開獎動畫與派彩數字跑完——" +
+                                 "設成 0 就會立刻關掉，你會看不到中了多少。");
+            }
+
+            ImGui.Dummy(new(0, 4));
+
+            var praise = C.MiniCactpotJackpotTataruPraise;
+            if (ImGui.Checkbox("中獎時請塔塔露提醒（需安裝 TataruPraise）##MiniCactpotTataruPraise", ref praise))
+            {
+                C.MiniCactpotJackpotTataruPraise = praise;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("開獎後派彩達到門檻時，請「塔塔露誇獎」念一句。\n" +
+                                 "沒安裝那個插件就什麼都不會發生；不論有沒有念，都不影響本模組的自動流程。\n" +
+                                 "派彩是照選中那條線的線和查派彩表算出來的，不讀面板文字。");
+            }
+
+            if (praise)
+            {
+                using var praiseIndent = ImRaii.PushIndent();
+                var threshold = C.MiniCactpotJackpotThresholdMgp;
+                ImGui.SetNextItemWidth(220);
+                if (ImGui.SliderInt("提醒門檻（金碟幣）##MiniCactpotTataruThreshold", ref threshold,
+                        Configuration.MiniCactpotJackpotMinThresholdMgp,
+                        Configuration.MiniCactpotJackpotMaxThresholdMgp))
                 {
-                    miniCactpot.EnableInternal();
+                    C.MiniCactpotJackpotThresholdMgp = threshold;
+                    C.Save();
                 }
-                else if (!enabled && miniCactpot.IsEnabled)
+                if (ImGui.IsItemHovered())
                 {
-                    miniCactpot.DisableInternal();
+                    ImGui.SetTooltip("派彩達到這個數字才提醒。\n" +
+                                     "仙人微彩的派彩表最低 36、最高 10000 金碟幣，" +
+                                     "所以拉到最左邊等於「中任何獎都提醒」。");
                 }
             }
         }
 
-        ImGui.TextWrapped("Plays Mini Cactpot automatically when you open the daily scratcher at the Gold Saucer.");
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("第一張彩券的購買確認（花費 10 MGP）永遠由你自己按下——模組只接手面板開啟後的流程。");
+
+        var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.MiniCactpot.MiniCactpotModule>();
+        SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
+        if (enabled && global::Saucy.MiniCactpot.MiniCactpotAutoPlay.IsActive)
+        {
+            SaucyTheme.TextMuted(global::Saucy.MiniCactpot.MiniCactpotAutoPlay.StatusText);
+        }
+
+        if (enabled)
+        {
+            SaucyTheme.TextMuted(global::Saucy.Framework.GoldSaucer.GoldSaucerEventTracker.DescribeRemaining());
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("這個數字來自跟仙人微彩發放員對話時伺服器送的那筆事件；之後每開一張彩券就從它扣一（一筆事件只扣一次）。\n" +
+                                 "還沒跟他說過話、換了角色、或已經跨過每日重置都會顯示「未知」。\n" +
+                                 "除了顯示，只有「從導航抵達後自動對話」會看它：確定今天剩 0 張就不對話，未知一律照常對話。");
+            }
+        }
     }
 
     private static void DrawJumboCactpotPanel()
     {
-        DrawPanelHeader("Jumbo Cactpot", "weekly 4-digit raffle");
+        DrawPanelHeader("Jumbo Cactpot".Loc(), "Weekly lottery".Loc());
         var enabled = C.IsModuleEnabled(ModuleNames.JumboCactpot);
-        if (ImGui.Checkbox("Enable##Jumbo", ref enabled))
+        if (ImGui.Checkbox("Enable".Loc() + "##JumboCactpot", ref enabled))
         {
             C.SetModuleEnabled(ModuleNames.JumboCactpot, enabled);
             C.Save();
-            if (ModuleManager.GetModule<JumboCactpot.JumboCactpot>() is { } jumboCactpot)
+        }
+
+        ImGui.TextWrapped("When enabled, opening the Jumbo Cactpot ticket purchase panel automatically fills in the numbers and brings up the purchase confirmation. When disabled, no listener is registered and manual purchases are not intercepted.".Loc());
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var useFixed = C.JumboCactpotUseFixedNumber;
+            if (ImGui.Checkbox("Use fixed number".Loc() + "##JumboCactpotUseFixed", ref useFixed))
             {
-                if (enabled && !jumboCactpot.IsEnabled)
+                C.JumboCactpotUseFixedNumber = useFixed;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(("Unchecked (default) = every ticket rerolls randomly (0000-9999, inclusive).\n" +
+                                 "Checked = use a number you pick; to use a different number for each of the three tickets, check this then see the option below.").Loc());
+            }
+
+            if (useFixed)
+            {
+                using var fixedIndent = ImRaii.PushIndent();
+                var perTicket = C.JumboCactpotPerTicketNumbers;
+                if (ImGui.Checkbox("Use a different number per ticket".Loc() + "##JumboCactpotPerTicket", ref perTicket))
                 {
-                    jumboCactpot.EnableInternal();
+                    C.JumboCactpotPerTicketNumbers = perTicket;
+                    C.Save();
                 }
-                else if (!enabled && jumboCactpot.IsEnabled)
+                if (ImGui.IsItemHovered())
                 {
-                    jumboCactpot.DisableInternal();
+                    ImGui.SetTooltip(("Unchecked (default) = all three tickets use the number set below, same as before.\n" +
+                                     "Checked = each of the week's three tickets uses its own number; a ticket without \"use a specific number\" checked rerolls randomly.\n" +
+                                     "\"Which ticket\" is how many you have bought this week: the count the server reports when you talk to the broker, plus each purchase seen after that. If that count is unknown, it is the tickets bought since you entered the Gold Saucer this visit.").Loc());
                 }
+
+                if (perTicket)
+                {
+                    DrawJumboPerTicketNumbers();
+                }
+                else
+                {
+                    var fixedNumber = C.JumboCactpotFixedNumber;
+                    ImGui.SetNextItemWidth(220);
+                    if (ImGui.InputInt("Fixed number".Loc() + "##JumboCactpotFixedNumber", ref fixedNumber))
+                    {
+                        C.JumboCactpotFixedNumber = Math.Clamp(fixedNumber, 0, Configuration.JumboCactpotMaxNumber);
+                        C.Save();
+                    }
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip("0000 to 9999; out-of-range values are automatically clamped.".Loc());
+                    }
+
+                    SaucyTheme.TextMuted("Current number: ??".Loc(Math.Clamp(C.JumboCactpotFixedNumber, 0, Configuration.JumboCactpotMaxNumber).ToString("D4")));
+                }
+            }
+
+            ImGui.Dummy(new(0, 4));
+            var autoTalk = C.JumboCactpotAutoTalkOnArrival;
+            if (ImGui.Checkbox("After arriving from Navigation, talk to the broker and open the ticket panel".Loc() +
+                               "##JumboCactpotAutoTalk", ref autoTalk))
+            {
+                C.JumboCactpotAutoTalkOnArrival = autoTalk;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(("Only runs when you press Go on the Jumbo Cactpot row of the Navigation panel and the walk reaches the broker; logging in, zoning or loading never starts it.\n" +
+                                  "It talks to the broker and picks \"join\" in the broker's menu, once per trip, and stops as soon as the ticket panel opens. This module then fills in the number.\n" +
+                                  "The broker's dialog, every purchase confirmation and \"buy another?\" are handled by YesAlready or by you; Saucy never presses them.\n" +
+                                  "While waiting for the menu it asks YesAlready to pause its SelectString option picking for a few seconds at a time, so the two never pick at the same time; if YesAlready cannot be asked, it leaves the menu to you.\n" +
+                                  "If you move on your own while it is still walking up to the broker, it pauses and walks on once you stop for 2 seconds. Stop it any time with Stop on the Navigation panel.").Loc());
             }
         }
 
-        ImGui.TextWrapped(
-            "Collect prizes at the Cactpot cashier yourself. Saucy then paths you to the Jumbo " +
-            "broker and handles ticket purchase dialogue, randomizing, and confirms.");
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("Every ticket's purchase confirmation (which spends MGP) is always confirmed by you — the module only fills in the number and brings up the confirmation. For the week's three tickets, keep choosing \"Buy Ticket\" from the NPC menu as usual; the module fills in a number each time you open the panel. It never looks for the NPC itself, never clicks the dialogue menu itself, and never opens the next one after you buy one.".Loc());
+        if (enabled && C.JumboCactpotAutoTalkOnArrival)
+        {
+            SaucyTheme.TextMuted("Exception you turned on: a Navigation trip to the broker talks to them and picks \"join\" once.".Loc());
+        }
+
+        var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.JumboCactpot.JumboCactpotModule>();
+        SaucyTheme.TextMuted("Status: ??".Loc(module == null ? "Module not loaded".Loc() : enabled ? module.LastAction : "Disabled".Loc()));
+        if (enabled && global::Saucy.JumboCactpot.JumboCactpotAutoTalk.IsActive)
+        {
+            SaucyTheme.TextMuted(global::Saucy.JumboCactpot.JumboCactpotAutoTalk.StatusText);
+        }
+
+        if (enabled)
+        {
+            SaucyTheme.TextMuted(global::Saucy.Framework.GoldSaucer.GoldSaucerEventTracker.DescribeWeeklyTickets());
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(("These three numbers come from the event the server sends when talking to the Jumbo Cactpot broker — the module does not remember them on its own.\n" +
+                                 "If you have not talked to them yet, switched characters, or this week's drawing has already passed, it will show \"unknown\".\n" +
+                                 "The module uses how many are already bought to decide which of your three numbers comes next.").Loc());
+            }
+
+            SaucyTheme.TextMuted("YesAlready also has a Jumbo Cactpot auto-fill; while you talk to the broker, Saucy asks it to pause so the two never fill the same panel.".Loc());
+        }
+
+        // 「下一張會用哪個號碼」放在列上而不是 tooltip：這是使用者按下確認前唯一能核對的地方，
+        // 而且模組算的張數與他心裡想的可能不一樣，看不見就等於猜。
+        if (enabled && module != null && C.JumboCactpotUseFixedNumber && C.JumboCactpotPerTicketNumbers)
+        {
+            var next = module.NextTicketIndex;
+            SaucyTheme.TextMuted(next < Configuration.JumboCactpotTicketsPerWeek
+                ? "Next ticket is #??, will use: ??".Loc((next + 1).ToString(), JumboNumberPlan.Describe(C, next))
+                : "This week's three tickets are already bought; opening the panel again will use random numbers.".Loc());
+        }
+    }
+
+    /// <summary>三張彩券各自的號碼設定。
+    /// 🔴 索引一律走 JumboCactpotNumberPlan.Normalize——設定檔是使用者改得到的 JSON，
+    /// 陣列長度與元素是不是 null 都不能假設。</summary>
+    private static void DrawJumboPerTicketNumbers()
+    {
+        var slots = JumboNumberPlan.Normalize(C);
+        for (var i = 0; i < slots.Length; i++)
+        {
+            var slot = slots[i];
+            var useSpecific = slot.UseSpecificNumber;
+            if (ImGui.Checkbox("Ticket ?? uses a specific number".Loc((i + 1).ToString()) + $"##JumboCactpotTicketUse{i}", ref useSpecific))
+            {
+                slot.UseSpecificNumber = useSpecific;
+                C.Save();
+            }
+
+            ImGui.SameLine();
+            if (!useSpecific)
+            {
+                SaucyTheme.TextMuted("Random".Loc());
+                continue;
+            }
+
+            ImGui.SetNextItemWidth(160);
+            var number = slot.Number;
+            if (ImGui.InputInt($"##JumboCactpotTicketNumber{i}", ref number))
+            {
+                slot.Number = Math.Clamp(number, 0, Configuration.JumboCactpotMaxNumber);
+                C.Save();
+            }
+
+            ImGui.SameLine();
+            SaucyTheme.TextMuted($"{Math.Clamp(slot.Number, 0, Configuration.JumboCactpotMaxNumber):D4}");
+        }
+    }
+
+    /// <summary>力量表難度下拉選單的顯示名稱——三個成員本身是怪物名(泰坦/毛爾波爾/仙人掌怪)，
+    /// 沿用本檔既有註解與提示文字裡已經在用的譯名，不是新創。</summary>
+    private static readonly Dictionary<global::Saucy.OutOnALimb.LimbDifficulty, string> LimbDifficultyNames = new()
+    {
+        [global::Saucy.OutOnALimb.LimbDifficulty.Titan] = "Titan".Loc(),
+        [global::Saucy.OutOnALimb.LimbDifficulty.Morbol] = "Morbol".Loc(),
+        [global::Saucy.OutOnALimb.LimbDifficulty.Cactuar] = "Cactuar".Loc(),
+    };
+
+    private static void DrawOutOnALimbPanel()
+    {
+        DrawPanelHeader("Out on a Limb".Loc(), "Chocobo Square logging machine".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.OutOnALimb);
+        if (ImGui.Checkbox("啟用##OutOnALimb", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.OutOnALimb, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後，孤樹無援的機台畫面開著時會自動幫你停力量表、並依每一刀的系統訊息手感" +
+                          "（沒手感／接觸到／很接近／正中目標）逐步收斂出最佳砍伐位置後揮斧。" +
+                          "除非你另外打開下面的「連續遊玩」並按下開始，" +
+                          "模組不會自己去找機台、不會自己互動、也不會自己開始新的一局。");
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("這是伺服器看得見的行為模式：自動出手沒有人類的反應延遲，連續遊玩時尤其明顯。" +
+                             "模組只讀取畫面上本來就顯示給你看的資料（機台面板欄位、指針刻度、樹的量表），" +
+                             "不讀寫遊戲封包、不修改遊戲記憶體，出手方式就是按下畫面上原本就有的按鈕。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+
+            var difficulty = C.OutOnALimb.Difficulty;
+            ImGui.SetNextItemWidth(140f);
+            if (ImGuiEx.EnumCombo("力量表目標##LimbDifficulty", ref difficulty, names: LimbDifficultyNames))
+            {
+                C.OutOnALimb.Difficulty = difficulty;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("第一階段力量表要停在哪一格。泰坦最快（獎勵最高）也最難停中，仙人掌怪最慢最好停。\n" +
+                                 "三個名字對應的是「當下量到的三段寬度排名」（最窄＝泰坦），" +
+                                 "不是寫死的節點編號——伺服器每一局給的區間寬度可以不一樣。");
+            }
+
+            var tolerance = C.OutOnALimb.Tolerance;
+            ImGui.SetNextItemWidth(140f);
+            if (ImGui.SliderInt("容許誤差##LimbTolerance", ref tolerance, 1, 4))
+            {
+                C.OutOnALimb.Tolerance = Math.Clamp(tolerance, 1, 4);
+                C.Save();
+            }
+
+            var requiredFps = RequiredFramerate(C.OutOnALimb.Difficulty, C.OutOnALimb.Tolerance);
+            var currentFps = (int)ImGui.GetIO().Framerate;
+            SaucyTheme.TextMuted($"參考畫面更新率：{requiredFps} FPS（你目前 {currentFps} FPS）。" +
+                                 "現在除了「這一幀夠不夠近」之外，還會判斷「兩幀之間有沒有掃過目標」，" +
+                                 "所以更新率不夠時不會像以前那樣整段掃過去都按不到；這個數字只是精準度的參考。");
+
+            var autoPowerMeter = C.OutOnALimb.AutoPowerMeter;
+            if (ImGui.Checkbox("自動停力量表##LimbAutoPowerMeter", ref autoPowerMeter))
+            {
+                C.OutOnALimb.AutoPowerMeter = autoPowerMeter;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("力量表畫面是孤樹無援與礦脈探索共用的，所以只有在附近確實認得出" +
+                                 "孤樹無援機台時才會幫你停——認不出來就完全不碰，由你自己停表，砍伐階段照樣會接手。");
+            }
+
+            var autoContinue = C.OutOnALimb.AutoContinue;
+            if (ImGui.Checkbox("自動接受「挑戰翻倍」##LimbAutoContinue", ref autoContinue))
+            {
+                C.OutOnALimb.AutoContinue = autoContinue;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("預設關閉：砍完一棵樹後的續戰確認框交給你自己按。" +
+                                 "開啟後，只有在剩餘時間足夠時才會接受；讀不到剩餘時間一律按「否」收工。");
+            }
+
+            if (autoContinue)
+            {
+                var stopAt = C.OutOnALimb.StopAtSecondsRemaining;
+                ImGui.SetNextItemWidth(140f);
+                if (ImGui.DragInt("剩餘秒數低於此值就收工##LimbStopAt", ref stopAt, 0.5f, 0, 60))
+                {
+                    C.OutOnALimb.StopAtSecondsRemaining = Math.Clamp(stopAt, 0, 60);
+                    C.Save();
+                }
+            }
+
+            DrawOutOnALimbAutoReplay();
+
+            ImGui.Dummy(new(0, 4));
+            var logDiag = C.OutOnALimb.LogBoardDiagnostics;
+            if (ImGui.Checkbox("把機台面板欄位寫進 log##LimbDiag", ref logDiag))
+            {
+                C.OutOnALimb.LogBoardDiagnostics = logDiag;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("診斷用：每秒把機台面板的 AtkValue[0..15] 與指針刻度寫一行到 log（Information 等級）。" +
+                                 "只有要回報問題時才需要打開。");
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        var limbModule = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.OutOnALimb.OutOnALimbModule>();
+        SaucyTheme.TextMuted($"狀態：{(limbModule == null ? "模組未載入" : enabled ? limbModule.LastAction : "未啟用")}");
+        if (limbModule != null && enabled)
+        {
+            SaucyTheme.TextMuted($"解題器：{limbModule.SolverSummary}");
+
+            // ⚠️ 回饋來源的健康狀況放在列上而不是 tooltip：
+            // 「解題器沒有資料可學」是使用者必須一眼看到的事，不是起疑才查的事。
+            SaucyTheme.TextMuted(limbModule.FeedbackSummary);
+        }
+    }
+
+    /// <summary>連續遊玩區塊。開關是設定、真正會動作的是「開始」按鈕——
+    /// 而且停止鈕永遠畫在列上（不藏在 tooltip 或折疊區裡），跑起來時一眼就找得到。</summary>
+    private static void DrawOutOnALimbAutoReplay()
+    {
+        ImGui.Dummy(new(0, 6));
+        ImGui.Separator();
+        ImGui.Dummy(new(0, 2));
+
+        var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.OutOnALimb.OutOnALimbModule>();
+        var running = module?.AutoReplayRunning == true;
+
+        var autoReplay = C.OutOnALimb.AutoReplay;
+        if (ImGui.Checkbox("允許連續遊玩##LimbAutoReplay", ref autoReplay))
+        {
+            C.OutOnALimb.AutoReplay = autoReplay;
+            C.Save();
+            if (!autoReplay)
+            {
+                module?.StopAutoReplay("設定已關閉");
+            }
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("一局結束後自動再跟機台開下一局，省掉中間的等待。\n" +
+                             "🔴 預設關閉，而且光是打開這個開關還不會動作——一定要按下面的「開始連續遊玩」。\n" +
+                             "這是設計成短時間、有人在旁邊看著的用法，不是掛機：跑滿設定的局數就會自己停。");
+        }
+
+        if (!autoReplay)
+        {
+            SaucyTheme.TextMuted("連續遊玩關閉中：一局結束後由你自己跟機台開下一局。");
+            return;
+        }
+
+        var maxGames = C.OutOnALimb.AutoReplayMaxGames;
+        ImGui.SetNextItemWidth(140f);
+        if (ImGui.SliderInt("最多自動幾局##LimbReplayCap", ref maxGames, 1, 20))
+        {
+            C.OutOnALimb.AutoReplayMaxGames = Math.Clamp(maxGames, 1, 20);
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("到達這個局數就自己停下來，要再跑得重新按一次「開始連續遊玩」。");
+        }
+
+        if (module == null)
+        {
+            SaucyTheme.TextMuted("模組未載入。");
+            return;
+        }
+
+        ImGui.Dummy(new(0, 2));
+        if (running)
+        {
+            using (ImRaii.PushColor(ImGuiCol.Button, SaucyTheme.TextErrorColor))
+            using (ImRaii.PushColor(ImGuiCol.ButtonHovered, SaucyTheme.TextErrorColor))
+            using (ImRaii.PushColor(ImGuiCol.ButtonActive, SaucyTheme.TextErrorColor))
+            {
+                if (ImGui.Button("■ 停止連續遊玩##LimbReplayStop", new(220f, 0f)))
+                {
+                    module.StopAutoReplay("使用者按下停止");
+                }
+            }
+
+            ImGui.SameLine();
+            SaucyTheme.TextWarning($"進行中：{module.AutoReplayGamesDone}/{Math.Max(1, C.OutOnALimb.AutoReplayMaxGames)} 局");
+        }
+        else
+        {
+            if (ImGui.Button("▶ 開始連續遊玩##LimbReplayStart", new(220f, 0f)))
+            {
+                module.StartAutoReplay();
+            }
+
+            ImGui.SameLine();
+            SaucyTheme.TextMuted("按下之後才會自己跟機台互動；站到機台旁邊再按。");
+        }
+    }
+
+    /// <summary>指針掃過目標所需的取樣率——容許誤差越窄、難度越高，指針停留在窗口內的時間越短。
+    /// 數值沿用上游 Saucy 的實測表。</summary>
+    private static int RequiredFramerate(global::Saucy.OutOnALimb.LimbDifficulty difficulty, int tolerance)
+    {
+        int[] table = difficulty switch
+        {
+            global::Saucy.OutOnALimb.LimbDifficulty.Titan => [480, 240, 120, 90, 60],
+            global::Saucy.OutOnALimb.LimbDifficulty.Morbol => [240, 120, 90, 60, 30],
+            var _ => [120, 90, 60, 30, 15]
+        };
+
+        var index = Math.Clamp(tolerance, 0, table.Length - 1);
+        return table[index];
+    }
+
+    private static void DrawSellCardsPanel()
+    {
+        DrawPanelHeader("快速賣重複卡", "九宮幻卡交換 MGP 輔助");
+        var enabled = C.IsModuleEnabled(ModuleNames.SellDuplicateCards);
+        if (ImGui.Checkbox("啟用##SellCards", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.SellDuplicateCards, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後，開啟九宮幻卡的「幻卡交換」視窗時，會另外顯示一個小視窗，把你持有重複、" +
+                          "可換 MGP 的卡整理出來（依單張 MGP 價值排序，並標出目前用於牌組的卡）。" +
+                          "未啟用時不會顯示任何東西。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var keep = C.SellCardsKeepAtLeast;
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.SliderInt("每種卡至少保留##SellCardsKeepAtLeast", ref keep, 0, Configuration.SellCardsMaxKeepAtLeast))
+            {
+                C.SellCardsKeepAtLeast = Math.Clamp(keep, 0, Configuration.SellCardsMaxKeepAtLeast);
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("保底值：只有持有數超過這個張數的卡才會被列為「可賣」，\n" +
+                                 "確保每種卡（含牌組用的那張）至少留下這麼多張。預設 1。");
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("🔴 這個模組只顯示，不會替你賣卡：選取、交換、確認三步全部由你在遊戲原生視窗自己按下。" +
+                             "不注入按鈕、不送 callback、不發封包——只讀取交換視窗上本來就顯示給你看的卡片清單。");
+
+        var module = global::Saucy.Saucy.ModuleManager.GetModule<global::Saucy.SellCards.SellDuplicateCardsModule>();
+        SaucyTheme.TextMuted($"狀態：{(module == null ? "模組未載入" : enabled ? module.LastAction : "未啟用")}");
     }
 
     private static BannerInfo BuildBannerInfo()
@@ -174,33 +1053,25 @@ public unsafe partial class PluginUI
         {
             status = "Triple Triad";
         }
-        else if (CuffACurAutomation.IsEnabled)
-        {
-            status = "Cuff-a-Cur";
-        }
-        else if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb))
-        {
-            status = "Out on a Limb";
-        }
-        else if (C.IsModuleEnabled(ModuleNames.SliceIsRight))
-        {
-            status = "Slice is Right";
-        }
         else if (C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows))
         {
-            status = "Any Way the Wind Blows";
+            status = "Wind Blows";
         }
         else if (C.IsModuleEnabled(ModuleNames.AirForceOne))
         {
             status = "Air Force One";
         }
+        else if (C.IsModuleEnabled(ModuleNames.LeapOfFaith))
+        {
+            status = "Leap of Faith";
+        }
+        else if (C.IsModuleEnabled(ModuleNames.Cliffhanger))
+        {
+            status = "Cliffhanger";
+        }
         else if (C.IsModuleEnabled(ModuleNames.MiniCactpot))
         {
-            status = "Mini-Cactpot";
-        }
-        else if (C.IsModuleEnabled(ModuleNames.JumboCactpot))
-        {
-            status = "Jumbo Cactpot";
+            status = "Mini Cactpot";
         }
         else
         {

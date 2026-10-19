@@ -2,7 +2,8 @@ using ECommons.EzIpcManager;
 using System;
 namespace Saucy.IPC;
 
-[IPC(IPCNames.BossMod)]
+// BMR 的 InternalName 是 BossModReborn，IPC 端點仍沿用舊前綴 "BossMod."。
+[IPC(IPCNames.BossMod, IpcPrefix = "BossMod")]
 internal static class BossMod
 {
     public const string GateAiPresetName = "VBM AI";

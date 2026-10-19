@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Threading;
 namespace Saucy.TripleTriad.Data;
 
 public class TriadNpc
@@ -47,8 +48,10 @@ public class TriadNpc
         }
     }
 
-    private static string NormalizeNameForMatch(string name) =>
-        string.IsNullOrWhiteSpace(name) ? string.Empty : name.Trim().ToLowerInvariant();
+    // 兩邊都經過 NpcNameText.Normalize：7.25 前的舊中間點寫法與新寫法視為同一個名字。
+    // 非 ASCII 名字的 ToLowerInvariant 每次都配置新字串，逐一比對整份清單時先正規化一次再傳 *Normalized。
+    internal static string NormalizeNameForMatch(string name) =>
+        string.IsNullOrWhiteSpace(name) ? string.Empty : NpcNameText.Normalize(name.Trim().ToLowerInvariant());
 
     public override string ToString() => Name;
 
@@ -59,13 +62,18 @@ public class TriadNpc
             return false;
         }
 
-        testName = NormalizeNameForMatch(testName);
+        return IsMatchingNormalizedName(NormalizeNameForMatch(testName));
+    }
+
+    /// <summary><paramref name="normalizedTestName"/> 須是 <see cref="NormalizeNameForMatch"/> 對非空白名字的結果。</summary>
+    internal bool IsMatchingNormalizedName(string normalizedTestName)
+    {
         if (NameRegex != null)
         {
-            return NameRegex.IsMatch(testName);
+            return NameRegex.IsMatch(normalizedTestName);
         }
 
-        return Name.Equals(testName, StringComparison.OrdinalIgnoreCase);
+        return NpcNameText.Normalize(Name).Equals(normalizedTestName, StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsMatchingNameStart(string testName)
@@ -75,14 +83,20 @@ public class TriadNpc
             return false;
         }
 
-        testName = NormalizeNameForMatch(testName);
+        return IsMatchingNormalizedNameStart(NormalizeNameForMatch(testName));
+    }
+
+    /// <summary><paramref name="normalizedTestName"/> 須是 <see cref="NormalizeNameForMatch"/> 對非空白名字的結果。</summary>
+    internal bool IsMatchingNormalizedNameStart(string normalizedTestName)
+    {
         if (NamePartialRegex != null)
         {
-            return NamePartialRegex.IsMatch(testName);
+            return NamePartialRegex.IsMatch(normalizedTestName);
         }
 
-        return Name.StartsWith(testName, StringComparison.OrdinalIgnoreCase) ||
-               testName.StartsWith(Name, StringComparison.OrdinalIgnoreCase);
+        var name = NpcNameText.Normalize(Name);
+        return name.StartsWith(normalizedTestName, StringComparison.OrdinalIgnoreCase) ||
+               normalizedTestName.StartsWith(name, StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -91,9 +105,20 @@ public class TriadNpcDB
     private static readonly TriadNpcDB instance = new();
     public List<TriadNpc> npcs = [];
 
+    // npcs 只在背景載入時變動：載入完成（最後一次變動之後）才發布唯讀快照，重新載入前（第一次變動之前）撤回。
+    // 發布期間快照與清單內容相同；未發布時照舊每次複製。
+    private TriadNpc[] frozenNpcs;
+
     public static TriadNpcDB Get() => instance;
 
-    private TriadNpc[] SnapshotNpcs() => npcs.Count == 0 ? [] : [.. npcs];
+    /// <summary>已發布的唯讀快照；載入中為 null。呼叫端不可修改內容。</summary>
+    internal TriadNpc[] FrozenNpcs => Volatile.Read(ref frozenNpcs);
+
+    internal void FreezeNpcs() => Volatile.Write(ref frozenNpcs, [.. npcs]);
+
+    internal void UnfreezeNpcs() => Volatile.Write(ref frozenNpcs, null);
+
+    private TriadNpc[] SnapshotNpcs() => Volatile.Read(ref frozenNpcs) ?? (npcs.Count == 0 ? [] : [.. npcs]);
 
     public TriadNpc Find(string Name)
     {
@@ -110,9 +135,15 @@ public class TriadNpcDB
 
     public TriadNpc FindByNameStart(string Name)
     {
+        if (string.IsNullOrWhiteSpace(Name))
+        {
+            return null;
+        }
+
+        var normalized = TriadNpc.NormalizeNameForMatch(Name);
         foreach (var x in SnapshotNpcs())
         {
-            if (x != null && x.IsMatchingNameStart(Name))
+            if (x != null && x.IsMatchingNormalizedNameStart(normalized))
             {
                 return x;
             }
@@ -134,16 +165,21 @@ public class TriadNpcDB
         return null;
     }
 
-    public TriadNpc FindMatchingName(string testName)
+    public TriadNpc FindMatchingName(string testName) =>
+        string.IsNullOrWhiteSpace(testName) ? null : FindMatchingName(testName, SnapshotNpcs());
+
+    /// <summary>在指定的快照裡找；<paramref name="snapshot"/> 必須是 <see cref="SnapshotNpcs"/> 或 <see cref="FrozenNpcs"/> 的結果。</summary>
+    internal static TriadNpc FindMatchingName(string testName, TriadNpc[] snapshot)
     {
         if (string.IsNullOrWhiteSpace(testName))
         {
             return null;
         }
 
-        foreach (var npc in SnapshotNpcs())
+        var normalized = TriadNpc.NormalizeNameForMatch(testName);
+        foreach (var npc in snapshot)
         {
-            if (npc != null && npc.IsMatchingName(testName))
+            if (npc != null && npc.IsMatchingNormalizedName(normalized))
             {
                 return npc;
             }

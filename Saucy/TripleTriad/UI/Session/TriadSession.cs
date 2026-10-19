@@ -1,8 +1,8 @@
 #nullable disable
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 namespace Saucy.TripleTriad.UI;
 
@@ -41,6 +41,9 @@ public partial class TriadSession
     private int _lastAppliedRunTargetNpcId = -1;
 
     public TriadNpc lastGameNpc;
+
+    // 這一場棋盤上辨識到的 NPC：開新棋盤時清成 null；PvP 或名字對不上時維持 null，不沿用上一場。
+    public TriadNpc matchNpc;
     private string _lastOptimizerSkipKey = string.Empty;
     public int moveBoardIdx;
     public int moveCardIdx;
@@ -57,6 +60,7 @@ public partial class TriadSession
     private bool _optimizerTimedOut;
     private bool _pauseOptimizerForActiveTriad;
     private bool _pauseOptimizerForNavmesh;
+    private bool _pauseOptimizerForQuestionable;
     private bool _pauseOptimizerForSolver;
 
     public int preGameBestId = -1;
@@ -108,12 +112,51 @@ public partial class TriadSession
         C.UseCachedOptimizedDeckIfAvailable &&
         !ShouldBuildOptimizedDeck();
 
+    public bool ShouldSkipBackgroundOptimizedDeckBuild(TriadNpc npc)
+    {
+        if (TriadUiState.IsPrepDeckSelectVisible() || TriadUiState.IsMatchRegistrationVisible())
+        {
+            return false;
+        }
+
+        if (TriadRunSession.NavigationRequiresOptimizedDeckBuild || TriadMapNavigation.IsNavigationActive)
+        {
+            return false;
+        }
+
+        if (C.PauseOptimizedDeckBuildWhileQuestionable && Questionable.IsQuestingNow())
+        {
+            return true;
+        }
+
+        return C.SkipOptimizedDeckForBeatenOrCompletedNpcs && IsNpcBeatenOrAllCardsOwned(npc);
+    }
+
+    public static bool IsNpcBeatenOrAllCardsOwned(TriadNpc npc)
+    {
+        if (!GameNpcDB.Get().mapNpcs.TryGetValue(npc.Id, out var info))
+        {
+            return false;
+        }
+
+        if (TriadMemoryReads.IsAvailable && TriadMemoryReads.TryIsNpcBeatenOnce(info.triadId))
+        {
+            return true;
+        }
+
+        return info.rewardCards.Count > 0 && TriadCardFarmSession.HasAllNpcRewardsOwned(info);
+    }
+
     public string GetAutoPickDeckSummary(TriadNpc npc)
     {
         if (!C.UseSimmedDeck || npc == null)
         {
             return null;
         }
+
+        // 鎖內不做聊天／log／存設定／寫牌組快取檔：這段的呼叫鏈經過 ResolveRegionModsForNpc
+        // 的 prep 同步子樹會走到那幾種副作用，先收起來，出鎖之後才做。
+        using var deferScope = TriadDeferredSideEffects.Begin();
 
         RefreshPrepRulesFromLive();
         var previewRules = ResolvePreviewRulesForNpc(npc);
@@ -141,7 +184,16 @@ public partial class TriadSession
 
         if (CountSimmableProfileDecks() == 0)
         {
-            return DescribeMissingSimmableDecks();
+            var missing = DescribeMissingSimmableDecks() ?? "No usable decks".Loc();
+            lock (_preGameLock)
+            {
+                if (ResolveSelectableDeckIndexLocked(-1, true) >= 0)
+                {
+                    return missing;
+                }
+            }
+
+            return "?? — using game recommended".Loc(missing);
         }
 
         if (ShouldBuildOptimizedDeck())
@@ -215,6 +267,16 @@ public partial class TriadSession
         var hasFallbackDeck = hasUsableCache || hasAnyCache || hasProfileSaucyDeck;
         string WithFallbackNote(string message) =>
             hasFallbackDeck ? $"{message} · cached deck exists" : message;
+
+        if (ShouldSkipBackgroundOptimizedDeckBuild(npc))
+        {
+            if (C.PauseOptimizedDeckBuildWhileQuestionable && Questionable.IsQuestingNow())
+            {
+                return WithFallbackNote("Paused — Questionable is running".Loc());
+            }
+
+            return "Skipped — NPC beaten or all cards owned".Loc();
+        }
 
         if (OptimizerInProgress && TriadDeckOptimizerJobs.TryGetActive(out var job))
         {
@@ -298,6 +360,5 @@ internal static class TriadBuddyIntegration
 {
     private const string PluginInternalName = "TriadBuddy";
 
-    public static bool IsLoaded() =>
-        Svc.PluginInterface.InstalledPlugins.Any(p => p.InternalName == PluginInternalName && p.IsLoaded);
+    public static bool IsLoaded() => SubscriptionManager.IsLoaded(PluginInternalName);
 }

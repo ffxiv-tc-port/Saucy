@@ -62,7 +62,9 @@ internal static unsafe class TriadPrepRequestReader
     {
         var parseCtx = new GameUIParser();
 
-        for (var i = 0; i < baseNode->UldManager.NodeListCount; i++)
+        // 🔴 NodeListCount 非 0 不保證 NodeList 已配置——上界之外還要判指標。
+        // 取不到就只走下面的 RootNode 子節點路徑，不要索引野位址。
+        for (var i = 0; baseNode->UldManager.NodeList != null && i < baseNode->UldManager.NodeListCount; i++)
         {
             if (TryParseNpcLabel(parseCtx, GUINodeUtils.GetNodeText(baseNode->UldManager.NodeList[i]), out var npcName))
             {

@@ -1,435 +1,831 @@
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
-using ECommons.Automation.UIInput;
+using ECommons.Automation;
+using ECommons.Automation.NeoTaskManager;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using Saucy.Cactpot;
 using Saucy.Framework;
+using Saucy.Framework.GoldSaucer;
 using Saucy.IPC;
 using System;
-using System.Linq;
+using System.Threading.Tasks;
 using static ECommons.GenericHelpers;
+using AgentId = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId;
+using ValueType = FFXIVClientStructs.FFXIV.Component.GUI.ValueType;
 
 namespace Saucy.MiniCactpot;
 
-public unsafe class MiniCactpot : Module
+/// <summary>
+/// 仙人微彩（Mini Cactpot，金碟遊樂園每日刮刮樂）自動完成。互動序列依 DailyRoutinesAutoMiniCactpot 的設計重寫：LotteryDaily 面板開啟時，依期望值自動翻 3 格（Callback(1, 格節點值)）、選線並確認（回寫選線欄位後 Callback(2, 線節點值)）、全部翻開後領獎關窗（Callback(-1) + Close），關窗後（可選）自動按下「購買下一張」確認框，把當日彩券一次完成。
+/// 全程零 hook、零封包：只用 AddonLifecycle 事件 + addon callback 合成事件。
+/// 階段判定不依賴 AgentLotteryDaily（API13 世代 FFXIVClientStructs 沒有這個 struct），
+/// 改讀 addon 自己的 GameNumbers 盤面（0=未翻開）由已翻開格數推導：
+/// 1..3 格=翻格階段、4 格=選線階段、9 格=領獎收尾（與 DR 讀 agent Status 1/2/4 等價）。
+/// 模組未啟用時不註冊任何監聽——手動開面板玩不會被搶操作。
+/// </summary>
+public unsafe class MiniCactpotModule : Module
 {
-    private const uint ConfirmButtonNodeId = 67;
+    private const string AddonName = "LotteryDaily"; // addon 內部名，跨語言用戶端一致（非在地化字串）
 
-    private const string TalkThrottleKey = "Saucy.MiniCactpot.Talk";
-    private const string BrokerSelectThrottleKey = "Saucy.MiniCactpot.BrokerSelect";
+    private const string ClickThrottleKey = "Saucy.MiniCactpot.Click";
 
-    private readonly int[] scratchState = new int[9];
-    private readonly CactpotSolver solver = new();
-    private readonly TimedFlowWindow ticketFlow = new(TimeSpan.FromSeconds(30));
-    private DateTime? lotteryBoardReadyUtc;
+    /// <summary>面板消失超過這麼久就當成「重新進場」，下一張彩券恢復完整暖機。</summary>
+    private const int VisitResetMs = 10000;
+
+    /// <summary>選線確認送出後，隔多久沒有進展才允許重送一次。正常情況下一張彩券只會送出
+    /// 一次 <c>Callback(2, lane)</c>；這個窗口只是為了在確認真的被吃掉時不要永久卡住。</summary>
+    private const int LaneReconfirmMs = 5000;
+
+    private const uint CellNodeIdFirst = 30;
+    private const uint CellNodeIdLast = 38;
+    private const uint LaneNodeIdFirst = 21;
+    private const uint LaneNodeIdLast = 28;
+
+    /// <summary>開窗時 LotteryDaily 帶的 AtkValue 數（離線鑑識台服 7.20 用戶端得到 45）。</summary>
+    private const int AtkValueCount = 45;
+
+    /// <summary>派彩表第一列在 AtkValues 裡的索引：第 k 列對應線和 6+k。</summary>
+    private const int PayoutValueFirst = 15;
+
+    /// <summary>等面板填好中獎列的寬限上限。</summary>
+    private const int JackpotReadGraceMs = 600;
+
+    private readonly MiniCactpotSolver solver = new();
+
+    /// <summary>派彩表，索引＝線和。硬編那份永不變動；執行期那份每幀從面板重填。</summary>
+    private readonly int[] fallbackPayouts = MiniCactpotSolver.CreateFallbackPayoutTable();
+
+    private readonly int[] runtimePayouts = MiniCactpotSolver.CreateFallbackPayoutTable();
+
+    /// <summary>只在 framework 執行緒讀寫（背景求解拿到的是複本）。</summary>
+    private bool runtimePayoutsValid;
+
+    /// <summary>保護底下所有背景求解狀態。</summary>
+    private readonly object solveLock = new();
+
+    private DateTime? boardReadyUtc;
+    private DateTime? closeArmedUtc;
+    private DateTime? addonGoneSinceUtc;
+    private int pendingCell = -1;
+    private int pendingCellRevealedCount = -1;
+    private int confirmedLane = -1;
+    private DateTime? confirmedLaneUtc;
+    private bool boardLayoutSeen;
+
+    /// <summary>「購買下一張」專用的逾時處置：接管事件，不讓基底那條「佇列中止」Warning 把每天一次的
+    /// 正常收尾報成故障。其餘欄位留 null ＝沿用基底設定（逾時中止佇列）。</summary>
+    private TaskManagerConfiguration? playAgainTaskConfiguration;
+
+    /// <summary>面板關掉之後等「購買下一張」確認框的時間（也是那個任務的逾時）。</summary>
+    private const int PlayAgainWaitMs = 5000;
+
+    /// <summary>請 YesAlready 暫停 SelectYesno 的長度：它只在確認框 PostSetup 當下判斷一次，只要蓋過同一次 Setup 呼叫。</summary>
+    private const int PlayAgainYieldMs = 2000;
+
+    /// <summary>接手之後 Saucy 按下去的期限：YesAlready 已經放過這一扇，Saucy 不按就沒人按，所以比讓開的時間長。</summary>
+    private const int PlayAgainPressMs = 5000;
+
+    /// <summary>在這之前出現的第一扇購票確認框才由 Saucy 判斷要不要接手；null＝沒在等。</summary>
+    private DateTime? playAgainArmedUntilUtc;
+
+    /// <summary>Saucy 接手的那一扇確認框（PreSetup 當下的位址，只做等值比較、從不解參）；0＝沒有。</summary>
+    private nint playAgainClaimedYesno;
+
+    private DateTime playAgainClaimedUntilUtc;
+
+    /// <summary>這一輪已交還給 YesAlready 或你自己按；任務安靜結束。</summary>
+    private bool playAgainHandedBack;
+
+    private bool playAgainUnrecognizedLogged;
+
+    /// <summary>領獎關窗級聯走到第幾招（0 = <c>Callback(-1)</c>、1 = <c>Close(true)</c>），以及那是對哪一個實例
+    /// （<see cref="AddonPressGuard"/> 走逃生口放行時才前進一招）。</summary>
+    private int closeChainStage;
+
+    private nint closeChainAddress;
+
+    /// <summary>這一張已經處理過開獎通知（不論有沒有真的念出來），避免每幀重試。</summary>
+    private bool jackpotHandled;
+
+    /// <summary>這一張已回報過「面板派彩表與硬編表不同」，避免每幀洗 log。</summary>
+    private bool payoutTableDiffLogged;
+
+    private bool solveInFlight;
+    private bool hasSolvedCell;
+    private ulong solvedBoardKey;
+    private int solvedCell = -1;
+
+    /// <summary>點擊間隔。做成設定，但夾在下限之上——理由見 Configuration 上的說明。</summary>
+    private static int ClickThrottleMs => Math.Clamp(
+        C.MiniCactpotClickIntervalMs,
+        Configuration.MiniCactpotMinClickIntervalMs,
+        Configuration.MiniCactpotMaxClickIntervalMs);
+
+    /// <summary>全部翻開後先讓開獎動畫/派彩數字跑一下再關窗，玩家至少看得到中了多少。</summary>
+    private static int CloseDelayMs => Math.Clamp(C.MiniCactpotCloseDelayMs, 0, Configuration.MiniCactpotMaxCloseDelayMs);
+
+    /// <summary>請塔塔露提醒的派彩門檻（金碟幣），夾在派彩表的真實值域內。</summary>
+    private static int JackpotThresholdMgp => Math.Clamp(
+        C.MiniCactpotJackpotThresholdMgp,
+        Configuration.MiniCactpotJackpotMinThresholdMgp,
+        Configuration.MiniCactpotJackpotMaxThresholdMgp);
+
+    /// <summary>這一幀求解要用的派彩表：讀得到面板就用伺服器的值，否則退回硬編表。</summary>
+    private int[] ActivePayouts => runtimePayoutsValid ? runtimePayouts : fallbackPayouts;
 
     public override string Name => "Mini Cactpot";
 
+    /// <summary>給設定面板顯示的最近動作說明。</summary>
+    public string LastAction { get; private set; } = "等待開啟仙人微彩面板";
+
+    /// <summary>這一張開獎後的實際派彩（金碟幣）。還沒開獎、或這張不是模組選的線就是 0。</summary>
+    public int LastPayoutMgp { get; private set; }
+
     public override void Enable()
     {
-        ObjectHelper.SetTrackedObjects(CactpotNpcs.MiniScope, [CactpotNpcs.MiniBrokerBaseId], logLabel: CactpotNpcs.MiniScope);
-
-        Svc.AddonLifecycle.UnregisterListener(OnLotterySetup);
-        Svc.AddonLifecycle.UnregisterListener(OnPreFinalize);
-        Svc.AddonLifecycle.UnregisterListener(OnTalkUpdate);
-        Svc.Framework.Update -= OnFrameworkUpdate;
-
-        Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "LotteryDaily", OnLotterySetup);
-        Svc.AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, "LotteryDaily", OnPreFinalize);
-        Svc.AddonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Talk", OnTalkUpdate);
-        Svc.Framework.Update += OnFrameworkUpdate;
-        ticketFlow.Clear();
+        Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, AddonName, OnAddonEvent);
+        Svc.AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, AddonName, OnAddonEvent);
+        Svc.AddonLifecycle.RegisterListener(AddonEvent.PreSetup, SelectYesnoHelper.AddonName, OnYesnoPreSetup);
+        Svc.Framework.Update += OnUpdate;
+        GoldSaucerEventTracker.Acquire(InternalName);
     }
 
     public override void Disable()
     {
-        Svc.AddonLifecycle.UnregisterListener(OnLotterySetup);
-        Svc.AddonLifecycle.UnregisterListener(OnPreFinalize);
-        Svc.AddonLifecycle.UnregisterListener(OnTalkUpdate);
-        Svc.Framework.Update -= OnFrameworkUpdate;
-        ObjectHelper.ClearTrackedObjects(CactpotNpcs.MiniScope);
-        ticketFlow.Clear();
-        CactpotSessionActivity.ResetMini();
+        GoldSaucerEventTracker.Release(InternalName);
+        Svc.Framework.Update -= OnUpdate;
+        Svc.AddonLifecycle.UnregisterListener(OnAddonEvent);
+        Svc.AddonLifecycle.UnregisterListener(OnYesnoPreSetup);
+        TaskManager.Abort();
+        ResetTicketState();
+        ResetPlayAgainState();
+        boardLayoutSeen = false;
+        addonGoneSinceUtc = null;
+        LastAction = "等待開啟仙人微彩面板";
     }
 
-    private void OnLotterySetup(AddonEvent type, AddonArgs args)
+    private void OnAddonEvent(AddonEvent type, AddonArgs args)
     {
-        ticketFlow.Mark();
-        MinigameInputPacing.Reset(ref lotteryBoardReadyUtc);
-    }
-
-    private void OnPreFinalize(AddonEvent type, AddonArgs args)
-    {
-        ticketFlow.Mark();
-        MinigameInputPacing.Reset(ref lotteryBoardReadyUtc);
-    }
-
-    private void OnTalkUpdate(AddonEvent type, AddonArgs args)
-    {
-        if (InSaucer && ObjectHelper.HasInitiatedDialogue(CactpotNpcs.MiniScope))
+        switch (type)
         {
-            ticketFlow.Mark();
-        }
+            case AddonEvent.PostSetup:
+                ResetTicketState();
+                ResetPlayAgainState();
+                TaskManager.Abort();
+                GoldSaucerEventTracker.NoteMiniCactpotTicketOpened();
+                break;
+            case AddonEvent.PreFinalize:
+                ResetTicketState();
+                ResetPlayAgainState();
+                if (C.MiniCactpotAutoPlayAgain)
+                {
+                    // 台服關面板後是發放員再講一句話、接著跳購票確認框（事件開的，沒有 agent 歸屬）。
+                    // 認框在 OnYesnoPreSetup；這個任務只負責按下接手的那一扇。逾時是正常終局
+                    // （當日三張打完後就不再問），所以逾時處置換成自己的一份，見 OnPlayAgainTimedOut。
+                    playAgainTaskConfiguration ??= new TaskManagerConfiguration
+                    {
+                        TimeLimitMS = PlayAgainWaitMs,
+                        ExecuteDefaultConfigurationEvents = false,
+                        OnTaskTimeout = OnPlayAgainTimedOut
+                    };
+                    TaskManager.Abort();
+                    playAgainArmedUntilUtc = DateTime.UtcNow.AddMilliseconds(PlayAgainWaitMs);
+                    TaskManager.Enqueue(TryPressPlayAgainYes, "MiniCactpot.PlayAgain", playAgainTaskConfiguration);
+                }
 
-        TryAdvanceDialogue();
+                break;
+        }
     }
 
-    private void OnFrameworkUpdate(IFramework framework)
+    /// <summary>
+    /// 確認框 Setup 之前先認：是仙人微彩的購票確認才請 YesAlready 讓開並記下這一扇；認不出就什麼都不做。
+    /// 🔴 一定要在 PreSetup：YesAlready 只在同一次 Setup 呼叫的 PostSetup 判斷一次，這時暫停它就保證它不會碰這一扇，
+    /// 不會同幀兩邊一起按；反過來，認不出時不暫停，它照常判斷，不會卡成沒人按。
+    /// </summary>
+    private void OnYesnoPreSetup(AddonEvent type, AddonArgs args)
     {
-        SyncYesAlreadyPauseState();
-
-        if (InSaucer)
-        {
-            RefreshTicketFlow();
-        }
-
-        TryAdvanceDialogue();
-        HandleYesno();
-        HandleBrokerSelectString();
-
-        if (InSaucer && IsInTicketFlow() && ObjectHelper.IsTargeting(CactpotNpcs.MiniScope) && TryGetLotteryAddon(out var addon))
-        {
-            ProcessAddon(addon);
-        }
-
-        if (C.IsModuleEnabled(ModuleNames.MiniCactpot))
-        {
-            YesAlready.SyncForGameActivity(GoldSaucerGameActivity.IsAnyGamePlaying());
-        }
-
-        ClearTicketFlowIfIdle();
-    }
-
-    private bool ShouldPauseYesAlready() =>
-        CactpotDialogueHelper.IsMiniBoardVisible() ||
-        (ObjectHelper.IsTargeting(CactpotNpcs.MiniScope) && HasTicketFlowUi());
-
-    private bool HasTicketFlowUi() =>
-        CactpotDialogueHelper.HasNpcDialogueUi() ||
-        TryGetLotteryAddon(out var _);
-
-    private void ClearTicketFlowIfIdle()
-    {
-        if (ShouldPauseYesAlready())
+        if (args is not AddonSetupArgs setup)
         {
             return;
         }
 
-        ticketFlow.Clear();
-    }
+        var address = setup.Addon.Address;
+        if (address != nint.Zero && address == playAgainClaimedYesno)
+        {
+            playAgainClaimedYesno = nint.Zero; // 同一位址又開了一扇＝接手的那扇已經不在了
+        }
 
-    private void SyncYesAlreadyPauseState() =>
-        CactpotSessionActivity.SyncMini(InSaucer, ShouldPauseYesAlready());
-
-    private void TryAdvanceDialogue()
-    {
-        if (!InSaucer)
+        if (playAgainArmedUntilUtc is not { } armedUntil)
         {
             return;
         }
 
-        CactpotDialogueHelper.TryAdvanceTalk(
-            CactpotNpcs.MiniScope,
-            TalkThrottleKey,
-            AgentId.LotteryDaily);
-    }
-
-    private void HandleBrokerSelectString()
-    {
-        if (!InSaucer)
+        var now = DateTime.UtcNow;
+        if (now >= armedUntil || !IsEnabled || !C.MiniCactpotAutoPlayAgain)
         {
+            playAgainArmedUntilUtc = null;
             return;
         }
 
-        if (CactpotDialogueHelper.TryHandleBrokerSelectString(
-                CactpotNpcs.MiniScope,
-                AgentId.LotteryDaily,
-                BrokerSelectThrottleKey,
-                MinigameInputPacing.ClickIntervalMs))
+        var prompt = SelectYesnoHelper.ReadSetupPrompt(setup);
+        if (!SelectYesnoHelper.IsMiniCactpotPurchasePrompt(prompt))
         {
-            ticketFlow.Mark();
-        }
-    }
-
-    private void HandleYesno()
-    {
-        if (!InSaucer)
-        {
-            return;
-        }
-
-        if (CactpotDialogueHelper.TryHandleLotteryYesno(
-                CactpotNpcs.MiniScope,
-                IsInTicketFlow(),
-                AgentId.LotteryDaily,
-                "MiniCactpotTicketYes",
-                MinigameInputPacing.ClickIntervalMs))
-        {
-            ticketFlow.Mark();
-        }
-    }
-
-    private void RefreshTicketFlow() =>
-        NpcDialogueGate.RefreshTimedFlow(
-            CactpotNpcs.MiniScope,
-            IsInTicketFlow(),
-            ticketFlow.Mark,
-            HasTicketFlowUi);
-
-    private bool IsInTicketFlow() =>
-        TryGetLotteryAddon(out var _) ||
-        AgentHelper.IsActive(AgentId.LotteryDaily) ||
-        ticketFlow.IsActive ||
-        (SelectYesnoHelper.IsVisible() && ObjectHelper.IsTargeting(CactpotNpcs.MiniScope));
-
-    private void ProcessAddon(AddonLotteryDaily* addon)
-    {
-        if (TalkHelper.IsVisible())
-        {
-            if (ObjectHelper.HasInitiatedDialogue(CactpotNpcs.MiniScope))
+            if (!playAgainUnrecognizedLogged)
             {
-                TalkHelper.TryAdvance(TalkThrottleKey);
+                playAgainUnrecognizedLogged = true;
+                Log($"等「購買下一張」時出現的確認框不是仙人微彩的購票確認，Saucy 不接手（YesAlready 照常判斷）：{FlattenPrompt(prompt)}");
             }
 
             return;
         }
 
-        if (!MinigameInputPacing.TryMarkWarmup(ref lotteryBoardReadyUtc))
+        playAgainArmedUntilUtc = null;
+        if (!YesAlready.TryPauseSelectYesno(PlayAgainYieldMs))
         {
+            playAgainHandedBack = true;
+            LastAction = "無法確認 YesAlready 不會按「購買下一張」，交給它或你自己按";
+            Log("認出「購買下一張」確認框，但無法確認 YesAlready 不會按，交還給 YesAlready 或你自己按");
             return;
         }
 
-        var stage = GetStage(addon);
-        ReadBoardState(addon, scratchState);
-        var revealed = CountRevealed(scratchState);
-
-        if (stage == 5)
-        {
-            if (EzThrottler.Throttle("MiniCactpotClose", MinigameInputPacing.ClickIntervalMs))
-            {
-                TryClickConfirmButton(expectedStage: 5);
-            }
-
-            return;
-        }
-
-        if (revealed < 4)
-        {
-            if (!EzThrottler.Throttle("MiniCactpotTile", MinigameInputPacing.ClickIntervalMs))
-            {
-                return;
-            }
-
-            TryRevealNextTile(addon, scratchState);
-            return;
-        }
-
-        if (EzThrottler.Throttle("MiniCactpotLane", MinigameInputPacing.ClickIntervalMs))
-        {
-            TrySelectLane(addon, scratchState);
-            return;
-        }
-
-        if (EzThrottler.Throttle("MiniCactpotConfirm", MinigameInputPacing.ClickIntervalMs))
-        {
-            TryClickConfirmButton(expectedStage: -1);
-        }
+        playAgainClaimedYesno = address;
+        playAgainClaimedUntilUtc = now.AddMilliseconds(PlayAgainPressMs);
+        Log("認出「購買下一張」確認框，確定 YesAlready 不會按（已暫停、沒啟用或沒載入），由 Saucy 按「是」");
     }
 
-    private void TryRevealNextTile(AddonLotteryDaily* addon, int[] state)
+    private void OnUpdate(IFramework framework)
     {
-        if (CountRevealed(state) == 0)
+        var addon = GetLotteryDailyAddon();
+        if (addon == null)
+        {
+            MinigameInputPacing.Reset(ref boardReadyUtc);
+            addonGoneSinceUtc ??= DateTime.UtcNow;
+            if (boardLayoutSeen &&
+                (DateTime.UtcNow - addonGoneSinceUtc.Value).TotalMilliseconds >= VisitResetMs)
+            {
+                // 離開夠久＝下次是重新進場，恢復完整暖機。
+                boardLayoutSeen = false;
+            }
+
+            return;
+        }
+
+        addonGoneSinceUtc = null;
+
+        // 開面板後先暖機一小段，不跟面板初始化搶時序。但「自動購買下一張」會在同一次進場
+        // 連開好幾次面板，版面早就建好了——第二張之後只留短緩衝，省下純粹的等待。
+        var warmupMs = boardLayoutSeen
+            ? MinigameInputPacing.RepeatBoardWarmupMs
+            : MinigameInputPacing.BoardWarmupMs;
+        if (!MinigameInputPacing.TryMarkWarmup(ref boardReadyUtc, warmupMs))
         {
             return;
         }
 
-        try
+        runtimePayoutsValid = TryReadPayoutTable(addon);
+
+        Span<int> board = stackalloc int[MiniCactpotSolver.TotalCells];
+        var revealed = 0;
+        for (var i = 0; i < MiniCactpotSolver.TotalCells; i++)
         {
-            var solution = solver.Solve(state);
-            if (solution.Length == 8)
+            var value = addon->GameNumbers[i];
+            if (value is >= 1 and <= 9)
             {
-                return;
+                board[i] = value;
+                revealed++;
             }
-
-            var activeIndexes = CollectActiveIndexes(solution)
-                .Where(i => state[i] == 0)
-                .ToArray();
-            if (activeIndexes.Length == 0)
-            {
-                return;
-            }
-
-            TryClickTile(addon, activeIndexes[0]);
         }
-        catch (Exception ex)
+
+        if (revealed != MiniCactpotSolver.TotalCells)
         {
-            LogError($"Error revealing tile: {ex.Message}");
+            closeArmedUtc = null;
+        }
+
+        switch (revealed)
+        {
+            // 0 = 盤面資料還沒到，等。
+            case >= 1 and < MiniCactpotSolver.RevealTarget:
+                TickCellStage(addon, board, revealed);
+                break;
+            case MiniCactpotSolver.RevealTarget:
+                TickLaneStage(addon, board);
+                break;
+            case MiniCactpotSolver.TotalCells:
+                TickCloseStage(addon, board);
+                break;
+            // 5..8 = 選線後開獎資料翻開中，等它到齊。
         }
     }
 
-    private void TrySelectLane(AddonLotteryDaily* addon, int[] state)
-    {
-        try
-        {
-            var solution = solver.Solve(state);
-            if (solution.Length != 8)
-            {
-                return;
-            }
-
-            var activeIndexes = CollectActiveIndexes(solution);
-            if (activeIndexes.Length == 0)
-            {
-                return;
-            }
-
-            var csLane = SolverLaneToCsLane(activeIndexes[0]);
-            TryClickLane(addon, csLane);
-        }
-        catch (Exception ex)
-        {
-            LogError($"Error selecting lane: {ex.Message}");
-        }
-    }
-
-    private static bool TryGetLotteryAddon(out AddonLotteryDaily* addon)
-    {
-        if (TryGetAddonByName("LotteryDaily", out addon) && IsAddonReady(&addon->AtkUnitBase))
-        {
-            return true;
-        }
-
-        addon = null;
-        return false;
-    }
-
-    private static int GetStage(AddonLotteryDaily* addon)
+    /// <summary>取這一幀的 AtkValues。契約：只在 framework 執行緒呼叫，回傳的 span 不可跨幀保存。</summary>
+    /// <remarks>數量與離線鑑識到的版面不符就回空——面板還沒填好、或版面變了，兩種都不要猜。</remarks>
+    private static Span<AtkValue> GetLotteryAtkValues(AddonLotteryDaily* addon)
     {
         var unit = &addon->AtkUnitBase;
-        if (unit->AtkValuesCount < 1)
+        if (unit->AtkValues == null || unit->AtkValuesCount != AtkValueCount)
         {
-            return -1;
+            return default;
         }
 
-        var value = unit->AtkValues[0];
-        return value.Type == AtkValueType.Int ? value.Int : -1;
+        return unit->AtkValuesSpan;
     }
 
-    private static void ReadBoardState(AddonLotteryDaily* addon, int[] dest)
+    /// <summary>把面板上的派彩表（19 列，線和 6..24）讀進 <c>runtimePayouts</c>。</summary>
+    /// <remarks>
+    /// 🔴 fail-closed：任何一列不是 Int 型別、或值落在派彩值域外，整張表都不採用（這一幀退回硬編表）。
+    /// ⚠️ <c>AtkValue.Int</c> 是 union 欄位，型別是 <c>Undefined</c> 時照樣讀得出 0——「沒設」與「0」分不出來，所以型別檢查不能省。
+    /// </remarks>
+    private bool TryReadPayoutTable(AddonLotteryDaily* addon)
     {
-        for (var i = 0; i < 9; i++)
-        {
-            dest[i] = addon->GameNumbers[i];
-        }
-    }
-
-    private static int CountRevealed(int[] state)
-    {
-        var count = 0;
-        for (var i = 0; i < state.Length; i++)
-        {
-            if (state[i] > 0)
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
-
-    private static int[] CollectActiveIndexes(bool[] solution)
-    {
-        var count = 0;
-        for (var i = 0; i < solution.Length; i++)
-        {
-            if (solution[i])
-            {
-                count++;
-            }
-        }
-
-        var activeIndexes = new int[count];
-        var index = 0;
-        for (var i = 0; i < solution.Length; i++)
-        {
-            if (solution[i])
-            {
-                activeIndexes[index++] = i;
-            }
-        }
-
-        return activeIndexes;
-    }
-
-    private static bool TryClickTile(AddonLotteryDaily* addon, int tileIndex)
-    {
-        var tile = addon->GameBoard[tileIndex];
-        if (tile == null)
+        var values = GetLotteryAtkValues(addon);
+        if (values.IsEmpty)
         {
             return false;
         }
 
-        return AddonButton.TryClick(&addon->AtkUnitBase, (AtkComponentButton*)tile, false);
-    }
-
-    private static bool TryClickLane(AddonLotteryDaily* addon, int csLane)
-    {
-        var lane = addon->LaneSelector[csLane];
-        if (lane->AtkComponentButton.AtkResNode == null)
+        var differs = false;
+        for (var k = 0; k < MiniCactpotSolver.PayoutRowCount; k++)
         {
-            return false;
-        }
-
-        try
-        {
-            lane->ClickRadioButton(&addon->AtkUnitBase);
-            addon->AtkUnitBase.Update(0);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Verbose(ex, $"[MiniCactpot] Lane {csLane} click failed");
-            return false;
-        }
-    }
-
-    private static bool TryClickConfirmButton(int expectedStage)
-    {
-        if (!TryGetLotteryAddon(out var addon))
-        {
-            return true;
-        }
-
-        var stage = GetStage(addon);
-        if (expectedStage == 5)
-        {
-            if (stage != 5)
+            ref var value = ref values[PayoutValueFirst + k];
+            if (value.Type != ValueType.Int)
             {
                 return false;
             }
+
+            var mgp = value.Int;
+            if (mgp is < MiniCactpotSolver.MinPayout or > MiniCactpotSolver.MaxPayout)
+            {
+                return false;
+            }
+
+            var sum = MiniCactpotSolver.MinLaneSum + k;
+            runtimePayouts[sum] = mgp;
+            differs |= mgp != fallbackPayouts[sum];
         }
-        else if (stage == 5)
+
+        if (differs && !payoutTableDiffLogged)
+        {
+            payoutTableDiffLogged = true;
+            var table = string.Join(',', runtimePayouts[MiniCactpotSolver.MinLaneSum..]);
+            Log($"面板派彩表與硬編表不同，改用面板的值：{table}");
+        }
+
+        return true;
+    }
+
+    /// <summary>直接讀這一張真正拿到的金碟幣。</summary>
+    /// <remarks>
+    /// <c>UnkNumber3FC</c> ＝ 開獎後的中獎列索引（線和 − 6，−1 ＝ 未開獎），對應的 <c>AtkValues</c> 那一列就是伺服器給的派彩值。
+    /// 🔑 這條不依賴「玩家選的是模組送出的那條線」，玩家自己手動選線也讀得到。
+    /// </remarks>
+    private bool TryReadActualPayout(AddonLotteryDaily* addon, out int mgp)
+    {
+        mgp = 0;
+        var row = addon->UnkNumber3FC;
+        if (row is < 0 or >= MiniCactpotSolver.PayoutRowCount)
+        {
+            return false;
+        }
+
+        var values = GetLotteryAtkValues(addon);
+        if (values.IsEmpty)
+        {
+            return false;
+        }
+
+        ref var value = ref values[PayoutValueFirst + row];
+        if (value.Type != ValueType.Int ||
+            value.Int is < MiniCactpotSolver.MinPayout or > MiniCactpotSolver.MaxPayout)
+        {
+            return false;
+        }
+
+        mgp = value.Int;
+        return true;
+    }
+
+    private void TickCellStage(AddonLotteryDaily* addon, ReadOnlySpan<int> board, int revealed)
+    {
+        int cell;
+        if (pendingCell >= 0 && revealed == pendingCellRevealedCount)
+        {
+            // 上一次點的格子還沒翻開（伺服器回應中或點擊被吃掉）：只重試同一格，
+            // 絕不在回應揭曉前改點別格。
+            cell = pendingCell;
+        }
+        else if (!TryGetSuggestedCell(board, out cell))
+        {
+            // 求解還沒回來。求解跑在背景執行緒，這一幀就什麼都不做。
+            return;
+        }
+
+        if (!EzThrottler.Throttle(ClickThrottleKey, ClickThrottleMs))
+        {
+            return;
+        }
+
+        if (TryClickCell(addon, cell))
+        {
+            pendingCell = cell;
+            pendingCellRevealedCount = revealed;
+            LastAction = $"翻開第 {cell + 1} 格（已翻 {revealed}/{MiniCactpotSolver.RevealTarget}）";
+            Log($"Reveal cell {cell} (revealed {revealed})");
+        }
+    }
+
+    /// <summary>取得建議翻開的格子；沒有現成答案就開一次背景求解並回 false。
+    /// <para>🔴 不可以在 <c>EzThrottler.Throttle</c> **之前**直接呼叫<c>solver.SuggestCell(board)</c>：首步求解約 30 ms 而且跑在 framework 執行緒上，又因為只有點擊成功才會設 <c>pendingCell</c>，只要點擊一直沒成功、或是正處在兩次點擊之間的節流窗內，就會**每一幀都重算一次** —— 800 ms 的節流窗等於連續數十幀各掉一次影格。</para>
+    /// <para>🔑 結果的版本號用**盤面本身**（9 格各 4 bit 編碼成 ulong），不是已翻開的格數：同一次進場會連續玩好幾張彩券，而每張新彩券都從「翻開 1 格」重新開始，光用格數當版本號會把上一張彩券的答案誤認成這一張的。盤面編碼是精確身分，背景結果回來時只要盤面已經變了就對不上，自動被忽略。</para>
+    /// <para>⚠️ 執行緒安全：同一時間只允許一個背景求解（<c>solveInFlight</c> 閘門），所以<c>SuggestCell</c> 內部的記憶化字典不會被並行存取。選線階段的 <c>SuggestLane</c> 仍在framework 執行緒上同步呼叫，兩者可能同時發生——目前安全，因為 <c>SuggestLane</c> 完全不碰那個字典（只用 static 的賠付表與線表）。**若日後要為 SuggestLane 加記憶化，必須連同這裡的執行緒模型一起改。**</para></summary>
+    private bool TryGetSuggestedCell(ReadOnlySpan<int> board, out int cell)
+    {
+        cell = -1;
+        var key = EncodeBoard(board);
+
+        lock (solveLock)
+        {
+            if (hasSolvedCell && solvedBoardKey == key)
+            {
+                cell = solvedCell;
+                return cell >= 0;
+            }
+
+            if (solveInFlight)
+            {
+                // 已經有一個求解在跑。就算它算的是別的盤面也不必取消——求解沒有副作用，
+                // 結果回來時會因為 key 對不上而被忽略，下一幀再開新的。
+                return false;
+            }
+
+            solveInFlight = true;
+        }
+
+        // Span 不能被 lambda 捕獲，先複製一份再送進背景執行緒。
+        var snapshot = board.ToArray();
+
+        // 派彩表也要拍快照：背景求解期間 framework 執行緒還在每幀重填 runtimePayouts。
+        var payouts = (int[])ActivePayouts.Clone();
+        _ = Task.Run(() => RunSolve(key, snapshot, payouts));
+        return false;
+    }
+
+    private void RunSolve(ulong key, int[] snapshot, int[] payouts)
+    {
+        var result = -1;
+        try
+        {
+            result = solver.SuggestCell(snapshot, payouts);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, "[MiniCactpot] Background cell solve failed");
+        }
+        finally
+        {
+            lock (solveLock)
+            {
+                // 一律照 key 記錄。盤面若在求解期間變了，這筆結果就永遠對不上、等同被丟棄。
+                solvedBoardKey = key;
+                solvedCell = result;
+                hasSolvedCell = true;
+                solveInFlight = false;
+            }
+        }
+    }
+
+    /// <summary>把盤面編成 ulong 當版本號（每格 0..9 佔 4 bit）。</summary>
+    private static ulong EncodeBoard(ReadOnlySpan<int> board)
+    {
+        var key = 0ul;
+        for (var i = 0; i < MiniCactpotSolver.TotalCells; i++)
+        {
+            key |= (ulong)(uint)board[i] << (i * 4);
+        }
+
+        return key;
+    }
+
+    private void TickLaneStage(AddonLotteryDaily* addon, ReadOnlySpan<int> board)
+    {
+        // 🔴 已確認就不再重送：否則只要盤面停在「翻開 4 格」——伺服器還沒回應、
+        // 或玩家自己把面板放著不動——每 800 ms 就會再送一次 Callback(2, lane)。
+        // 這個窗口只是為了在確認真的被吃掉時能救回來，正常一張彩券只會送出一次。
+        if (confirmedLane >= 0 &&
+            confirmedLaneUtc != null &&
+            (DateTime.UtcNow - confirmedLaneUtc.Value).TotalMilliseconds < LaneReconfirmMs)
+        {
+            return;
+        }
+
+        if (!EzThrottler.Throttle(ClickThrottleKey, ClickThrottleMs))
+        {
+            return;
+        }
+
+        // 重送時沿用同一條線，絕不改變已經送出去的選擇（同 pendingCell 的原則）。
+        var lane = confirmedLane >= 0 ? confirmedLane : solver.SuggestLane(board, ActivePayouts);
+        if (lane < 0)
+        {
+            return;
+        }
+
+        if (TryClickLane(addon, lane))
+        {
+            var resend = confirmedLane >= 0;
+            confirmedLane = lane;
+            confirmedLaneUtc = DateTime.UtcNow;
+            LastAction = $"選線並確認（UI 線 {lane}）";
+            Log($"Confirm lane {lane}{(resend ? " (re-send)" : string.Empty)}");
+        }
+    }
+
+    private void TickCloseStage(AddonLotteryDaily* addon, ReadOnlySpan<int> board)
+    {
+        closeArmedUtc ??= DateTime.UtcNow;
+
+        // 九格全翻開＝已開獎。派彩在關窗延遲之前就先算，免得延遲設成 0 時整個跳過。
+        HandleJackpot(addon, board);
+
+        if ((DateTime.UtcNow - closeArmedUtc.Value).TotalMilliseconds < CloseDelayMs)
+        {
+            return;
+        }
+
+        if (!EzThrottler.Throttle(ClickThrottleKey, ClickThrottleMs))
+        {
+            return;
+        }
+
+        // 🔴🔴 不可以在同一次呼叫內「Callback(-1) → 緊接 Close(true)」：Callback(-1) 生效後那幾幀窗仍在、
+        // IsVisible／IsAddonReady 三關照過（GetLotteryDailyAddon 擋不住），第二下就是打在正在關的窗上（攔不到的存取違規）；
+        // 節流下限 400ms 在低 FPS 只有 10 幀，正落在危險窗口內。
+        // 所以守衛以 LotteryDaily 位址為鍵，一個守衛窗口只送一招；守衛走逃生口放行（＝窗 90 幀都沒收掉，
+        // 上一招真的沒生效）時才輪到下一招。
+        var unit = &addon->AtkUnitBase;
+        if (!AddonPressGuard.TryBeginPress(
+                AddonName, unit, AddonPressGuard.WholeWindowKey, AddonPressGuard.ReleaseEscapeFrames,
+                out var viaEscape))
+        {
+            return;
+        }
+
+        var address = (nint)unit;
+        closeChainStage = viaEscape && closeChainAddress == address ? closeChainStage + 1 : 0;
+        closeChainAddress = address;
+
+        // 這次進場已經完整跑過一張彩券＝版面確定建好了，下一張只需要短暖機。
+        boardLayoutSeen = true;
+        LastAction = LastPayoutMgp > 0
+            ? $"領獎並關閉面板（本張派彩 {LastPayoutMgp} 金碟幣）"
+            : "領獎並關閉面板";
+        if (closeChainStage % 2 == 0)
+        {
+            Callback.Fire(unit, true, -1);
+        }
+        else
+        {
+            unit->Close(true);
+        }
+    }
+
+    /// <summary>開獎後的「中獎」通知：算出這一張的實際派彩，達門檻就請 TataruPraise 念一句。</summary>
+    /// <remarks>
+    /// 🔴 <b>純讀取、零副作用。</b> 不碰盤面、不影響翻格/選線/關窗任何一步；IPC 失敗一律忽略。
+    /// <para>📌 優先直讀面板給的中獎列派彩（伺服器真值，手動選線也算得出來）；讀不到才退回「模組自己送出的那條線」查表，那條退路才需要 <c>confirmedLane &gt;= 0</c>。兩條都不解析面板文字，與在地化無關。</para>
+    /// <para>⚠️ 一張只處理一次，成功與否都設旗標：這個階段每幀都會進來，重試等於洗 IPC。</para>
+    /// </remarks>
+    private void HandleJackpot(AddonLotteryDaily* addon, ReadOnlySpan<int> board)
+    {
+        if (jackpotHandled)
+        {
+            return;
+        }
+
+        if (!TryReadActualPayout(addon, out var payout))
+        {
+            if (WithinJackpotReadGrace())
+            {
+                // 面板填中獎列可能比盤面慢幾幀，寬限期內先不定案。
+                return;
+            }
+
+            jackpotHandled = true;
+            if (confirmedLane < 0)
+            {
+                return;
+            }
+
+            payout = MiniCactpotSolver.PayoutFor(board, confirmedLane, ActivePayouts);
+            Log($"面板沒給中獎列（UnkNumber3FC={addon->UnkNumber3FC}），退回用模組選的線 {confirmedLane} 查表：{payout} 金碟幣");
+        }
+
+        jackpotHandled = true;
+        LastPayoutMgp = payout;
+        if (payout <= 0 || !C.MiniCactpotJackpotTataruPraise)
+        {
+            return;
+        }
+
+        var threshold = JackpotThresholdMgp;
+        if (payout < threshold)
+        {
+            return;
+        }
+
+        // 要使用者回報的診斷：這行要看得到才有價值。
+        Log($"Payout {payout} MGP >= threshold {threshold}; asking TataruPraise to celebrate.");
+        TataruPraise.TryPraiseJackpot();
+    }
+
+    /// <summary>中獎列的等待寬限：夾在關窗延遲之內 ⇒ 延遲設 0 時等於不等。</summary>
+    private bool WithinJackpotReadGrace() =>
+        closeArmedUtc != null &&
+        (DateTime.UtcNow - closeArmedUtc.Value).TotalMilliseconds < Math.Min(CloseDelayMs, JackpotReadGraceMs);
+
+    /// <summary>翻格：格子的 callback 值取自其元件節點 NodeId（30..38 → 0..8，與陣列索引
+    /// 是兩套編號，所以照 DR 的做法從節點反推，不假設同序）。</summary>
+    private bool TryClickCell(AddonLotteryDaily* addon, int cellIndex)
+    {
+        var checkbox = addon->GameBoard[cellIndex];
+        if (checkbox == null)
+        {
+            return false;
+        }
+
+        var owner = checkbox->AtkComponentButton.AtkComponentBase.OwnerNode;
+        if (owner == null)
+        {
+            return false;
+        }
+
+        var nodeId = owner->AtkResNode.NodeId;
+        if (nodeId is < CellNodeIdFirst or > CellNodeIdLast)
+        {
+            return false;
+        }
+
+        // 翻格不關窗，「同窗只按一次」不適用（一張要翻三格、同一格還會重試）；
+        // 能加的只有「已經看過 PreFinalize／剛送過終結動作的實例不要再碰」——玩家中途手動關板就是那一種。
+        if (!AddonPressGuard.TryTouch(AddonName, &addon->AtkUnitBase))
+        {
+            return false;
+        }
+
+        Callback.Fire(&addon->AtkUnitBase, true, 1, (int)(nodeId - CellNodeIdFirst));
+        return true;
+    }
+
+    /// <summary>選線＋確認：先把選線值回寫 addon 的目前選線欄位（0x3EC，DR 以 +1004 硬指標
+    /// 寫的就是這一欄；我們的 FFXIVClientStructs 已具名為 UnkNumber3D4），再發 Callback(2, 線值)。</summary>
+    private bool TryClickLane(AddonLotteryDaily* addon, int laneIndex)
+    {
+        var radio = addon->LaneSelector[laneIndex];
+        if (radio == null)
+        {
+            return false;
+        }
+
+        var owner = radio->AtkComponentButton.AtkComponentBase.OwnerNode;
+        if (owner == null)
+        {
+            return false;
+        }
+
+        var nodeId = owner->AtkResNode.NodeId;
+        if (nodeId is < LaneNodeIdFirst or > LaneNodeIdLast)
+        {
+            return false;
+        }
+
+        // 同 TryClickCell：選線不關窗，只擋正在銷毀／剛送過終結動作的實例。
+        if (!AddonPressGuard.TryTouch(AddonName, &addon->AtkUnitBase))
+        {
+            return false;
+        }
+
+        var laneValue = (int)(nodeId - LaneNodeIdFirst);
+        addon->UnkNumber3D4 = laneValue;
+        Callback.Fire(&addon->AtkUnitBase, true, 2, laneValue);
+        return true;
+    }
+
+    /// <summary>「購買下一張」確認：只按 <see cref="OnYesnoPreSetup"/> 接手的那一扇（位址相同、AtkValues[0] 仍是購票確認）。</summary>
+    /// <remarks>沒接手（還沒出現、認不出、交還了）就不按；交還時任務安靜結束。</remarks>
+    private bool? TryPressPlayAgainYes()
+    {
+        if (!IsEnabled || !C.MiniCactpotAutoPlayAgain)
+        {
+            return true; // 中途被關掉：安靜結束
+        }
+
+        if (playAgainHandedBack)
         {
             return true;
         }
 
-        return AddonButton.TryClick(&addon->AtkUnitBase, ConfirmButtonNodeId);
+        if (playAgainClaimedYesno == nint.Zero ||
+            !SelectYesnoHelper.TryGetVisibleAt(playAgainClaimedYesno, out var yesno))
+        {
+            return false; // 還沒出現或還沒就緒，繼續等（TaskManager 逾時自動放棄）
+        }
+
+        if (!SelectYesnoHelper.IsMiniCactpotPurchasePrompt(SelectYesnoHelper.GetValuePrompt(yesno)))
+        {
+            Log($"接手的確認框內文已不是購票確認，Saucy 不按：{FlattenPrompt(SelectYesnoHelper.GetValuePrompt(yesno))}");
+            playAgainClaimedYesno = nint.Zero;
+            return false;
+        }
+
+        if (!SelectYesnoHelper.PressYes(yesno))
+        {
+            return false;
+        }
+
+        playAgainClaimedYesno = nint.Zero;
+        Log("Saucy 已按下「購買下一張」確認框的「是」");
+        LastAction = "已確認購買下一張彩券";
+        return true;
     }
 
-    private static int SolverLaneToCsLane(int lane) =>
-        lane switch
+    /// <summary>「購買下一張」等不到確認框時的收尾。逾時是這一步的<b>正常終局</b>——當日三張打完後
+    /// 遊戲就不再問——所以沒有框時只記 <c>Information</c>；框出現了卻沒按下去才是真的異常，維持 <c>Warning</c>。</summary>
+    /// <remarks>接手的那一扇還在期限內就延長 <paramref name="remainingTimeMS"/>：YesAlready 已放過它，Saucy 不按就沒人按。</remarks>
+    private void OnPlayAgainTimedOut(TaskManagerTask task, ref long remainingTimeMS)
+    {
+        var now = DateTime.UtcNow;
+        if (playAgainClaimedYesno != nint.Zero && now < playAgainClaimedUntilUtc)
         {
-            0 => 5,
-            1 => 6,
-            2 => 7,
-            3 => 1,
-            4 => 2,
-            5 => 3,
-            6 => 0,
-            7 => 4,
-            var _ => throw new ArgumentOutOfRangeException($"{nameof(lane)}", lane, "Must be between 0 and 8 (inclusive)")
-        };
+            remainingTimeMS = (long)Math.Ceiling((playAgainClaimedUntilUtc - now).TotalMilliseconds);
+            return;
+        }
+
+        playAgainArmedUntilUtc = null;
+        var boardBack = GetLotteryDailyAddon() != null ? "還在" : "已關";
+
+        if (!SelectYesnoHelper.TryGetVisible(out var yesno))
+        {
+            LastAction = "沒有下一張可買（當日彩券已打完，或已離開面板）";
+            Log($"等不到「購買下一張」確認框，放棄等待。yesno=無, 仙人微彩面板={boardBack}");
+            return;
+        }
+
+        LogWarning(
+            $"「購買下一張」確認框出現了卻沒被按下:" +
+            $"owner={AgentHelper.DescribeOwner(&yesno->AtkUnitBase)}, " +
+            $"ticketLayout={SelectYesnoHelper.IsTicketPurchaseLayout(yesno)}, " +
+            $"lotteryYesno={SelectYesnoHelper.ShouldPressLotteryYesno(yesno, AgentId.LotteryDaily)}, " +
+            $"purchasePrompt={SelectYesnoHelper.IsMiniCactpotPurchasePrompt(SelectYesnoHelper.GetValuePrompt(yesno))}, " +
+            $"claimed={((nint)yesno == playAgainClaimedYesno)}, " +
+            $"仙人微彩面板={boardBack}");
+    }
+
+    private void ResetPlayAgainState()
+    {
+        playAgainArmedUntilUtc = null;
+        playAgainClaimedYesno = nint.Zero;
+        playAgainHandedBack = false;
+        playAgainUnrecognizedLogged = false;
+    }
+
+    private static string FlattenPrompt(string prompt)
+    {
+        var flat = prompt.ReplaceLineEndings(" ");
+        return flat.Length <= 80 ? flat : flat[..80] + "…";
+    }
+
+    private void ResetTicketState()
+    {
+        MinigameInputPacing.Reset(ref boardReadyUtc);
+        closeArmedUtc = null;
+        pendingCell = -1;
+        pendingCellRevealedCount = -1;
+        confirmedLane = -1;
+        confirmedLaneUtc = null;
+        jackpotHandled = false;
+        payoutTableDiffLogged = false;
+        runtimePayoutsValid = false;
+        LastPayoutMgp = 0;
+        closeChainStage = 0;
+        closeChainAddress = nint.Zero;
+
+        lock (solveLock)
+        {
+            // 進行中的求解不取消（沒有副作用）——它的結果會因為盤面 key 對不上而被忽略。
+            hasSolvedCell = false;
+            solvedCell = -1;
+            solvedBoardKey = 0;
+        }
+    }
+
+    private static AddonLotteryDaily* GetLotteryDailyAddon()
+    {
+        var addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName(AddonName).Address;
+        if (addon == null || !addon->IsVisible || !IsAddonReady(addon))
+        {
+            return null;
+        }
+
+        return (AddonLotteryDaily*)addon;
+    }
 }

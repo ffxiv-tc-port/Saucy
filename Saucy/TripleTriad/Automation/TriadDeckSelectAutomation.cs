@@ -1,3 +1,4 @@
+using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
 using System.Collections.Generic;
@@ -13,7 +14,34 @@ internal static unsafe partial class TriadDeckSelectAutomation
     private const int DeckSelectBoardVisibleMaxFrames = 60;
     private const int DeckSelectBoardDismissDelayFrames = 15;
     private const int DeckSelectPostOptimizerCooldownFrames = TriadSession.DeckSelectPostProfileWriteFrames;
+    private const int DeckSelectRecommendedSettleFrames = 15;
     private const int MaxDeckSelectMethods = 5;
+    private const int MaxDeckSelectNodeScan = 48;
+
+    /// <summary>選牌組窗的 addon 名稱。也是它在 <see cref="Saucy.Framework.AddonPressGuard"/> 裡的鍵。</summary>
+    /// <remarks>
+    /// 這扇窗<b>不是</b>單答窗：同一幀先點列、再送 deck callback、最後才按確認鈕是刻意的正常流程，
+    /// 所以按法各自成鍵（<c>row|索引</c>／<c>cb|事件|牌組</c>／<c>list|索引</c>／<c>button|節點</c>）；
+    /// 只有「按了窗就會走」的終結動作（確認鈕 5／1、<c>close:true</c> 的 callback）併成整扇窗一鍵，
+    /// 登記之後同位址任何按法都不准——見 <see cref="TryRunConfirmChain"/>。
+    /// </remarks>
+    private const string SelDeckAddonName = "TripleTriadSelDeck";
+
+    /// <summary>終結動作鏈走到第幾招，以及那是對哪一個實例（守衛走逃生口放行時才前進一招）。</summary>
+    private static int confirmChainStage;
+
+    private static nint confirmChainAddress;
+
+    /// <summary>讀不到牌組清單時的盲試候選列索引（一個守衛窗口只試一副，見 <c>TryBlindDeckSelect</c>）。</summary>
+    private static readonly int[] BlindDeckSweepIndices =
+    [
+        0, 1, 2, 3, 4
+    ];
+
+    /// <summary>盲試走到第幾副牌，以及那是對哪一個實例（🔴 位址只做等值比較，永不解參）。</summary>
+    private static int blindSweepStage;
+
+    private static nint blindSweepAddress;
 
     private static readonly uint[] DeckSelectConfirmButtonIds =
     [
@@ -34,6 +62,8 @@ internal static unsafe partial class TriadDeckSelectAutomation
     private static int pendingProfileDeckId = -1;
     private static int pendingSelectMethod;
     private static bool awaitingConfirm;
+    private static bool recommendedClicked;
+    private static int recommendedAttempts;
     private static bool forceDismissedForMatch;
     private static int boardDismissFrames;
     private static int boardVisibleFrames;
@@ -192,12 +222,6 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
             if (awaitingConfirm)
             {
-                if (!IsSelectionComplete())
-                {
-                    TryClickConfirmButton(addon);
-                    addon->Update(0);
-                }
-
                 if (IsSelectionComplete())
                 {
                     confirmedThisScreen = true;
@@ -209,6 +233,11 @@ internal static unsafe partial class TriadDeckSelectAutomation
                     return;
                 }
 
+                // 🔴 後援按法（非終結）一定要排在確認（終結動作）之前送。
+                //    確認一登記，同一位址在 AddonPressGuard.SelDeckTerminalHotFrames 幀內的任何按法都會被守衛擋掉；
+                //    先送確認等於每一輪都自己把當輪要試的那一招擋掉 —— 五段後援階梯會被靜默燒光，
+                //    每個牌組候選都被標成「試過」卻一下都沒真的按到。
+                //    確認的嘗試次數不受影響：TryApplyDeckSelection 送完後援按法之後本來就會補一次確認。
                 if (pendingSelectMethod + 1 < MaxDeckSelectMethods)
                 {
                     pendingSelectMethod++;
@@ -221,6 +250,21 @@ internal static unsafe partial class TriadDeckSelectAutomation
                         {
                             ClearPending();
                         }
+                    }
+
+                    return;
+                }
+
+                // 後援按法用盡：只剩終結動作可以推進（守衛的逃生口讓確認鏈每輪換一招）。
+                TryClickConfirmButton(addon);
+                addon->Update(0);
+
+                if (IsSelectionComplete())
+                {
+                    confirmedThisScreen = true;
+                    if (!TriadUiState.IsBoardVisible() || IsBoardHandsPopulated())
+                    {
+                        ClearPending();
                     }
 
                     return;
@@ -239,17 +283,6 @@ internal static unsafe partial class TriadDeckSelectAutomation
                 return;
             }
 
-            if (attemptCount >= MaxDeckSelectAttemptsPerScreen)
-            {
-                if (attemptCount == MaxDeckSelectAttemptsPerScreen)
-                {
-                    Svc.Chat.PrintError("[Saucy] Could not select a deck automatically. Pick one manually.");
-                    attemptCount++;
-                }
-
-                return;
-            }
-
             if (!IsAddonReady(addon))
             {
                 return;
@@ -257,27 +290,21 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
             uiReaderPrep.RefreshDeckSelectList((nint)addon);
 
-            if (!C.UseSimmedDeck && C.SelectedDeckIndex == Configuration.GameRecommendedDeckIndex)
+            if (recommendedClicked ||
+                (!C.UseSimmedDeck && C.SelectedDeckIndex == Configuration.GameRecommendedDeckIndex))
             {
-                if (attemptCount < MaxDeckSelectAttemptsPerScreen)
+                TickGameRecommendedDeck(addon);
+                return;
+            }
+
+            if (attemptCount >= MaxDeckSelectAttemptsPerScreen)
+            {
+                if (C.UseSimmedDeck && TriadRun.IsDeckSelectPrepBlocking(C.UseSimmedDeck))
                 {
-                    if (TrySelectGameRecommendedDeck(addon))
-                    {
-                        attemptCount++;
-                        framesSinceAttempt = DeckSelectRetryCooldownFrames;
-                    }
-                    else
-                    {
-                        attemptCount++;
-                        framesSinceAttempt = DeckSelectRetryCooldownFrames;
-                        if (attemptCount == MaxDeckSelectAttemptsPerScreen)
-                        {
-                            Svc.Chat.PrintError(
-                                "[Saucy] Could not use game recommended deck. Pick a deck manually or try another option.");
-                        }
-                    }
+                    return;
                 }
 
+                TickGameRecommendedDeck(addon);
                 return;
             }
 
@@ -304,8 +331,14 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
                 if (uiReaderPrep.cachedState.decks.Count == 0 && TryBlindDeckSelect(addon))
                 {
-                    attemptCount++;
                     framesSinceAttempt = DeckSelectRetryCooldownFrames;
+                    if (IsBlindDeckSweepExhausted)
+                    {
+                        // 盲試整輪（5 副牌）走完才算一次嘗試：中途每一副各佔一個守衛窗口，
+                        // 一副就燒掉 MaxDeckSelectAttemptsPerScreen 的額度會讓這條路徑退化成只試第一副。
+                        attemptCount++;
+                    }
+
                     return;
                 }
             }
@@ -316,6 +349,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
                 AttemptedDeckIndices,
                 out var deck))
             {
+                TickGameRecommendedDeck(addon);
                 return;
             }
 
@@ -331,7 +365,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
             if (!TriadRun.TryResolveDeckListIndex(deck, out var resolvedListIndex))
             {
-                Svc.Chat.PrintError($"[Saucy] Could not find deck {deck + 1} in the selection list.");
+                Svc.Chat.PrintError("[Saucy] " + "Could not find deck ?? in the selection list.".Loc(deck + 1));
                 AttemptedDeckIndices.Add(deck);
                 attemptCount++;
                 return;
@@ -364,6 +398,10 @@ internal static unsafe partial class TriadDeckSelectAutomation
         attemptCount = 0;
         framesSinceAttempt = 0;
         FramesOpen = 0;
+        blindSweepStage = 0;
+        blindSweepAddress = nint.Zero;
+        recommendedClicked = false;
+        recommendedAttempts = 0;
     }
 
     public static void PrepareRetryWithOptimizedDeck(int deckId)
@@ -387,6 +425,10 @@ internal static unsafe partial class TriadDeckSelectAutomation
         ClearPending();
         AttemptedDeckIndices.Clear();
         attemptCount = 0;
+        blindSweepStage = 0;
+        blindSweepAddress = nint.Zero;
+        recommendedClicked = false;
+        recommendedAttempts = 0;
         framesSinceAttempt = DeckSelectPostOptimizerCooldownFrames;
         TriadRun.BeginDeckSelectPostWriteCooldown();
     }
@@ -429,7 +471,7 @@ internal static unsafe partial class TriadDeckSelectAutomation
 
         if (boardDismissFrames == DeckSelectBoardVisibleMaxFrames)
         {
-            Svc.Chat.PrintError("[Saucy] Match started without a deck. Confirm deck selection manually.");
+            Svc.Chat.PrintError("[Saucy] " + "Match started without a deck. Confirm deck selection manually.".Loc());
         }
     }
 

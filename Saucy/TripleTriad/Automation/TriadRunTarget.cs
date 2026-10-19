@@ -17,10 +17,42 @@ public enum TriadNavigationGoal
 
 internal static class TriadTargetNpc
 {
-    public static TriadNpc? FromWorldTarget()
+    // 比對結果只取決於名字位元組（SeString 解析到第一個 0 為止）與已發布的 NPC 快照：兩者都沒變就沿用上次結果。
+    // 只存位元組內容，不存指標；名字在取得目標的同一幀、同一個位址上讀，與 Name 屬性讀的是同一段記憶體。
+    private static readonly byte[] lastTargetName = new byte[64];
+    private static int lastTargetNameLength;
+    private static TriadNpc? lastTargetNpc;
+    private static TriadNpc[]? lastTargetNpcSnapshot;
+
+    public static unsafe TriadNpc? FromWorldTarget()
     {
-        var name = Svc.Targets.Target?.Name.TextValue;
-        return TriadNpcDB.Get().FindMatchingName(name);
+        var target = Svc.Targets.Target;
+        if (target == null)
+        {
+            return null;
+        }
+
+        var frozen = TriadNpcDB.Get().FrozenNpcs;
+        if (frozen == null)
+        {
+            return TriadNpcDB.Get().FindMatchingName(target.Name.TextValue);
+        }
+
+        ReadOnlySpan<byte> raw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)target.Address)->Name;
+        var end = raw.IndexOf((byte)0);
+        var name = end < 0 ? raw : raw[..end];
+        if (ReferenceEquals(frozen, lastTargetNpcSnapshot) &&
+            name.SequenceEqual(lastTargetName.AsSpan(0, lastTargetNameLength)))
+        {
+            return lastTargetNpc;
+        }
+
+        var npc = TriadNpcDB.FindMatchingName(target.Name.TextValue, frozen);
+        name.CopyTo(lastTargetName);
+        lastTargetNameLength = name.Length;
+        lastTargetNpc = npc;
+        lastTargetNpcSnapshot = frozen;
+        return npc;
     }
 
     public static TriadNpc? FromSolverContext() =>

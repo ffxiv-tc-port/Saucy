@@ -210,6 +210,10 @@ internal static class TriadDeckOptimizerJobs
 
     public static void Tick()
     {
+        // 鎖內不寫 log：Sync 每幀被 framework 端（Saucy.Tick.cs 的 RunBot）持有，
+        // 也被最佳化器結束時的 FinishOnThreadPool 在執行緒池上持有；Serilog sink 自己有鎖
+        // 而且可能寫檔，在鎖內寫等於讓這兩邊一起排隊。收起來，出鎖之後才寫。
+        using var deferScope = TriadDeferredSideEffects.Begin();
         lock (Sync)
         {
             if (!IsJobRunningLocked(activeJob))
@@ -235,9 +239,8 @@ internal static class TriadDeckOptimizerJobs
                 return;
             }
 
-            Svc.Log.Warning(
-                "[Saucy] Cancelling deck optimizer after {Minutes} min paused (solver/navmesh busy).",
-                StalePausedCancelAfter.TotalMinutes);
+            TriadDeferredSideEffects.Warning(
+                $"[Saucy] Cancelling deck optimizer after {StalePausedCancelAfter.TotalMinutes} min paused (solver/navmesh busy).");
             CancelActive(markTimedOut: true);
         }
     }

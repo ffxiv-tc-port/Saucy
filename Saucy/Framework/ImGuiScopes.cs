@@ -15,12 +15,11 @@ internal static class ImGuiScopes
 
         public WindowScope(string name, ImGuiWindowFlags flags) => Success = ImGui.Begin(name, flags);
 
+        // ImGui.Begin/End 必須無條件配對（與 BeginChild/BeginTable 相反），
+        // 即使 Begin 回 false（視窗折疊/被裁剪）也必須 End。
         public void Dispose()
         {
-            if (Success)
-            {
-                ImGui.End();
-            }
+            ImGui.End();
         }
     }
 }

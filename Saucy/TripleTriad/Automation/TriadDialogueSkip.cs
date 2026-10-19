@@ -2,6 +2,7 @@ using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.ClientState.Conditions;
 using Saucy.Framework;
+using AgentId = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId;
 namespace Saucy.TripleTriad;
 
 internal static unsafe class TriadDialogueSkip
@@ -218,9 +219,21 @@ internal static unsafe class TriadDialogueSkip
         TriadNpcGate.IsInDialogueFlow() ||
         (TriadRunSession.ModuleEnabled && TriadTargetNpc.FromWorldTarget() != null);
 
-    private static bool IsGoldSaucerMinigameOccupied() =>
-        Svc.Condition[ConditionFlag.OccupiedInQuestEvent] &&
-        GoldSaucerArcadeMachineHelper.AnyEnabled();
+    /// <summary>玩家是否正身處金碟遊樂園的街機小遊戲中——是的話幻卡對話自動化整個讓開，
+    /// 不要跟另一個小遊戲模組搶著按確認框。
+    /// <para>🔑 刻意設計成兩邊都不會壞：<c>IsAgentActive()</c> 在台服用戶端到底是
+    /// 「機台介面開著」還是「人在金碟遊樂園就一直是 true」**無法離線證明**，
+    /// 所以額外要求「畫面上沒有任何幻卡 UI、且幻卡 agent 不在作用中」才算被佔用。
+    /// 即使前一個假設完全錯誤，只要幻卡流程正在跑，自動化仍然照常運作、不會整個停擺。</para></summary>
+    private static bool IsGoldSaucerMinigameOccupied()
+    {
+        if (!AgentHelper.IsActive(AgentId.GoldSaucerMiniGame))
+        {
+            return false;
+        }
+
+        return !IsTriadSessionUiVisible() && !AgentHelper.IsActive(AgentId.TrippleTriad);
+    }
 
     private static bool IsTriadSessionUiVisible() =>
         uiReaderPrep.HasMatchRequestUI ||

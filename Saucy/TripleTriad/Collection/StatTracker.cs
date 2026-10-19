@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 namespace Saucy.TripleTriad;
 
 public class StatTracker
@@ -6,11 +7,11 @@ public class StatTracker
 
     private static TriadCollectionSettings Settings => C.TriadCollection;
 
-    public void OnMatchFinished(int npcLogicId, UIStateTriadResults uiState)
+    public bool OnMatchFinished(int npcLogicId, UIStateTriadResults uiState)
     {
         if (!GameNpcDB.Get().mapNpcs.TryGetValue(npcLogicId, out var npcInfo))
         {
-            return;
+            return false;
         }
 
         var savedStats = GetNpcStats(npcInfo);
@@ -25,23 +26,34 @@ public class StatTracker
         savedStats.NumDraws += uiState.isDraw ? 1 : 0;
         savedStats.NumLosses += uiState.isLose ? 1 : 0;
 
-        if (uiState.isWin && TriadRewardDropTracker.TryGetVerifiedNpcCardDrop(out var droppedCard) && droppedCard != null)
+        if (uiState.isWin && TryResolveRewardCard(npcInfo, uiState.cardItemId, out var cardId))
         {
-            var cardId = droppedCard.CardId;
-            if (cardId > 0)
-            {
-                if (savedStats.Cards.TryGetValue(cardId, out var _))
-                {
-                    savedStats.Cards[cardId] += 1;
-                }
-                else
-                {
-                    savedStats.Cards.Add(cardId, 1);
-                }
-            }
+            savedStats.Cards[cardId] = savedStats.Cards.GetValueOrDefault(cardId) + 1;
         }
 
         C.Save();
+        return true;
+    }
+
+    // 結果視窗上的獎勵卡連已持有的重複卡也算；持有差異只看得到第一次入手，留作讀不到獎勵卡時的備援。
+    private static bool TryResolveRewardCard(GameNpcInfo npcInfo, uint resultCardItemId, out int cardId)
+    {
+        var resultCard = resultCardItemId > 0 ? GameCardDB.Get().FindByItemId(resultCardItemId) : null;
+        if (resultCard != null && npcInfo.rewardCards.Contains(resultCard.CardId))
+        {
+            cardId = resultCard.CardId;
+            return cardId > 0;
+        }
+
+        if (TriadRewardDropTracker.TryGetVerifiedNpcCardDrop(out var droppedCard, resultCardItemId) &&
+            droppedCard != null && npcInfo.rewardCards.Contains(droppedCard.CardId))
+        {
+            cardId = droppedCard.CardId;
+            return cardId > 0;
+        }
+
+        cardId = -1;
+        return false;
     }
 
     public TriadNpcStatRecord? GetNpcStats(GameNpcInfo npcInfo)

@@ -1,4 +1,5 @@
 #nullable disable
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 using System.Collections.Generic;
@@ -8,10 +9,10 @@ namespace Saucy.TripleTriad.UI;
 public partial class TriadSession
 {
     private static string FormatOptimizerTimedOutFallbackMessage() =>
-        $"[Saucy] Deck optimizer timed out after {Math.Clamp(C.DeckOptimizerTimeoutMinutes, 1, 15)} min; using best deck found so far.";
+        "[Saucy] " + "Deck optimizer timed out after ?? min; using best deck found so far.".Loc(Math.Clamp(C.DeckOptimizerTimeoutMinutes, 1, 15));
 
     private static string FormatOptimizerAbortedFallbackMessage() =>
-        "[Saucy] Deck optimizer aborted; using best deck found so far.";
+        "[Saucy] " + "Deck optimizer aborted; using best deck found so far.".Loc();
 
     public void CancelDeckOptimizerJob(bool userCancelled = true, bool markTimedOut = false) =>
         TriadDeckOptimizerJobs.CancelActive(userCancelled, markTimedOut || userCancelled);
@@ -42,6 +43,14 @@ public partial class TriadSession
         }
 
         if (!premadeRequest && !ShouldBuildOptimizedDeck())
+        {
+            return;
+        }
+
+        if (!premadeRequest &&
+            !forceRebuild &&
+            !navigationRequest &&
+            ShouldSkipBackgroundOptimizedDeckBuild(npc))
         {
             return;
         }
@@ -83,32 +92,36 @@ public partial class TriadSession
             return;
         }
 
-        lock (_preGameLock)
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using (TriadDeferredSideEffects.Begin())
         {
-            if (forceRebuild)
+            lock (_preGameLock)
             {
-                PrepareStaleDeckRebuildLocked(npc, optimizerKey);
-            }
-            else if (!premadeRequest && TrySkipOptimizedDeckRebuildLocked(npc, regionMods))
-            {
-                return;
-            }
-            else if (premadeRequest && TrySkipPremadeDeckLocked(npc, regionMods))
-            {
-                return;
+                if (forceRebuild)
+                {
+                    PrepareStaleDeckRebuildLocked(npc, optimizerKey);
+                }
+                else if (!premadeRequest && TrySkipOptimizedDeckRebuildLocked(npc, regionMods))
+                {
+                    return;
+                }
+                else if (premadeRequest && TrySkipPremadeDeckLocked(npc, regionMods))
+                {
+                    return;
+                }
             }
         }
 
         if (TriadDeckOptimizerJobs.IsRunningForSessionKey(optimizerKey))
         {
-            AnnounceOptimizerSkipOnce($"{optimizerKey}:running", $"[Saucy] Still optimizing deck for {npc.Name}...");
+            AnnounceOptimizerSkipOnce($"{optimizerKey}:running", "[Saucy] " + "Still optimizing deck for ??...".Loc(npc.Name));
             return;
         }
 
         if (profileGS == null || profileGS.HasErrors)
         {
             AnnounceOptimizerSkipOnce($"{optimizerKey}:profile",
-                $"[Saucy] Profile reader unavailable; optimizing deck for {npc.Name} (cannot save to profile).");
+                "[Saucy] " + "Profile reader unavailable; optimizing deck for ?? (cannot save to profile).".Loc(npc.Name));
         }
 
         GameCardDB.Get().Refresh();
@@ -116,27 +129,27 @@ public partial class TriadSession
         if (PlayerSettingsDB.Get().ownedCards.Count == 0)
         {
             AnnounceOptimizerSkipOnce($"{optimizerKey}:no_cards",
-                "[Saucy] Deck optimizer skipped: no owned cards in collection cache.");
+                "[Saucy] " + "Deck optimizer skipped: no owned cards in collection cache.".Loc());
             return;
         }
 
         if (Vnavmesh.ShouldDeferDeckOptimizerWork())
         {
             AnnounceOptimizerSkipOnce($"{optimizerKey}:vnav",
-                "[Saucy] Waiting for vnavmesh before building deck…");
+                "[Saucy] " + "Waiting for vnavmesh before building deck…".Loc());
             return;
         }
 
         if (TriadMapNavigation.IsExecutingMultiAreaRoute)
         {
             AnnounceOptimizerSkipOnce($"{optimizerKey}:route",
-                "[Saucy] Waiting for zone route before building deck…");
+                "[Saucy] " + "Waiting for zone route before building deck…".Loc());
             return;
         }
 
         _lastOptimizerSkipKey = string.Empty;
 
-        PrintOptimizerChat($"[Saucy] Optimizing deck for {npc.Name}...");
+        PrintOptimizerChat("[Saucy] " + "Optimizing deck for ??...".Loc(npc.Name));
 
         var regionModsForOptimizer = BuildRegionModsForOptimizer(npc, regionMods);
         var request = new TriadDeckOptimizerStartRequest(
@@ -166,6 +179,8 @@ public partial class TriadSession
             return;
         }
 
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using var chatScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             if (result.PassId != _optimizerPassId)
@@ -176,7 +191,7 @@ public partial class TriadSession
             if (result.UserCancelled)
             {
                 MarkOptimizerPassFailedLocked(result);
-                PrintOptimizerChat($"[Saucy] Deck optimization cancelled for {result.Npc?.Name ?? "NPC"}.");
+                PrintOptimizerChat("[Saucy] " + "Deck optimization cancelled for ??.".Loc(result.Npc?.Name ?? "NPC"));
                 return;
             }
 
@@ -241,7 +256,7 @@ public partial class TriadSession
             PrepareStaleDeckRebuildLocked(npc, sessionKey);
             AnnounceOptimizerSkipOnce(
                 $"{sessionKey}:new_cards",
-                $"[Saucy] Rebuilding deck for {npc.Name} ({newCards} new cards since last build).");
+                "[Saucy] " + "Rebuilding deck for ?? (?? new cards since last build).".Loc(npc.Name, newCards));
             return false;
         }
 
@@ -258,7 +273,7 @@ public partial class TriadSession
             CancelOptimizerIfRunningAfterSkip();
             var skipKey = $"{BuildOptimizerSessionKey(npc, regionMods)}:profile";
             var message =
-                $"[Saucy] Using existing optimized deck for {npc.Name} in profile slot {_optimizerTargetDeckId + 1}.";
+                "[Saucy] " + "Using existing optimized deck for ?? in profile slot ??.".Loc(npc.Name, _optimizerTargetDeckId + 1);
             AnnounceOptimizerSkipOnce(skipKey, message);
             return true;
         }
@@ -299,7 +314,7 @@ public partial class TriadSession
         }
 
         TriadDeckLog.Print(
-            $"[Saucy] Using existing optimized deck for {npc.Name} in profile slot {_optimizerTargetDeckId + 1}.");
+            "[Saucy] " + "Using existing optimized deck for ?? in profile slot ??.".Loc(npc.Name, _optimizerTargetDeckId + 1));
         return true;
     }
 
@@ -360,8 +375,8 @@ public partial class TriadSession
         DebugScreenMemory.UpdatePlayerDeck(solverDeck);
 
         message =
-            $"[Saucy] Loaded cached deck into profile slot {targetDeckId + 1} for {npc.Name}.";
-        Svc.Log.Info(message);
+            "[Saucy] " + "Loaded cached deck into profile slot ?? for ??.".Loc(targetDeckId + 1, npc.Name);
+        TriadDeferredSideEffects.Info(message);
         return true;
     }
 
@@ -392,8 +407,8 @@ public partial class TriadSession
         ScheduleOptimizedDeckPreviewEval(targetDeckId, deckData.solverDeck, npc, regionMods);
 
         message ??=
-            $"[Saucy] Using cached deck for {npc.Name} in profile slot {targetDeckId + 1}.";
-        Svc.Log.Info(message);
+            "[Saucy] " + "Using cached deck for ?? in profile slot ??.".Loc(npc.Name, targetDeckId + 1);
+        TriadDeferredSideEffects.Info(message);
 
         return true;
     }
@@ -421,7 +436,7 @@ public partial class TriadSession
 
         C.TriadOptimizedDeckBuiltUtcTicksByNpcId[npc.Id] = DateTime.UtcNow.Ticks;
         PruneLegacyOptimizedDeckBuildTimestamps();
-        C.Save();
+        TriadDeferredSideEffects.SaveConfig();
     }
 
     private static void PruneLegacyOptimizedDeckBuildTimestamps()
@@ -447,7 +462,7 @@ public partial class TriadSession
             C.TriadOptimizedDeckBuiltUtcTicksByNpcId.Remove(npcId);
         }
 
-        C.Save();
+        TriadDeferredSideEffects.SaveConfig();
     }
 
     private bool TryAdoptExistingSaucyDeckLocked(TriadNpc npc, List<TriadGameModifier> regionMods)
@@ -488,7 +503,7 @@ public partial class TriadSession
         preGameDecks[deckIdx] = deckData;
 
         DebugScreenMemory.UpdatePlayerDeck(deckData.solverDeck);
-        Svc.Log.Info($"[Saucy] Using existing profile deck \"{profileDeck.name}\" in slot {deckIdx + 1}.");
+        TriadDeferredSideEffects.Info($"[Saucy] Using existing profile deck \"{profileDeck.name}\" in slot {deckIdx + 1}.");
         if (TryExtractCardIdsFromProfileDeck(profileDeck, out var cardIds))
         {
             PersistGeneratedDeckCache(
@@ -546,7 +561,7 @@ public partial class TriadSession
     private static bool MatchesSaucyDeckName(TriadProfileDeckReader.PlayerDeck deck, string expectedName) =>
         deck != null &&
         !string.IsNullOrWhiteSpace(deck.name) &&
-        deck.name.Equals(expectedName, StringComparison.OrdinalIgnoreCase);
+        NpcNameText.Normalize(deck.name).Equals(NpcNameText.Normalize(expectedName), StringComparison.OrdinalIgnoreCase);
 
     private void ApplyOptimizedDeckToProfileLocked(TriadDeck optimizedDeck, float? estWinChance = null)
     {
@@ -568,7 +583,7 @@ public partial class TriadSession
             out var targetDeckId,
             estWinChance: estWinChance))
         {
-            PrintOptimizerChat("[Saucy] Failed to write optimized deck to profile.", true);
+            PrintOptimizerChat("[Saucy] " + "Failed to write optimized deck to profile.".Loc(), true);
             return;
         }
 
@@ -591,7 +606,7 @@ public partial class TriadSession
         DebugScreenMemory.UpdatePlayerDeck(appliedDeck);
 
         PrintOptimizerChat(
-            $"[Saucy] Optimized deck written to slot {targetDeckId + 1} for {preGameNpc.Name}.");
+            "[Saucy] " + "Optimized deck written to slot ?? for ??.".Loc(targetDeckId + 1, preGameNpc.Name));
 
         ScheduleOptimizedDeckPreviewEval(targetDeckId, appliedDeck, preGameNpc, preGameMods);
         BeginDeckSelectPostWriteCooldown();
@@ -646,7 +661,7 @@ public partial class TriadSession
             var card = optimizedDeck?.knownCards?[idx];
             if (card == null || card.Id <= 0)
             {
-                PrintOptimizerChat($"[Saucy] Deck optimizer deck has invalid card at slot {idx + 1}.", true);
+                PrintOptimizerChat("[Saucy] " + "Deck optimizer deck has invalid card at slot ??.".Loc(idx + 1), true);
                 return false;
             }
 
@@ -682,7 +697,7 @@ public partial class TriadSession
         var deckName = $"{npc.Name} (Saucy)";
         if (profileGS == null || profileGS.HasErrors)
         {
-            Svc.Log.Warning("[Saucy] Profile reader unavailable; using optimized deck in memory only.");
+            TriadDeferredSideEffects.Warning("[Saucy] Profile reader unavailable; using optimized deck in memory only.");
             if (persistGeneratedDeckToCache)
             {
                 PersistGeneratedDeckCache(npc, regionMods, cardIds, estWinChance);

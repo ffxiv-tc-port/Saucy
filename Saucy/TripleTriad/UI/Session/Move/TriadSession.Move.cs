@@ -33,6 +33,7 @@ public partial class TriadSession
         if (currentNpc != null)
         {
             lastGameNpc = currentNpc;
+            matchNpc = currentNpc;
         }
 
         _pauseOptimizerForActiveTriad = stateOb != null && TriadUiState.IsBoardVisible();

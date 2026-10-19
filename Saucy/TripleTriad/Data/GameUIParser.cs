@@ -92,7 +92,7 @@ public class GameUIParser
 
     public void OnFailedCard(string desc)
     {
-        Svc.Log.Error($"failed to match card: {desc}");
+        TriadDeferredSideEffects.Error($"failed to match card: {desc}");
         hasFailedCard = true;
     }
 
@@ -173,7 +173,7 @@ public class GameUIParser
 
     public void OnFailedModifier(string desc)
     {
-        Svc.Log.Error($"failed to match rule: {desc}");
+        TriadDeferredSideEffects.Error($"failed to match rule: {desc}");
         hasFailedModifier = true;
     }
 
@@ -212,7 +212,7 @@ public class GameUIParser
 
     public void OnFailedNpc(string desc)
     {
-        Svc.Log.Error($"failed to match npc: {string.Join(", ", desc)}");
+        TriadDeferredSideEffects.Error($"failed to match npc: {string.Join(", ", desc)}");
         hasFailedNpc = true;
     }
 

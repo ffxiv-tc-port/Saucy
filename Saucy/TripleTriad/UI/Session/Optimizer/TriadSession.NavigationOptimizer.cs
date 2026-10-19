@@ -1,4 +1,5 @@
 #nullable disable
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 namespace Saucy.TripleTriad.UI;
@@ -14,6 +15,9 @@ public partial class TriadSession
 
         EnsureNavigationDeckOptimizerStarted(npc);
 
+        // 鎖內不做聊天／log／存設定／寫牌組快取檔：這段的呼叫鏈經過 ResolveRegionModsForNpc
+        // 的 prep 同步子樹會走到那幾種副作用，先收起來，出鎖之後才做。
+        using var deferScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             var sessionKey = BuildOptimizerSessionKey(npc, ResolveRegionModsForNpc(npc));
@@ -53,6 +57,8 @@ public partial class TriadSession
             return;
         }
 
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using var chatScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             if (OptimizerInProgress)
@@ -65,7 +71,10 @@ public partial class TriadSession
                 return;
             }
 
-            StartDeckOptimizer(npc, ResolveRegionModsForNpc(npc), navigationRequest: true);
+            // 出鎖後才做:StartDeckOptimizer 的前導會打別的外掛的 IPC。
+            var startMods = ResolveRegionModsForNpc(npc);
+            TriadDeferredSideEffects.RunAfterLock(
+                () => StartDeckOptimizer(npc, startMods, navigationRequest: true));
         }
     }
 
@@ -93,9 +102,13 @@ public partial class TriadSession
 
         _navigationOptimizerRetryCount++;
         PrintOptimizerChat(
-            $"[Saucy] Deck optimization interrupted for {result.Npc.Name}; retry {_navigationOptimizerRetryCount}/{MaxNavigationOptimizerRetries}…");
+            "[Saucy] " + "Deck optimization interrupted for ??; retry ??/??…".Loc(result.Npc.Name, _navigationOptimizerRetryCount, MaxNavigationOptimizerRetries));
         _optimizerTimedOut = false;
-        StartDeckOptimizer(result.Npc, ResolveRegionModsForNpc(result.Npc), navigationRequest: true);
+        // 出鎖後才做:StartDeckOptimizer 的前導會打別的外掛的 IPC。
+        var restartNpc = result.Npc;
+        var restartMods = ResolveRegionModsForNpc(restartNpc);
+        TriadDeferredSideEffects.RunAfterLock(
+            () => StartDeckOptimizer(restartNpc, restartMods, navigationRequest: true));
         return true;
     }
 }

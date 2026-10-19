@@ -2,6 +2,7 @@
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using ECommons.LanguageHelpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -41,7 +42,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
     private bool showNpcMatchesOnly;
 
-    public TriadCardSearchWindow(UIReaderTriadCardList uiReaderCardList, TriadNpcStatsWindow statsWindow) : base("Card Search")
+    public TriadCardSearchWindow(UIReaderTriadCardList uiReaderCardList, TriadNpcStatsWindow statsWindow) : base("Card Search".Loc())
     {
         this.uiReaderCardList = uiReaderCardList;
         this.statsWindow = statsWindow;
@@ -84,8 +85,8 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
     public void Dispose()
     {
-        ImGuiNative.Destroy(searchFilterCard.Handle);
-        ImGuiNative.Destroy(searchFilterNpc.Handle);
+        searchFilterCard.Destroy();
+        searchFilterNpc.Destroy();
     }
 
     internal void SyncVisibility() => UpdateWindowData();
@@ -329,13 +330,15 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
     public override void PreDraw()
     {
+        base.PreDraw();
+
         if (!IsGameDataReady || !uiReaderCardList.IsVisible)
         {
             return;
         }
 
         deckEditMode = uiReaderCardList.cachedState.isDeckEditMode;
-        WindowName = deckEditMode ? "Deck Cards" : "Card Search";
+        WindowName = deckEditMode ? "Deck Cards".Loc() : "Card Search".Loc();
         if (deckEditMode)
         {
             activeTab = 0;
@@ -350,7 +353,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
     {
         if (!IsGameDataReady)
         {
-            ImGui.TextDisabled("Loading card data…");
+            ImGui.TextDisabled("Loading card data…".Loc());
             return;
         }
 
@@ -377,7 +380,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
             return;
         }
 
-        if (ImGui.Selectable("Cards", activeTab == 0, ImGuiSelectableFlags.None, ImGui.CalcTextSize("Cards") + new Vector2(12, 0)))
+        if (ImGui.Selectable("Cards".Loc(), activeTab == 0, ImGuiSelectableFlags.None, ImGui.CalcTextSize("Cards".Loc()) + new Vector2(12, 0)))
         {
             activeTab = 0;
         }
@@ -480,7 +483,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         if (!deckEditMode)
         {
             ImGui.Spacing();
-            if (ImGui.Checkbox("NPC reward cards only", ref showNpcMatchesOnly))
+            if (ImGui.Checkbox("NPC reward cards only".Loc(), ref showNpcMatchesOnly))
             {
                 C.TriadCollection.CheckCardNpcMatchOnly = showNpcMatchesOnly;
                 C.Save();
@@ -488,7 +491,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
             if (showNotOwnedCheckbox)
             {
-                if (ImGui.Checkbox("Unowned only", ref showNotOwnedOnly))
+                if (ImGui.Checkbox("Unowned only".Loc(), ref showNotOwnedOnly))
                 {
                     if (showNotOwnedOnly)
                     {
@@ -501,7 +504,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
             }
             else if (filterMode is >= 0 and not 0)
             {
-                ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "(Collection filtering is active)");
+                ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "(Collection filtering is active)".Loc());
             }
         }
     }
@@ -545,14 +548,14 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
         if (!IsGameDataReady)
         {
-            ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "Loading NPC data…");
+            ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "Loading NPC data…".Loc());
             return;
         }
 
         if (listNpcs.Count == 0)
         {
             ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled),
-                GameNpcDB.Get().mapNpcs.Count == 0 ? "No NPC data loaded." : "No NPCs available.");
+                GameNpcDB.Get().mapNpcs.Count == 0 ? "No NPC data loaded.".Loc() : "No NPCs available.".Loc());
             return;
         }
 
@@ -609,11 +612,11 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         if (visibleCount == 0)
         {
             ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled),
-                "No NPCs match the current filters.");
+                "No NPCs match the current filters.".Loc());
         }
 
         ImGui.Spacing();
-        if (ImGui.Checkbox("Hide beaten NPCs", ref hideNpcBeatenOnce))
+        if (ImGui.Checkbox("Hide beaten NPCs".Loc(), ref hideNpcBeatenOnce))
         {
             npcFilterDataStale = true;
             RefreshNpcProgress();
@@ -622,7 +625,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
             C.Save();
         }
 
-        if (ImGui.Checkbox("Hide completed NPCs", ref hideNpcCompleted))
+        if (ImGui.Checkbox("Hide completed NPCs".Loc(), ref hideNpcCompleted))
         {
             npcFilterDataStale = true;
             RefreshNpcProgress();
@@ -648,7 +651,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
 
         if (npcInfo.Location != null)
         {
-            TriadNpcMapUi.DrawMapLocationRow(npcInfo.Location, "Show on map", npcData.Item1);
+            TriadNpcMapUi.DrawMapLocationRow(npcInfo.Location, "Show on map".Loc(), npcData.Item1);
         }
 
         TriadNpcQuestUi.DrawUnlockQuestIconRow(npcInfo);
@@ -658,11 +661,11 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         var settingsDB = PlayerSettingsDB.Get();
         ImGuiLayout.DrawIconTextRow(FontAwesomeIcon.ChartLine, null, () => statsWindow.SetupAndOpen(npcData.Item1), () =>
         {
-            ImGui.Text("NPC stats" + (hasAvgRewards ? "," : ""));
+            ImGui.Text("NPC stats".Loc() + (hasAvgRewards ? ",".Loc() : ""));
             if (hasAvgRewards)
             {
                 ImGui.SameLine();
-                ImGui.Text("MGP per match:");
+                ImGui.Text("MGP per match:".Loc());
                 ImGui.SameLine();
                 ImGui.Text(avgRewardPerMatch.ToString("0.#"));
             }
@@ -671,7 +674,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         TriadCollectionPremadeDeckUi.DrawForNpc(npcData.Item1);
 
         ImGui.Spacing();
-        ImGui.Text($"Unowned rewards: {numNotOwnedRewards}");
+        ImGui.Text("Unowned rewards: ??".Loc(numNotOwnedRewards));
         if (listNpcReward.Count > 0)
         {
             using (var rewardList = ImRaii.ListBox("##cardReward", GetListBoxSize(4.5f)))
@@ -711,7 +714,7 @@ public unsafe class TriadCardSearchWindow : Window, IDisposable
         }
         else
         {
-            ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "Not available");
+            ImGui.TextColored(SaucyTheme.ColorOr(SaucyTheme.BodyText, ImGuiCol.TextDisabled), "Not available".Loc());
         }
     }
 

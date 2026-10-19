@@ -10,7 +10,7 @@ internal static class TriadDeckNameHelper
             return false;
         }
 
-        return a.Trim().Equals(b.Trim(), StringComparison.OrdinalIgnoreCase);
+        return NpcNameText.Normalize(a.Trim()).Equals(NpcNameText.Normalize(b.Trim()), StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool RowMatchesNpc(string deckRowName, string expectedName, string npcName)
@@ -24,6 +24,10 @@ internal static class TriadDeckNameHelper
         {
             return true;
         }
+
+        // 7.25 前寫進遊戲的牌組名仍是舊中間點寫法，與現在的 NPC 名比對前兩邊都正規化。
+        deckRowName = NpcNameText.Normalize(deckRowName);
+        npcName = NpcNameText.Normalize(npcName);
 
         if (!string.IsNullOrEmpty(npcName) &&
             deckRowName.StartsWith(npcName, StringComparison.OrdinalIgnoreCase) &&

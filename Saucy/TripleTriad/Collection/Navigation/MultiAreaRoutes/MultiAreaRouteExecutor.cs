@@ -3,9 +3,11 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using ECommons.Automation;
 using ECommons.GameHelpers;
+using ECommons.LanguageHelpers;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using Saucy.Framework;
 using Saucy.IPC;
 using System;
@@ -68,6 +70,9 @@ internal static unsafe class MultiAreaRouteExecutor
 {
     private const uint GeneralActionDismount = 23;
 
+    /// <summary>傳送確認框的認領長度：蓋過「等換區」那一步的 30 秒上限。</summary>
+    private static readonly TimeSpan RouteYesnoClaim = TimeSpan.FromSeconds(30);
+
     public static bool TryBeginRoute(
         MultiAreaRoute route,
         MultiAreaRouteContext context,
@@ -104,23 +109,23 @@ internal static unsafe class MultiAreaRouteExecutor
 
             if (AetheryteHelper.IsPlayerInAetheryteTerritory(aetheryteId))
             {
-                beginMessage = $"[Saucy] Entering {route.Name}, then moving to the NPC.";
+                beginMessage = "[Saucy] " + "Entering ??, then moving to the NPC.".Loc(route.Name);
                 return true;
             }
 
             if (!Lifestream.TryTeleport(aetheryteId))
             {
-                Svc.Chat.PrintError($"[Saucy] Lifestream could not teleport for {route.Name}.");
+                Svc.Chat.PrintError("[Saucy] " + "Lifestream could not teleport for ??.".Loc(route.Name));
                 return false;
             }
 
             beginMessage =
-                $"[Saucy] Teleporting for {route.Name}, then moving to the NPC.";
+                "[Saucy] " + "Teleporting for ??, then moving to the NPC.".Loc(route.Name);
             return true;
         }
 
         beginMessage =
-            $"[Saucy] Entering {route.Name}, then moving to the NPC.";
+            "[Saucy] " + "Entering ??, then moving to the NPC.".Loc(route.Name);
         return true;
     }
 
@@ -138,14 +143,15 @@ internal static unsafe class MultiAreaRouteExecutor
             MultiAreaRouteStepKind.Aethernet => TickAethernet(step, execution),
             MultiAreaRouteStepKind.Mount => TickMount(),
             MultiAreaRouteStepKind.MoveTo => TickMoveTo(step, execution),
-            MultiAreaRouteStepKind.Interact => TickInteract(step),
-            MultiAreaRouteStepKind.SelectYesno => TickSelectYesno(step),
+            MultiAreaRouteStepKind.Interact => TickInteract(step, execution),
+            MultiAreaRouteStepKind.SelectYesno => TickSelectYesno(execution),
             MultiAreaRouteStepKind.WaitForZone => TickWaitForZone(execution),
             var _ => false
         };
 
         if (execution.Failed)
         {
+            LogStep(execution, step, "失敗，路線停止");
             return false;
         }
 
@@ -154,8 +160,12 @@ internal static unsafe class MultiAreaRouteExecutor
             return false;
         }
 
+        LogStep(execution, step, "完成");
         execution.StepIndex++;
         execution.StepActionStarted = false;
+        execution.SteerResumed = false;
+        execution.Steer?.Reset();
+        execution.AethernetHop = null;
         execution.StepStartedUtc = DateTime.UtcNow;
         return execution.StepIndex >= execution.Route.Steps.Count;
     }
@@ -220,15 +230,19 @@ internal static unsafe class MultiAreaRouteExecutor
         var shardId = ResolveShardId(step);
         if (shardId == 0)
         {
-            Svc.Chat.PrintError($"[Saucy] Could not resolve aethernet shard \"{step.AethernetShardName}\".");
+            Svc.Chat.PrintError("[Saucy] " + "Could not resolve aethernet shard \"??\".".Loc(step.AethernetShardName));
             execution.Failed = true;
             return false;
         }
 
         if (!execution.StepActionStarted)
         {
+            // The shard can sit in another zone (Foundation -> The Last Vigil), whose coordinates mean nothing here.
+            var shardTerritory = GetAetheryteTerritoryId(shardId);
             var shardPos = AetheryteHelper.GetAethernetShardWorldPosition(shardId);
-            if (shardPos != null && Vector3.Distance(Player.Position, shardPos.Value) <= 10f)
+            if (shardPos != null &&
+                Svc.ClientState.TerritoryType == shardTerritory &&
+                Vector3.Distance(Player.Position, shardPos.Value) <= 10f)
             {
                 return true;
             }
@@ -238,25 +252,48 @@ internal static unsafe class MultiAreaRouteExecutor
                 return false;
             }
 
-            if (!Lifestream.TryAethernetViaLiCommand(
-                step.AethernetShardName ?? AetheryteHelper.GetAethernetShardName(shardId)))
+            var shardName = step.AethernetShardName ?? AetheryteHelper.GetAethernetShardName(shardId);
+            if (!Lifestream.TryAethernetViaLiCommand(shardName))
             {
-                Svc.Chat.PrintError($"[Saucy] Lifestream could not aethernet for {execution.Route.Name}.");
+                Svc.Chat.PrintError("[Saucy] " + "Lifestream could not aethernet for ??.".Loc(execution.Route.Name));
                 execution.Failed = true;
                 return false;
             }
 
             execution.StepActionStarted = true;
             execution.StepStartedUtc = DateTime.UtcNow;
+            execution.AethernetHop = new AethernetHopWatch(
+                $"路線「{execution.Route.Name}」", shardName ?? shardId.ToString(), shardTerritory, shardPos);
             return false;
         }
 
-        if (Lifestream.IsBusyNow() || IsBetweenAreas() || !Player.Interactable || Player.IsAnimationLocked)
+        if (execution.AethernetHop is not { } hop)
         {
+            Svc.Chat.PrintError("[Saucy] " + "Lifestream could not aethernet for ??.".Loc(execution.Route.Name));
+            execution.Failed = true;
             return false;
         }
 
-        return DateTime.UtcNow - execution.StepStartedUtc > TimeSpan.FromSeconds(2);
+        switch (hop.Update(Lifestream.IsBusyNow()))
+        {
+            case AethernetHopWatch.Result.Waiting:
+                return false;
+
+            case AethernetHopWatch.Result.Landed:
+                // The old two-second floor stays as a minimum.
+                return DateTime.UtcNow - execution.StepStartedUtc > TimeSpan.FromSeconds(2);
+
+            case AethernetHopWatch.Result.TimedOut:
+                Svc.Chat.PrintError("[Saucy] " + "Navigation timed out.".Loc());
+                execution.Failed = true;
+                return false;
+
+            default:
+                // Walking on would plan in the wrong zone or from the wrong spot, so stop instead.
+                Svc.Chat.PrintError("[Saucy] " + "Lifestream could not aethernet for ??.".Loc(execution.Route.Name));
+                execution.Failed = true;
+                return false;
+        }
     }
 
     private static uint ResolveShardId(MultiAreaRouteStep step)
@@ -269,14 +306,14 @@ internal static unsafe class MultiAreaRouteExecutor
         return step.AetheryteId;
     }
 
-    private static bool TickSelectYesno(MultiAreaRouteStep step)
+    private static bool TickSelectYesno(RouteExecution execution)
     {
         if (!SelectYesnoHelper.TryGetVisible(out var yesno))
         {
             return false;
         }
 
-        if (!SelectYesnoHelper.IsRouteSafeYesno(yesno))
+        if (!IsExpectedRouteYesno(execution, yesno))
         {
             return false;
         }
@@ -306,7 +343,9 @@ internal static unsafe class MultiAreaRouteExecutor
             return false;
         }
 
-        return TravelMountHelper.TryMountUp();
+        // 騎不上去時不要卡在這一步(這一步沒有逾時,卡住就是永遠卡住):把它當作完成,
+        // 後續的 MoveTo 會經由 ResolveUseFlying 的未騎乘降級自動改走地面路徑。
+        return TravelMountHelper.TryMount() != MountAttemptResult.InProgress;
     }
 
     private static bool TickMoveTo(MultiAreaRouteStep step, RouteExecution execution)
@@ -324,20 +363,26 @@ internal static unsafe class MultiAreaRouteExecutor
                 return false;
             }
 
+            if (TickManualSteer(execution, ownsPath: false))
+            {
+                return false;
+            }
+
+            execution.SteerResumed = false;
             var approachPoint = TriadMapNavigation.ResolveNpcPathPoint(ResolveApproachPoint(step));
             var fly = TravelMountHelper.ResolveUseFlying(step.Fly);
             if (!Vnavmesh.TryMoveTo(approachPoint, fly, step.Range) &&
                 fly &&
                 !Vnavmesh.TryMoveTo(approachPoint, false, step.Range))
             {
-                Svc.Chat.PrintError("[Saucy] vnavmesh could not start movement for this route step.");
+                Svc.Chat.PrintError("[Saucy] " + "vnavmesh could not start movement for this route step.".Loc());
                 execution.Failed = true;
                 return false;
             }
 
             if (!Vnavmesh.IsMoving() && !Vnavmesh.IsPathfindInProgress())
             {
-                Svc.Chat.PrintError("[Saucy] vnavmesh could not start movement for this route step.");
+                Svc.Chat.PrintError("[Saucy] " + "vnavmesh could not start movement for this route step.".Loc());
                 execution.Failed = true;
                 return false;
             }
@@ -368,7 +413,40 @@ internal static unsafe class MultiAreaRouteExecutor
             }
         }
 
+        // 送過路徑之後只在使用者接手、停手之後重送一次；導航自己停在半路照舊不重送。
+        if (TickManualSteer(execution, ownsPath: true) || execution.Failed)
+        {
+            return false;
+        }
+
+        if (execution.SteerResumed)
+        {
+            execution.SteerResumed = false;
+            execution.StepActionStarted = false;
+        }
+
         return false;
+    }
+
+    /// <summary>回 true＝讓位中（這一幀不要送路徑）；放棄時把整條路線標成失敗。</summary>
+    private static bool TickManualSteer(RouteExecution execution, bool ownsPath)
+    {
+        execution.Steer ??= new ManualSteerYield($"路線「{execution.Route.Name}」");
+        switch (execution.Steer.Tick(ownsPath, busy: false, out var paused))
+        {
+            case ManualSteerYield.Result.Hold:
+                return true;
+            case ManualSteerYield.Result.Resumed:
+                execution.SteerResumed = true;
+                execution.StepStartedUtc += paused;
+                return false;
+            case ManualSteerYield.Result.GaveUp:
+                Svc.Chat.PrintError("[Saucy] " + "Stopped navigation: you kept moving on your own for ?? seconds.".Loc(global::Saucy.Framework.GoldSaucer.ManualSteerWatch.MaxYieldMs / 1000));
+                execution.Failed = true;
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static bool TryCompleteMoveToStep(MultiAreaRouteStep step)
@@ -405,7 +483,7 @@ internal static unsafe class MultiAreaRouteExecutor
         return step.Position;
     }
 
-    private static bool TickInteract(MultiAreaRouteStep step)
+    private static bool TickInteract(MultiAreaRouteStep step, RouteExecution execution)
     {
         if (step.DismountFirst && !TryDismount())
         {
@@ -434,8 +512,46 @@ internal static unsafe class MultiAreaRouteExecutor
             return false;
         }
 
+        ClaimRouteYesno(execution);
         TargetSystem.Instance()->InteractWithObject((GameObject*)target.Address, false);
         return true;
+    }
+
+    /// <summary>互動叫出傳送確認框之前先請 YesAlready 暫停按是／否框（它在 PostSetup 當下就按）；問不到就把那一扇交給它或使用者。</summary>
+    private static void ClaimRouteYesno(RouteExecution execution)
+    {
+        var now = DateTime.UtcNow;
+        if (YesAlready.TryPauseSelectYesno((int)RouteYesnoClaim.TotalMilliseconds))
+        {
+            execution.YesnoClaimUntilUtc = now + RouteYesnoClaim;
+            return;
+        }
+
+        execution.YesnoClaimUntilUtc = null;
+        Svc.Log.Information($"[Saucy] 路線「{execution.Route.Name}」：無法確認 YesAlready 不會按傳送確認框，這一扇 Saucy 不按");
+    }
+
+    /// <summary>只按這條路線預期的傳送確認框：句子要等於 Warp 表裡「傳送進本路線目的地」的那句，而且 YesAlready 確定不會同時按。</summary>
+    private static bool IsExpectedRouteYesno(RouteExecution execution, AddonSelectYesno* yesno)
+    {
+        if (execution.YesnoClaimUntilUtc is not { } claimUntil || DateTime.UtcNow >= claimUntil ||
+            !SelectYesnoHelper.IsRouteSafeYesno(yesno))
+        {
+            return false;
+        }
+
+        if (SelectYesnoHelper.IsWarpPromptInto(yesno, execution.Route.ArrivalTerritoryIds))
+        {
+            return true;
+        }
+
+        if (!execution.UnexpectedYesnoLogged)
+        {
+            execution.UnexpectedYesnoLogged = true;
+            Svc.Log.Information($"[Saucy] 路線「{execution.Route.Name}」：確認框不是預期的傳送確認，Saucy 不按：{SelectYesnoHelper.GetPrompt(yesno)}");
+        }
+
+        return false;
     }
 
     private static bool TickWaitForZone(RouteExecution execution)
@@ -457,7 +573,7 @@ internal static unsafe class MultiAreaRouteExecutor
         }
 
         if (SelectYesnoHelper.TryGetVisible(out var yesno) &&
-            SelectYesnoHelper.IsRouteSafeYesno(yesno) &&
+            IsExpectedRouteYesno(execution, yesno) &&
             EzThrottler.Throttle("SaucyRouteYesno"))
         {
             SelectYesnoHelper.PressYes(yesno);
@@ -471,7 +587,7 @@ internal static unsafe class MultiAreaRouteExecutor
 
         if (DateTime.UtcNow - execution.StepStartedUtc > TimeSpan.FromSeconds(30))
         {
-            Svc.Chat.PrintError($"[Saucy] Did not arrive in {execution.Route.Name} after zone transition.");
+            Svc.Chat.PrintError("[Saucy] " + "Did not arrive in ?? after zone transition.".Loc(execution.Route.Name));
             execution.Failed = true;
         }
 
@@ -508,14 +624,27 @@ internal static unsafe class MultiAreaRouteExecutor
 
     private static bool IsBetweenAreas() => Svc.Condition[ConditionFlag.BetweenAreas];
 
+    /// <summary>One Information line per step change, never per frame.</summary>
+    private static void LogStep(RouteExecution execution, MultiAreaRouteStep step, string outcome) =>
+        Svc.Log.Information(
+            $"[Saucy] 路線「{execution.Route.Name}」第 {execution.StepIndex + 1}/{execution.Route.Steps.Count} 步（{step.Kind}）{outcome}；{AethernetHopWatch.DescribeLocation()}。");
+
     internal sealed class RouteExecution
     {
+        public AethernetHopWatch? AethernetHop;
         public required MultiAreaRouteContext Context;
         public bool Failed;
         public required MultiAreaRoute Route;
+        public ManualSteerYield? Steer;
+        public bool SteerResumed;
         public bool StepActionStarted;
         public int StepIndex;
         public DateTime StepStartedUtc;
+
+        /// <summary>YesAlready 確定不會按確認框的期限；null＝沒拿到，路線不按確認框。</summary>
+        public DateTime? YesnoClaimUntilUtc;
+
+        public bool UnexpectedYesnoLogged;
     }
 
     internal sealed class MultiAreaRouteContext

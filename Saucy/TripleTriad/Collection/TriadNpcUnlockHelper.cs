@@ -1,3 +1,4 @@
+using ECommons.LanguageHelpers;
 using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
@@ -84,13 +85,13 @@ internal static class TriadNpcUnlockHelper
         info != null && AreUnlockQuestsComplete(info, out var _);
 
     public static string FormatLockedMessage(string npcName, uint incompleteQuestId, string? incompleteQuestName) =>
-        $"[Saucy] {npcName}'s Triple Triad isn't unlocked yet — complete {FormatQuestLabel(incompleteQuestId, incompleteQuestName)} first.";
+        "[Saucy] " + "??'s Triple Triad isn't unlocked yet — complete ?? first.".Loc(npcName, FormatQuestLabel(incompleteQuestId, incompleteQuestName));
 
     public static string FormatLockedMessageAnyOf(string npcName, IReadOnlyList<(uint QuestId, string? QuestName)> quests)
     {
         if (quests.Count == 0)
         {
-            return $"[Saucy] {npcName}'s Triple Triad isn't unlocked yet.";
+            return "[Saucy] " + "??'s Triple Triad isn't unlocked yet.".Loc(npcName);
         }
 
         if (quests.Count == 1)
@@ -99,17 +100,17 @@ internal static class TriadNpcUnlockHelper
         }
 
         var labels = string.Join(", ", quests.Select(q => FormatQuestLabel(q.QuestId, q.QuestName)));
-        return $"[Saucy] {npcName}'s Triple Triad isn't unlocked yet — complete one of: {labels}.";
+        return "[Saucy] " + "??'s Triple Triad isn't unlocked yet — complete one of: ??.".Loc(npcName, labels);
     }
 
     public static string FormatCouldNotVerifyMessage(string npcName) =>
-        $"[Saucy] Could not verify Triple Triad unlock for {npcName}.";
+        "[Saucy] " + "Could not verify Triple Triad unlock for ??.".Loc(npcName);
 
     public static string FormatNavigationInteractAbortMessage(TriadNpc? npc) =>
-        $"[Saucy] Triple Triad is not available with {npc?.Name ?? "this NPC"} (unlocked yet?). Aborting.";
+        "[Saucy] " + "Triple Triad is not available with ?? (unlocked yet?). Aborting.".Loc(npc?.Name ?? "this NPC".Loc());
 
     public static string FormatQuestLabel(uint questId, string? questName) =>
-        string.IsNullOrEmpty(questName) ? $"quest #{questId}" : $"\"{questName}\"";
+        string.IsNullOrEmpty(questName) ? "quest #??".Loc(questId) : "\"??\"".Loc(questName);
 
     private static bool TryResolveGameNpcInfo(TriadNpc npc, out GameNpcInfo info) =>
         GameNpcDB.Get().mapNpcs.TryGetValue(npc.Id, out info!);

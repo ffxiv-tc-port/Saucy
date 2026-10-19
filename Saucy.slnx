@@ -2,6 +2,9 @@
   <Configurations>
     <Platform Name="x64" />
   </Configurations>
+  <Project Path="ECommons/ECommons/ECommons.csproj">
+    <Platform Project="x64" />
+  </Project>
   <Project Path="PunishLib/PunishLib/PunishLib.csproj">
     <Platform Project="x64" />
   </Project>

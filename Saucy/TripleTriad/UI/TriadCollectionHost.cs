@@ -20,6 +20,8 @@ internal sealed class TriadCollectionHost : IDisposable
 
     private bool _isDrawing;
 
+    private UIStateTriadResults? _lastRecordedResult;
+
     private bool _sawGameDataReady;
 
     public TriadCollectionHost(IDalamudPluginInterface pluginInterface)
@@ -42,6 +44,36 @@ internal sealed class TriadCollectionHost : IDisposable
         pluginInterface.UiBuilder.Draw += OnDraw;
     }
 
+    /// <summary>框架執行緒呼叫。每場對戰結果記一次 NPC 統計；勝負都沒讀到的結果不記。</summary>
+    /// <remarks>結果讀取器在同一扇結果視窗可能逾時補發，補發的是同一個結果物件，以參考相等去重。</remarks>
+    public void RecordMatchResult(UIStateTriadResults result)
+    {
+        if (!result.isWin && !result.isDraw && !result.isLose)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(result, _lastRecordedResult))
+        {
+            return;
+        }
+
+        _lastRecordedResult = result;
+        if (TriadRun.matchNpc is not { } npc)
+        {
+            Svc.Log.Information("[NPC 統計] 這場沒在棋盤上辨識到對手 NPC（PvP 或名字對不上），不記錄");
+            return;
+        }
+
+        if (!_statTracker.OnMatchFinished(npc.Id, result))
+        {
+            Svc.Log.Information($"[NPC 統計] {npc.Name}（id {npc.Id}）不在 NPC 資料表裡，不記錄");
+            return;
+        }
+
+        Svc.Log.Debug($"[NPC 統計] 已記錄 {npc.Name}：勝={result.isWin} 和={result.isDraw} 負={result.isLose} MGP={result.numMGP} 卡={result.cardItemId}");
+    }
+
     public void Dispose()
 
     {
@@ -50,6 +82,10 @@ internal sealed class TriadCollectionHost : IDisposable
         _windowSystem.RemoveAllWindows();
 
         _cardSearchWindow.Dispose();
+
+        _cardInfoWindow.Dispose();
+
+        _npcStatsWindow.Dispose();
     }
 
     private void OnDraw()

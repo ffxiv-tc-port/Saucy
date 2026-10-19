@@ -10,7 +10,7 @@ public class TriadCollectionSettings
     public bool CheckNpcHideBeaten { get; set; }
     public bool CheckNpcHideCompleted { get; set; }
 
-    public uint TravelMountId { get; set; }
+    public uint TravelMountId { get; set; } = 71;
 
     public Dictionary<int, TriadNpcStatRecord> NpcStats { get; set; } = [];
 }

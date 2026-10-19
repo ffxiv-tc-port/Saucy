@@ -73,6 +73,9 @@ public partial class TriadSession
             return false;
         }
 
+        // 鎖內不做聊天／log／存設定／寫牌組快取檔：這段的呼叫鏈經過 ResolveRegionModsForNpc
+        // 的 prep 同步子樹會走到那幾種副作用，先收起來，出鎖之後才做。
+        using var deferScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             if (preGameNpc == null)
@@ -209,6 +212,14 @@ public partial class TriadSession
 
         var kickPreviewEval = false;
         TriadNpc previewNpc = null;
+
+        // 判斷型的 IPC 不能延後(回傳值決定鎖內走哪條分支),只能在取鎖之前問完:
+        // IsDeckOptimizerBlockedByNavmesh() 會打 vnavmesh 的四支 rpc。
+        // 前面那個 && 是把鎖內第一道閘門的條件照抄過來:那道閘門先回 false 時,
+        // 這個運算式根本不會被求值,不白打 IPC。
+        var blockedByNavmesh =
+            !(HasOptimizedDeckApplied && _optimizerTargetDeckId >= 0) &&
+            IsDeckOptimizerBlockedByNavmesh();
         lock (_preGameLock)
         {
             if (HasOptimizedDeckApplied && _optimizerTargetDeckId >= 0)
@@ -216,7 +227,7 @@ public partial class TriadSession
                 return false;
             }
 
-            if (IsDeckOptimizerBlockedByNavmesh())
+            if (blockedByNavmesh)
             {
                 return true;
             }
@@ -252,6 +263,9 @@ public partial class TriadSession
             return false;
         }
 
+        // 鎖內不做聊天／log／存設定／寫牌組快取檔：這段的呼叫鏈經過 ResolveRegionModsForNpc
+        // 的 prep 同步子樹會走到那幾種副作用，先收起來，出鎖之後才做。
+        using var deferScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             foreach (var candidate in GetOrderedDeckCandidatesLocked(autoPickDeck, manualDeckIndex))
@@ -419,17 +433,9 @@ public partial class TriadSession
             }
         }
 
-        if (IsProfileDeckComplete(deckId))
-        {
-            return true;
-        }
-
-        if (IsProfileDeckSelectable(deckId))
-        {
-            return true;
-        }
-
-        return false;
+        // 已命名但沒湊滿牌的卡組不能上場：選了也不會開局，
+        // 遊戲會一直停在選卡組畫面直到 30 秒計時器跑完。
+        return IsProfileDeckComplete(deckId);
     }
 
     private bool IsProfileDeckSelectable(int deckId)

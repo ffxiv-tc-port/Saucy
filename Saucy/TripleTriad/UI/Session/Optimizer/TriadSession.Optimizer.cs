@@ -19,6 +19,8 @@ public partial class TriadSession
             return;
         }
 
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using var chatScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             var regionMods = ResolveRegionModsForNpc(preGameNpc);
@@ -43,7 +45,10 @@ public partial class TriadSession
                 TrySlotCachedDeckIntoProfileLocked(preGameNpc, regionMods, out var _);
             }
 
-            EnsurePreviewEvalForNpc(preGameNpc, regionMods);
+            // 出鎖後才做:EnsurePreviewEvalForNpc 會走到 Vnavmesh.ShouldDeferHeavyWork()。
+            var previewEvalNpc = preGameNpc;
+            TriadDeferredSideEffects.RunAfterLock(
+                () => EnsurePreviewEvalForNpc(previewEvalNpc, regionMods));
         }
     }
 
@@ -143,7 +148,10 @@ public partial class TriadSession
             return;
         }
 
-        StartDeckOptimizer(preGameNpc, regionMods);
+        // 出鎖後才做:StartDeckOptimizer 的前導會打 Questionable.IsRunning、
+        // Vnavmesh 的四支 rpc,以及(拒絕未解鎖 NPC 時)Lifestream.Abort 與 Path.Stop。
+        var startNpc = preGameNpc;
+        TriadDeferredSideEffects.RunAfterLock(() => StartDeckOptimizer(startNpc, regionMods));
     }
 
     private bool IsOptimizerStartBlockedForSessionLocked(string sessionKey)
@@ -281,6 +289,8 @@ public partial class TriadSession
             return;
         }
 
+        // 鎖內不做聊天／log／存設定：這段的呼叫鏈會走到那三種副作用，先收起來出鎖再做。
+        using var chatScope = TriadDeferredSideEffects.Begin();
         lock (_preGameLock)
         {
             ApplyOptimizedDeckToProfileLocked(deck, estWinChance);
@@ -291,19 +301,23 @@ public partial class TriadSession
         TriadDeckOptimizerJobs.UpdatePause(
             _pauseOptimizerForSolver ||
             _pauseOptimizerForActiveTriad ||
-            _pauseOptimizerForNavmesh);
+            _pauseOptimizerForNavmesh ||
+            _pauseOptimizerForQuestionable);
 
-    public void SyncDeckOptimizerPauseForVnavmesh()
+    public void SyncDeckOptimizerBackgroundPause()
     {
-        var shouldPause = Vnavmesh.ShouldDeferDeckOptimizerWork();
+        var pauseForNavmesh = Vnavmesh.ShouldDeferDeckOptimizerWork();
+        var pauseForQuestionable = C.PauseOptimizedDeckBuildWhileQuestionable && Questionable.IsQuestingNow();
         lock (_preGameLock)
         {
-            if (_pauseOptimizerForNavmesh == shouldPause)
+            if (_pauseOptimizerForNavmesh == pauseForNavmesh &&
+                _pauseOptimizerForQuestionable == pauseForQuestionable)
             {
                 return;
             }
 
-            _pauseOptimizerForNavmesh = shouldPause;
+            _pauseOptimizerForNavmesh = pauseForNavmesh;
+            _pauseOptimizerForQuestionable = pauseForQuestionable;
             UpdateDeckOptimizerPause();
         }
     }
@@ -323,12 +337,14 @@ public partial class TriadSession
             return;
         }
 
-        TriadDeckLog.Print(message);
+        // force 一定要往下傳：TriadDeckLog.Print 的 force 預設是 false，會再檢查一次
+        // C.ShowOptimizerChatSpam，漏傳等於這裡標的 force 全部作廢。
+        TriadDeckLog.Print(message, force);
     }
 
     private void AnnounceOptimizerSkipOnce(string skipKey, string message)
     {
-        Svc.Log.Info(message);
+        TriadDeferredSideEffects.Info(message);
         if (_lastOptimizerSkipKey == skipKey)
         {
             return;

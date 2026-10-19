@@ -49,6 +49,7 @@ public partial class GameDataLoader
 
         cardInfoDB.mapCards.Clear();
         cardDB.cards.Clear();
+        npcDB.UnfreezeNpcs();
         npcDB.npcs.Clear();
         mapENpcCache.Clear();
         mapNpcAchievementId.Clear();
@@ -68,6 +69,7 @@ public partial class GameDataLoader
             FinalizeNpcList();
             FixLocalizedNameCasing();
             cardInfoDB.OnLoaded();
+            npcDB.FreezeNpcs();
 
             var cardCount = cardDB.cards.Count;
             var npcCount = npcDB.npcs.Count;

@@ -1,6 +1,7 @@
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static ECommons.GenericHelpers;
 
@@ -44,7 +45,8 @@ internal static unsafe class TriadLocalClientStructs
     }
 }
 
-[StructLayout(LayoutKind.Explicit, Size = 0x1D0)]
+// Only ever reached through a pointer the game owns; Size is the game's own allocation size.
+[StructLayout(LayoutKind.Explicit, Size = 0x3C0)]
 internal unsafe struct AgentTripleTriad
 {
     [FieldOffset(0x00)] public AgentInterface AgentInterface;
@@ -58,7 +60,7 @@ internal unsafe struct AgentTripleTriad
             return null;
         }
 
-        return (AgentTripleTriad*)module->GetAgentByInternalId(AgentId.TripleTriad);
+        return (AgentTripleTriad*)module->GetAgentByInternalId(AgentId.TrippleTriad);
     }
 }
 
@@ -72,4 +74,63 @@ internal struct AddonTripleTriadSelDeck
 internal struct AddonTripleTriadResult
 {
     [FieldOffset(0)] public AtkUnitBase AtkUnitBase;
+}
+
+// Offsets match FFTriadBuddyDalamud; the outer layout (TurnState/decks/Board, 0xA8 per card) was
+// also checked offline against the 7.25 executable. The U/D/R/L order of the four side bytes is
+// taken from FFTriadBuddy; offline analysis only established where those bytes are.
+[StructLayout(LayoutKind.Explicit, Size = 0x1000)]
+internal unsafe struct AddonTripleTriad
+{
+    [StructLayout(LayoutKind.Explicit, Size = 0xA8)]
+    internal unsafe struct TripleTriadCard
+    {
+        [FieldOffset(0x8)] public AtkComponentBase* CardDropControl;
+        [FieldOffset(0x80)] public byte CardRarity;  // 1..5
+        [FieldOffset(0x81)] public byte CardType;    // 0: no type, 1: primal, 2: scion, 3: beastman, 4: garland
+        [FieldOffset(0x82)] public byte CardOwner;   // 0: empty, 1: blue, 2: red
+        [FieldOffset(0x83)] public byte NumSideU;
+        [FieldOffset(0x84)] public byte NumSideD;
+        [FieldOffset(0x85)] public byte NumSideR;
+        [FieldOffset(0x86)] public byte NumSideL;
+        [FieldOffset(0xA4)] public bool HasCard;
+    }
+
+    [InlineArray(5)]
+    internal struct DeckArray
+    {
+        private TripleTriadCard element0;
+    }
+
+    [InlineArray(9)]
+    internal struct BoardArray
+    {
+        private TripleTriadCard element0;
+    }
+
+    [FieldOffset(0x0)] public AtkUnitBase AtkUnitBase;
+    [FieldOffset(0x238)] public byte TurnState; // 0: waiting, 1: normal move, 2: masked move (order/chaos)
+
+    [FieldOffset(0x240)] public DeckArray BlueDeck; // 2be = end of numbers
+    [FieldOffset(0x588)] public DeckArray RedDeck;
+    [FieldOffset(0x8d0)] public BoardArray Board;
+}
+
+/// <summary>
+/// Old FFXIVClientStructs' AddonGSInfoCardList is missing the detail-pane stat fields
+/// (CardIconId, NumSideU/L/D/R, CardRarity, CardType) that newer versions expose. Those fields
+/// only feed secondary verification/fallback heuristics in TriadCardListSelectionReader and
+/// UIReaderTriadCardList (name/display-label/description-text/grid based detection remain
+/// fully intact), so report neutral "unknown" values here instead of guessing an unverifiable
+/// memory offset that could misbehave or crash against the live client.
+/// </summary>
+internal static unsafe class AddonGSInfoCardListExtensions
+{
+    public static int CardIconId(AddonGSInfoCardList* addon) => 0;
+    public static byte NumSideU(AddonGSInfoCardList* addon) => 0;
+    public static byte NumSideL(AddonGSInfoCardList* addon) => 0;
+    public static byte NumSideD(AddonGSInfoCardList* addon) => 0;
+    public static byte NumSideR(AddonGSInfoCardList* addon) => 0;
+    public static byte CardRarity(AddonGSInfoCardList* addon) => 0;
+    public static byte CardType(AddonGSInfoCardList* addon) => 0;
 }

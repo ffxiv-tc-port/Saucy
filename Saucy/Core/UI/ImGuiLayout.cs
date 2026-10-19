@@ -11,8 +11,7 @@ internal static class ImGuiLayout
 {
     public static void DrawCollapsingSection(string title, ImGuiTreeNodeFlags flags, Action body)
     {
-        using var header = ImRaii.Header(title, flags);
-        if (!header)
+        if (!ImGui.CollapsingHeader(title, flags))
         {
             return;
         }
@@ -31,8 +30,10 @@ internal static class ImGuiLayout
             onIconClick();
         }
 
-        if (!string.IsNullOrEmpty(tooltip) && ImGui.IsItemHovered())
+        if (!string.IsNullOrEmpty(tooltip) && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
         {
+            // 不帶旗標判不到＝按鈕停用中：只在這時把說明框推回全亮，啟用時外觀不變。
+            using var tooltipAlpha = ImRaii.PushStyle(ImGuiStyleVar.Alpha, 1f, !ImGui.IsItemHovered());
             ImGui.SetTooltip(tooltip);
         }
 

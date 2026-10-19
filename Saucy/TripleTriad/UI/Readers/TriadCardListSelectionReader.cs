@@ -51,12 +51,14 @@ internal static unsafe class TriadCardListSelectionReader
 
     public static int TryParseCardIdFromDisplayLabel(AddonGSInfoCardList* addon)
     {
-        if (addon->SelectedCardNumber == null)
+        // 🔴 不可以用 addon->SelectedCardNumber:CS 那個位移在台服是錯的。見 GSInfoCardListNodes。
+        var numberNode = GSInfoCardListNodes.SelectedCardNumber(addon);
+        if (numberNode == null)
         {
             return -1;
         }
 
-        return TryParseCardIdFromDisplayLabel(GUINodeUtils.GetNodeText(&addon->SelectedCardNumber->AtkResNode));
+        return TryParseCardIdFromDisplayLabel(GUINodeUtils.GetNodeText(&numberNode->AtkResNode));
     }
 
     public static int TryParseCardIdFromDisplayLabel(string? text)
@@ -96,8 +98,12 @@ internal static unsafe class TriadCardListSelectionReader
             displayCardId = TryParseCardIdFromDisplayLabel(addon);
         }
 
-        var name = addon->SelectedCardName != null
-            ? GUINodeUtils.GetNodeText(&addon->SelectedCardName->AtkResNode)?.Trim()
+        // 🔴🔴 不可以用 addon->SelectedCardName：台服沒有這個欄位,
+        // 連建構子都不清零 ⇒ 讀到堆積殘留的垃圾、判空擋不住、解參考就是 AVE。
+        // 所以走已證明成員資格的取得層。
+        var nameNode = GSInfoCardListNodes.SelectedCardName(addon);
+        var name = nameNode != null
+            ? GUINodeUtils.GetNodeText(&nameNode->AtkResNode)?.Trim()
             : null;
 
         if (IsMaskedCardName(name))
@@ -107,7 +113,7 @@ internal static unsafe class TriadCardListSelectionReader
 
         if (displayCardId > 0)
         {
-            var fromIcon = TriadCardDB.Get().TryGetCardIdFromIconId(addon->CardIconId);
+            var fromIcon = TriadCardDB.Get().TryGetCardIdFromIconId(AddonGSInfoCardListExtensions.CardIconId(addon));
             if (fromIcon >= 0 && fromIcon != displayCardId)
             {
                 return true;
@@ -120,7 +126,7 @@ internal static unsafe class TriadCardListSelectionReader
             }
         }
 
-        if (TriadCardDB.Get().TryGetCardIdFromIconId(addon->CardIconId) < 0 &&
+        if (TriadCardDB.Get().TryGetCardIdFromIconId(AddonGSInfoCardListExtensions.CardIconId(addon)) < 0 &&
             (string.IsNullOrWhiteSpace(name) || IsMaskedCardName(name)))
         {
             return true;
@@ -143,22 +149,23 @@ internal static unsafe class TriadCardListSelectionReader
 
         if (displayCardId > 0)
         {
-            var fromIcon = TriadCardDB.Get().TryGetCardIdFromIconId(addon->CardIconId);
+            var fromIcon = TriadCardDB.Get().TryGetCardIdFromIconId(AddonGSInfoCardListExtensions.CardIconId(addon));
             if (fromIcon < 0 || fromIcon == displayCardId)
             {
                 return displayCardId;
             }
         }
 
-        var iconCardId = TriadCardDB.Get().TryGetCardIdFromIconId(addon->CardIconId);
+        var iconCardId = TriadCardDB.Get().TryGetCardIdFromIconId(AddonGSInfoCardListExtensions.CardIconId(addon));
         if (iconCardId >= 0)
         {
             return iconCardId;
         }
 
-        if (addon->SelectedCardName != null)
+        var detailNameNode = GSInfoCardListNodes.SelectedCardName(addon);
+        if (detailNameNode != null)
         {
-            var name = GUINodeUtils.GetNodeText(&addon->SelectedCardName->AtkResNode)?.Trim();
+            var name = GUINodeUtils.GetNodeText(&detailNameNode->AtkResNode)?.Trim();
             if (!string.IsNullOrWhiteSpace(name) && !IsMaskedCardName(name))
             {
                 var cardFromName = TriadCardDB.Get().Find(name);
@@ -175,8 +182,9 @@ internal static unsafe class TriadCardListSelectionReader
             return fromStats;
         }
 
+        var numberNode = GSInfoCardListNodes.SelectedCardNumber(addon);
         var fromNumber = TryParseCardIdFromText(
-            addon->SelectedCardNumber != null ? &addon->SelectedCardNumber->AtkResNode : null);
+            numberNode != null ? &numberNode->AtkResNode : null);
         if (fromNumber > 0)
         {
             return fromNumber;
@@ -369,7 +377,11 @@ internal static unsafe class TriadCardListSelectionReader
             }
         }
 
-        AddCandidate(addon->SelectedPage, addon->SelectedCardIndex);
+        if (GSInfoCardListState.TryGetPageIndex(addon, out var pageIndex) &&
+            GSInfoCardListState.TryGetCellIndex(addon, out var cellIndex))
+        {
+            AddCandidate(pageIndex, cellIndex);
+        }
 
         if (agent != null)
         {
@@ -392,27 +404,28 @@ internal static unsafe class TriadCardListSelectionReader
 
     private static int TryReadCardIdFromStats(AddonGSInfoCardList* addon)
     {
-        if (addon->NumSideU == 0 &&
-            addon->NumSideL == 0 &&
-            addon->NumSideD == 0 &&
-            addon->NumSideR == 0)
+        if (AddonGSInfoCardListExtensions.NumSideU(addon) == 0 &&
+            AddonGSInfoCardListExtensions.NumSideL(addon) == 0 &&
+            AddonGSInfoCardListExtensions.NumSideD(addon) == 0 &&
+            AddonGSInfoCardListExtensions.NumSideR(addon) == 0)
         {
             return -1;
         }
 
         var card = TriadCardDB.Get().Find(
-            addon->NumSideU,
-            addon->NumSideL,
-            addon->NumSideD,
-            addon->NumSideR,
-            (ETriadCardType)addon->CardType,
-            (ETriadCardRarity)addon->CardRarity);
+            AddonGSInfoCardListExtensions.NumSideU(addon),
+            AddonGSInfoCardListExtensions.NumSideL(addon),
+            AddonGSInfoCardListExtensions.NumSideD(addon),
+            AddonGSInfoCardListExtensions.NumSideR(addon),
+            (ETriadCardType)AddonGSInfoCardListExtensions.CardType(addon),
+            (ETriadCardRarity)AddonGSInfoCardListExtensions.CardRarity(addon));
         return card?.Id ?? -1;
     }
 
     private static int TryParseCardIdFromDescription(AddonGSInfoCardList* addon)
     {
-        var descNode = addon->SelectedCardDescription;
+        // 🔴 不可以用 addon->SelectedCardDescription:CS 那個位移在台服指到卡片族名節點。
+        var descNode = GSInfoCardListNodes.SelectedCardDescription(addon);
         if (descNode == null)
         {
             return -1;

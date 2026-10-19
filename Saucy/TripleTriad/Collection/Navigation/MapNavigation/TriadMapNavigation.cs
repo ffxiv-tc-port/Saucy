@@ -1,6 +1,7 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using ECommons.GameHelpers;
+using ECommons.LanguageHelpers;
 using Saucy.Framework;
 using Saucy.IPC;
 using System;
@@ -19,10 +20,6 @@ internal static unsafe partial class TriadMapNavigation
     private static readonly TimeSpan NavMeshBuildWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PathfindStartTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MountBeforeNavTimeout = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan AethernetStartupTimeout = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan AethernetSettleDelay = TimeSpan.FromSeconds(1.5);
-    private static readonly float AethernetMinMoveDistance = 3f;
-    private static readonly float AethernetNearShardDistance = 8f;
 
     private static PendingNavigation? _pending;
     private static TriadNavigationGoal _activeNavigationGoal = TriadNavigationGoal.FarmCards;
@@ -134,6 +131,12 @@ internal static unsafe partial class TriadMapNavigation
             TriadRun.EnsureNavigationDeckOptimizerStarted(pending.Npc);
         }
 
+        var yielding = TickManualSteer(pending);
+        if (_pending != pending)
+        {
+            return;
+        }
+
         var timeout = pending.RouteExecution?.Route.Timeout ?? DefaultNavigationTimeout;
         var shouldWaitForDeckOptimizer =
             pending.Phase is NavigationPhase.MovingToNpc or NavigationPhase.StartingTriadMatch;
@@ -147,14 +150,21 @@ internal static unsafe partial class TriadMapNavigation
             pending.Npc != null &&
             pending.Phase is NavigationPhase.MovingToNpc or NavigationPhase.StartingTriadMatch &&
             IsPlayerWithinNpcInteractionRange(pending);
-        if (waitingForDeckOptimizer || waitingForNavMesh || waitingNearNpc)
+        // 讓位期間等的是使用者，整趟逾時的時鐘停住（路線裡的移動步驟讓位也一樣）。
+        var waitingForUser = yielding || pending.RouteExecution?.Steer?.Yielding == true;
+        if (waitingForDeckOptimizer || waitingForNavMesh || waitingNearNpc || waitingForUser)
         {
             pending.StartedUtc = DateTime.UtcNow;
         }
         else if (DateTime.UtcNow - pending.StartedUtc > timeout)
         {
-            Svc.Chat.PrintError("[Saucy] Navigation timed out.");
+            Svc.Chat.PrintError("[Saucy] " + "Navigation timed out.".Loc());
             ClearPending();
+            return;
+        }
+
+        if (yielding)
+        {
             return;
         }
 
@@ -285,15 +295,10 @@ internal static unsafe partial class TriadMapNavigation
             ActiveAethernetShardId = activeAethernetShardId,
             HubAetheryteId = hubAetheryteId,
             ExpectedPostTeleportTerritoryId = expectedPostTeleportTerritoryId,
-            AethernetStartPosition = activeAethernetShardId != 0 ? Player.Position : null,
-            AethernetShardPosition = activeAethernetShardId != 0
-                ? AetheryteHelper.GetAethernetShardWorldPosition(activeAethernetShardId)
-                : null,
+            AethernetHop = activeAethernetShardId != 0 ? NewAethernetHop(activeAethernetShardId, npc, location) : null,
             Phase = startingPhase,
             StartedUtc = DateTime.UtcNow,
-            PhaseStartedUtc = DateTime.UtcNow,
-            AethernetSeenBusy = false,
-            AethernetBusyClearedUtc = null
+            PhaseStartedUtc = DateTime.UtcNow
         };
 
         EnsureFrameworkSubscription();
@@ -355,11 +360,45 @@ internal static unsafe partial class TriadMapNavigation
         return false;
     }
 
-    private static void ClearPending()
+    private static void ClearPending(bool stopVnav = true)
     {
-        TriadRun.SyncDeckOptimizerPauseForVnavmesh();
-        StopVnavIfRunning();
+        TriadRun.SyncDeckOptimizerBackgroundPause();
+        if (stopVnav)
+        {
+            StopVnavIfRunning();
+        }
+
         _pending = null;
+    }
+
+    /// <summary>自己送路徑的幾個階段裡，使用者接手就讓位：回 true＝這一幀什麼都不送、不算逾時。
+    /// 停手後從目前位置接續（重試次數歸零、階段時鐘往後推讓位的時間）；讓位太久就結束這一趟、不停使用者的移動。</summary>
+    private static bool TickManualSteer(PendingNavigation pending)
+    {
+        var sendsPaths = pending.Phase is NavigationPhase.ApproachingAethernetHub or NavigationPhase.MovingToNpc
+                             or NavigationPhase.StartingTriadMatch ||
+                         (pending.Phase == NavigationPhase.WaitingForNavReady && Vnavmesh.IsNavReady());
+        if (!sendsPaths)
+        {
+            pending.Steer.Reset();
+            return false;
+        }
+
+        switch (pending.Steer.Tick(ownsPath: true, busy: false, out var paused))
+        {
+            case ManualSteerYield.Result.Hold:
+                return true;
+            case ManualSteerYield.Result.Resumed:
+                pending.PhaseStartedUtc += paused;
+                pending.VnavRetryCount = 0;
+                return false;
+            case ManualSteerYield.Result.GaveUp:
+                Svc.Chat.PrintError("[Saucy] " + "Stopped navigation: you kept moving on your own for ?? seconds.".Loc(global::Saucy.Framework.GoldSaucer.ManualSteerWatch.MaxYieldMs / 1000));
+                ClearPending(stopVnav: false);
+                return true;
+            default:
+                return false;
+        }
     }
     private static bool IsBetweenAreas() => Svc.Condition[ConditionFlag.BetweenAreas];
 
@@ -414,10 +453,7 @@ internal static unsafe partial class TriadMapNavigation
     private sealed class PendingNavigation
     {
         public uint ActiveAethernetShardId;
-        public DateTime? AethernetBusyClearedUtc;
-        public bool AethernetSeenBusy;
-        public Vector3? AethernetShardPosition;
-        public Vector3? AethernetStartPosition;
+        public AethernetHopWatch? AethernetHop;
         public bool AnnouncedTriadStart;
         public bool ArrivedViaMultiAreaRoute;
         public bool AttemptMountBeforeNav;
@@ -438,6 +474,7 @@ internal static unsafe partial class TriadMapNavigation
         public DateTime PhaseStartedUtc;
         public MultiAreaRouteExecutor.RouteExecution? RouteExecution;
         public DateTime StartedUtc;
+        public readonly ManualSteerYield Steer = new("幻卡 NPC 導航");
         public required uint TargetTerritoryId;
         public int VnavRetryCount;
     }

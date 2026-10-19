@@ -1,4 +1,4 @@
-using Saucy.CuffACur;
+using Dalamud.Game.ClientState.Conditions;
 using Saucy.Framework;
 using Saucy.IPC;
 using System;
@@ -10,8 +10,16 @@ public sealed partial class Saucy
     {
         try
         {
+            _stopAllIpc?.ProcessPending();
+            TriadLogoutAfterRun.Tick();
+            GateEmergencyHold.Tick();
             SubscriptionManager.Subscribe();
-            YesAlready.SyncForGameActivity(GoldSaucerGameActivity.IsAnyGamePlaying());
+            GateNpcNavigation.TickManualInteract();
+            Framework.GoldSaucer.GoldSaucerNavigator.Tick();
+            global::Saucy.MiniCactpot.MiniCactpotAutoPlay.Tick();
+            global::Saucy.JumboCactpot.JumboCactpotAutoTalk.Tick();
+            UpdateGateAutoOpen();
+            GateScheduleAutomation.Tick();
             TriadOptimizedDeckCacheStore.TickCharacter();
             TriadMapNavigation.Tick();
 
@@ -29,29 +37,19 @@ public sealed partial class Saucy
             }
 
             UpdateTriadAutoOpen();
-            GoldSaucerDutyFinderDefer.Tick();
-            AutoRetainerPause.Tick();
+            if (Svc.Condition[ConditionFlag.WaitingForDutyFinder])
+            {
+                TriadRunSession.ApplyDutyFinderDeferIfNeeded();
+            }
 
             if (C.UseSimmedDeck && TriadRun.ShouldBuildOptimizedDeck())
             {
-                TriadRun.SyncDeckOptimizerPauseForVnavmesh();
+                TriadRun.SyncDeckOptimizerBackgroundPause();
                 TriadDeckOptimizerJobs.Tick();
                 if (!Vnavmesh.ShouldDeferDeckOptimizerWork())
                 {
                     TriadRun.TickWorldTargetDeckOptimizer();
                 }
-            }
-
-            if (CuffACurAutomation.IsEnabled)
-            {
-                CuffACurAutomation.RunModule();
-                return;
-            }
-
-            if (GoldSaucerArcadeMachineHelper.IsEnabled(GoldSaucerArcadeMachine.Limb))
-            {
-                P.LimbManager.RunModule();
-                return;
             }
 
             if (TriadDialogueSkip.ShouldRun())
@@ -94,7 +92,7 @@ public sealed partial class Saucy
 
                             if (C.LogOutAfterTriadRun)
                             {
-                                ScheduleLogout();
+                                TriadLogoutAfterRun.Schedule();
                             }
                         }
                     }
@@ -141,6 +139,28 @@ public sealed partial class Saucy
 
         _pluginUi.OpenForTriad();
         _autoOpenedForTriadFlow = true;
+    }
+
+    private Module.GateType _lastAutoOpenedGate = Module.GateType.None;
+
+    /// <summary>Opens the UI to the matching GATE panel the moment the player actually joins one
+    /// on stage, so there's no need to manually click over from wherever the UI was left.</summary>
+    private void UpdateGateAutoOpen()
+    {
+        if (!C.GoldSaucerGates.AutoOpenUiOnGateJoin || !GateDirector.InSaucer || !GateDirector.IsPlayerOnStage())
+        {
+            _lastAutoOpenedGate = Module.GateType.None;
+            return;
+        }
+
+        var gate = GateDirector.GetCurrentGate();
+        if (gate == Module.GateType.None || gate == _lastAutoOpenedGate)
+        {
+            return;
+        }
+
+        _lastAutoOpenedGate = gate;
+        _pluginUi.OpenForGate(gate);
     }
 
     private static unsafe bool IsTriadFlowActive()

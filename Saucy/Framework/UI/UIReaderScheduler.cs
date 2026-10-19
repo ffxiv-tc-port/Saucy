@@ -93,7 +93,7 @@ public class UIReaderScheduler(IGameGui gameGui)
             for (var i = 0; i < 8; i++)
             {
                 var handle = gameGui.GetAddonByName(name, i);
-                if (handle.Address == nint.Zero)
+                if (handle == nint.Zero)
                 {
                     continue;
                 }
@@ -101,7 +101,7 @@ public class UIReaderScheduler(IGameGui gameGui)
                 var baseNode = (AtkUnitBase*)handle.Address;
                 if (IsAddonVisible(baseNode))
                 {
-                    return handle.Address;
+                    return handle;
                 }
             }
 

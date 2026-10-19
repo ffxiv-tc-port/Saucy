@@ -32,6 +32,9 @@ internal static class Vnavmesh
     [EzIPC("Path.Stop")]
     private static Action PathStopRpc = null!;
 
+    [EzIPC("Nav.PathfindCancelAll")]
+    private static Action NavPathfindCancelAllRpc = null!;
+
     [EzIPC("SimpleMove.PathfindAndMoveTo")]
     private static Func<Vector3, bool, bool> SimpleMovePathfindAndMoveToRpc = null!;
 
@@ -84,10 +87,12 @@ internal static class Vnavmesh
 
     public static bool IsMoving() => IsPathRunning() || IsPathfindInProgress();
 
+    /// <summary>停下移動：先取消還在算的尋路（只送 <c>Path.Stop</c> 的話，算完 vnavmesh 照樣開走），再停路徑。</summary>
     public static void StopPath()
     {
         if (IsInstalled)
         {
+            NavPathfindCancelAllRpc.TryInvoke();
             PathStopRpc();
         }
     }

@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
 using System.Numerics;
@@ -43,7 +44,7 @@ internal static partial class TriadMapNavigation
         }
 
         pending.NavMeshWaitAnnounced = true;
-        Svc.Chat.Print("[Saucy] vnavmesh is not ready for this zone yet. Waiting...");
+        Svc.Chat.Print("[Saucy] " + "vnavmesh is not ready for this zone yet. Waiting...".Loc());
         Vnavmesh.TryEnsureNavMeshLoading();
     }
 
@@ -79,7 +80,7 @@ internal static partial class TriadMapNavigation
             if (!Vnavmesh.IsBuildInProgress() &&
                 DateTime.UtcNow - pending.PhaseStartedUtc > NavMeshBuildWaitTimeout)
             {
-                Svc.Chat.PrintError("[Saucy] vnavmesh is not ready for this zone yet.");
+                Svc.Chat.PrintError("[Saucy] " + "vnavmesh is not ready for this zone yet.".Loc());
                 ClearPending();
             }
 
@@ -105,7 +106,7 @@ internal static partial class TriadMapNavigation
             pending.LastAnnouncedBuildProgress = -1;
         }
 
-        if (pending.AttemptMountBeforeNav && !TryEnsureMountedForNav(pending))
+        if (pending.AttemptMountBeforeNav && !TryResolveMountForNav(pending))
         {
             if (DateTime.UtcNow - pending.PhaseStartedUtc > MountBeforeNavTimeout)
             {
@@ -124,7 +125,7 @@ internal static partial class TriadMapNavigation
             return;
         }
 
-        if (!TryEnsureMountedForNav(pending))
+        if (!TryResolveMountForNav(pending))
         {
             return;
         }
@@ -137,7 +138,7 @@ internal static partial class TriadMapNavigation
 
         if (DateTime.UtcNow - pending.PhaseStartedUtc > PathfindStartTimeout)
         {
-            Svc.Chat.PrintError("[Saucy] vnavmesh could not start movement.");
+            Svc.Chat.PrintError("[Saucy] " + "vnavmesh could not start movement.".Loc());
             ClearPending();
         }
     }
@@ -155,7 +156,7 @@ internal static partial class TriadMapNavigation
         }
 
         pending.LastAnnouncedBuildProgress = 0;
-        Svc.Chat.Print("[Saucy] navmesh building...");
+        Svc.Chat.Print("[Saucy] " + "navmesh building...".Loc());
     }
 
     private static void BeginPostVnavPhase(PendingNavigation pending)
@@ -170,7 +171,7 @@ internal static partial class TriadMapNavigation
         pending.Phase = NavigationPhase.MovingToNpc;
         pending.PhaseStartedUtc = DateTime.UtcNow;
         pending.VnavRetryCount = 0;
-        Svc.Chat.Print($"[Saucy] Moving to {pending.Npc.Name}...");
+        Svc.Chat.Print("[Saucy] " + "Moving to ??...".Loc(pending.Npc.Name));
     }
 
     private static Vector3 ResolvePathDestination(PendingNavigation pending)
@@ -191,7 +192,13 @@ internal static partial class TriadMapNavigation
         return pending.Destination;
     }
 
-    private static bool TryEnsureMountedForNav(PendingNavigation pending)
+    /// <summary>
+    /// 回傳「坐騎階段是否已經定案」——已經在坐騎上、或確定當下騎不上去(那就用走的)都算定案。
+    /// 回傳 false 只代表「還在嘗試,下一幀再問」。
+    /// ⚠️ 定案不等於「人在坐騎上」:騎不上去時這裡照樣回 true 讓導航往下走,真正擋住飛行的是
+    /// <see cref="TravelMountHelper.ResolveUseFlying"/> 裡的未騎乘降級,不要把那層拿掉。
+    /// </summary>
+    private static bool TryResolveMountForNav(PendingNavigation pending)
     {
         if (!TravelMountHelper.CanMountInCurrentTerritory())
         {
@@ -208,7 +215,7 @@ internal static partial class TriadMapNavigation
             return false;
         }
 
-        return TravelMountHelper.TryMountUp();
+        return TravelMountHelper.TryMount() != MountAttemptResult.InProgress;
     }
 
     private static bool TryStartVnav(PendingNavigation pending)
@@ -225,7 +232,7 @@ internal static partial class TriadMapNavigation
             return false;
         }
 
-        if (!TryEnsureMountedForNav(pending))
+        if (!TryResolveMountForNav(pending))
         {
             return false;
         }
@@ -239,7 +246,7 @@ internal static partial class TriadMapNavigation
                 return false;
             }
 
-            Svc.Chat.Print($"[Saucy] Moving to {pending.Location.PlaceName}.");
+            Svc.Chat.Print("[Saucy] " + "Moving to ??.".Loc(pending.Location.PlaceName));
             return true;
         }
 
@@ -248,14 +255,14 @@ internal static partial class TriadMapNavigation
 
         if (Vnavmesh.TryPathfindAndMoveTo(destination, fly))
         {
-            Svc.Chat.Print($"[Saucy] Moving to {pending.Location.PlaceName}.");
+            Svc.Chat.Print("[Saucy] " + "Moving to ??.".Loc(pending.Location.PlaceName));
             return true;
         }
 
         if (fly && Vnavmesh.TryPathfindAndMoveTo(destination))
         {
             pending.Fly = false;
-            Svc.Chat.Print($"[Saucy] Moving to {pending.Location.PlaceName}.");
+            Svc.Chat.Print("[Saucy] " + "Moving to ??.".Loc(pending.Location.PlaceName));
             return true;
         }
 
@@ -269,7 +276,7 @@ internal static partial class TriadMapNavigation
             return false;
         }
 
-        if (!TryEnsureMountedForNav(pending))
+        if (!TryResolveMountForNav(pending))
         {
             return false;
         }
@@ -292,7 +299,11 @@ internal static partial class TriadMapNavigation
     private static bool TryPathToNpcBackoff(Vector3 npcPos, bool fly)
     {
         var dest = ResolveNpcBackoffPoint(npcPos);
-        var useFly = TravelMountHelper.ResolveUseFlying(fly);
+        // 這段後退是 NPC 互動前的短距離重新站位,呼叫端的 IsReadyForNpcInteraction() 內含
+        // EnsureDismountedForNpcInteraction(),到這裡一定是下坐騎狀態,本來就不該飛。
+        // ResolveUseFlying 也會在未騎乘時降級,這裡再明確擋一次,避免將來那層被放寬時
+        // 又把 fly=true 交給 vnavmesh —— 那會讓角色站著不動而且完全沒有訊息。
+        var useFly = TravelMountHelper.ResolveUseFlying(fly) && Svc.Condition[ConditionFlag.Mounted];
         return Vnavmesh.TryPathfindAndMoveTo(dest, useFly) ||
                (useFly && Vnavmesh.TryPathfindAndMoveTo(dest));
     }
