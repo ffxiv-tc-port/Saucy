@@ -199,6 +199,29 @@ public unsafe partial class PluginUI
                 SaucyTheme.TextMuted("沒有跳台碰撞偵測，只會朝目標方向移動並定時跳躍，可能會摔落，請留意。");
                 SaucyTheme.TextMuted("跳躍時機改為觀察已記錄的藍色軌道自動判斷，不再是固定間隔。");
             }
+
+            var quickExit = C.GoldSaucerGates.LeapOfFaithQuickExit;
+            if (ImGui.Checkbox("入場後等一段時間直接退出任務（拿最低獎勵）##LeapOfFaithQuickExit", ref quickExit))
+            {
+                C.GoldSaucerGates.LeapOfFaithQuickExit = quickExit;
+                C.Save();
+            }
+
+            if (quickExit)
+            {
+                var delay = C.GoldSaucerGates.LeapOfFaithQuickExitDelaySeconds;
+                ImGui.SetNextItemWidth(220);
+                if (ImGui.SliderInt("等待秒數##LeapOfFaithQuickExitDelay", ref delay, 0, GoldSaucerGateSettings.LeapOfFaithQuickExitMaxDelaySeconds))
+                {
+                    C.GoldSaucerGates.LeapOfFaithQuickExitDelaySeconds = delay;
+                    C.Save();
+                }
+
+                SaucyTheme.TextMuted("從入場、角色出現後開始算；等待期間自動移動＋跳躍會停手。");
+                SaucyTheme.TextMuted("等待期間自己移動或 /saucy stop 就取消這一場的退出。");
+                SaucyTheme.TextMuted("用副本選單的「退出任務」退出；確認框由 Saucy 按（先請 YesAlready 讓開，請不動就不按）。");
+                SaucyTheme.TextMuted(LeapOfFaithQuickExit.StatusText);
+            }
         }
 
         ImGui.Dummy(new(0, 4));

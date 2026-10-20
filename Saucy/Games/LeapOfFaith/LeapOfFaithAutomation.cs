@@ -183,7 +183,7 @@ internal static unsafe class LeapOfFaithAutomation
         FindTarget();
         CheckStandingOnTarget();
 
-        if (!C.GoldSaucerGates.LeapOfFaithAutoMovement)
+        if (!C.GoldSaucerGates.LeapOfFaithAutoMovement || LeapOfFaithQuickExit.HoldsMovement)
         {
             ReleaseKeys();
             return;

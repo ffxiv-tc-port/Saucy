@@ -92,6 +92,11 @@ internal sealed class StopAllIpc : IDisposable
                 stopped.Add("GATE 結束後走回活動解說員");
             }
 
+            if (global::Saucy.LeapOfFaith.LeapOfFaithQuickExit.IsActive)
+            {
+                stopped.Add("登高跳跳樂提早退出");
+            }
+
             // 無論旗標如何都走一次：每個停止點都是冪等的，而且只收自己發起的導航與 AI。
             TriadRunSession.StopAllAutomation(announce: false);
             GoldSaucerNavigator.Cancel();

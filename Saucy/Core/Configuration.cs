@@ -210,6 +210,14 @@ public class GoldSaucerGateSettings
     public bool WindBlowsAutoMovement { get; set; } = true;
     public bool LeapOfFaithAutoMovement { get; set; }
     public float LeapOfFaithJumpIntervalSeconds { get; set; } = 1.2f;
+
+    /// <summary>登高跳跳樂：入場後等 <see cref="LeapOfFaithQuickExitDelaySeconds"/> 秒，用副本選單的「退出任務」直接退出（拿最低獎勵）。預設關。</summary>
+    public bool LeapOfFaithQuickExit { get; set; }
+
+    /// <summary>入場後等幾秒才退出；固定秒數，夾在 0～<see cref="LeapOfFaithQuickExitMaxDelaySeconds"/>。</summary>
+    public int LeapOfFaithQuickExitDelaySeconds { get; set; } = 10;
+
+    public const int LeapOfFaithQuickExitMaxDelaySeconds = 60;
     public bool CliffhangerAutoMovement { get; set; }
     public float AirForceBombAvoidRadius { get; set; } = 134f;
     public float CliffhangerBombBlastRadiusGuess { get; set; } = 2.6f;

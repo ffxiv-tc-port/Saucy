@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Interface.Utility.Raii;
 using ECommons.GameHelpers;
 using ECommons.ImGuiMethods;
@@ -17,12 +18,15 @@ public class LeapOfFaith : Module
     {
         Svc.Framework.Update += OnUpdate;
         Svc.PluginInterface.UiBuilder.Draw += Draw;
+        Svc.AddonLifecycle.RegisterListener(AddonEvent.PreSetup, SelectYesnoHelper.AddonName, LeapOfFaithQuickExit.OnYesnoPreSetup);
     }
 
     public override void Disable()
     {
         Svc.Framework.Update -= OnUpdate;
         Svc.PluginInterface.UiBuilder.Draw -= Draw;
+        Svc.AddonLifecycle.UnregisterListener(AddonEvent.PreSetup, SelectYesnoHelper.AddonName, LeapOfFaithQuickExit.OnYesnoPreSetup);
+        LeapOfFaithQuickExit.Reset();
         GameKeyInput.ReleaseHeldKey();
         GateNpcNavigation.ReleaseIfOwned(GateType.LeapOfFaith);
     }
@@ -32,6 +36,7 @@ public class LeapOfFaith : Module
     // user to record the same location twice under a different name.
     private void OnUpdate(IFramework _)
     {
+        LeapOfFaithQuickExit.Tick();
         LeapOfFaithAutomation.OnUpdate();
         GateNpcNavigation.Tick(GateType.LeapOfFaith, C.GoldSaucerGates.AirForceNpcSpot, C.GoldSaucerGates.AirForceNpcAutoNavigate);
     }
