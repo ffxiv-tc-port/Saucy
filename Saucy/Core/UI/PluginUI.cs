@@ -584,6 +584,32 @@ public unsafe partial class PluginUI : Window
             ImGui.SetTooltip("忽略 :00/:20/:40 時間限制，現在就開始搜尋附近的支援 NPC 並嘗試前往互動（60 秒內有效）。");
         }
 
+        SaucyTheme.TextMuted("GATE 結束後（拿到獎勵或被淘汰都算）離開場地，走回最近的活動解說員等下一個 GATE：");
+        var windBlowsReturn = C.GoldSaucerGates.WindBlowsReturnToCoordinatorAfterGate;
+        if (ImGui.Checkbox("Wind Blows".Loc() + "##WindBlowsReturnAfterGate", ref windBlowsReturn))
+        {
+            C.GoldSaucerGates.WindBlowsReturnToCoordinatorAfterGate = windBlowsReturn;
+            C.Save();
+        }
+        ImGui.SameLine();
+        var sliceIsRightReturn = C.GoldSaucerGates.SliceIsRightReturnToCoordinatorAfterGate;
+        if (ImGui.Checkbox("Slice is Right".Loc() + "##SliceIsRightReturnAfterGate", ref sliceIsRightReturn))
+        {
+            C.GoldSaucerGates.SliceIsRightReturnToCoordinatorAfterGate = sliceIsRightReturn;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("只在對應的 GATE 模組啟用時生效。被淘汰時會等整場 GATE 結束才走。\n" +
+                             "只走過去、不對話；:55/:15/:35 時段一到由上面的排程照常互動。\n" +
+                             "走的途中自己移動會先讓位，停手 2 秒後接續；/saucy stop 或急停會取消。");
+        }
+        if (GateScheduleAutomation.IsReturningAfterGate)
+        {
+            ImGui.SameLine();
+            SaucyTheme.TextMuted("（進行中）");
+        }
+
         ImGui.Dummy(new(0, 4));
         ImGui.TextWrapped("已記錄的活動解說員位置：");
 

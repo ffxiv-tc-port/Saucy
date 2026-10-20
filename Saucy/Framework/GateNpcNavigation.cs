@@ -104,8 +104,9 @@ internal static class GateNpcNavigation
     /// BEFORE the GATE, so it never fights with that GATE's own in-progress movement logic.</summary>
     public static void Tick(Module.GateType gate, GateNpcSpot spot, bool enabled)
     {
+        // GATE 結束後走回活動解說員的那段時間讓開，不把人拉回報名處。
         if (!enabled || !spot.Recorded || !Vnavmesh.IsInstalled || !GateDirector.InSaucer || GateDirector.IsInGate(gate) ||
-            !Player.Available)
+            !Player.Available || GateScheduleAutomation.IsReturningAfterGate)
         {
             ReleaseIfOwned(gate);
             ForgetManualSteer(gate);
@@ -164,7 +165,7 @@ internal static class GateNpcNavigation
     public static void TickList(Module.GateType gate, List<GateNpcSpot> spots, bool enabled)
     {
         if (!enabled || spots.Count == 0 || !Vnavmesh.IsInstalled || !GateDirector.InSaucer || GateDirector.IsInGate(gate) ||
-            !Player.Available)
+            !Player.Available || GateScheduleAutomation.IsReturningAfterGate)
         {
             ReleaseIfOwned(gate);
             ForgetManualSteer(gate);

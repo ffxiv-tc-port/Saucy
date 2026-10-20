@@ -299,6 +299,13 @@ public class GoldSaucerGateSettings
     public bool SliceIsRightAutoJoin { get; set; } = true;
     public bool CliffhangerAutoJoin { get; set; }
 
+    /// <summary>這個 GATE 結束後（拿到獎勵或被淘汰都算）離開場地、走回最近的已記錄活動解說員，交回排程等下一個 GATE。
+    /// 只走過去、不對話；只在對應的 GATE 模組啟用時生效。預設跟同一個 GATE 的自動參加一樣開著。</summary>
+    public bool WindBlowsReturnToCoordinatorAfterGate { get; set; } = true;
+
+    /// <inheritdoc cref="WindBlowsReturnToCoordinatorAfterGate"/>
+    public bool SliceIsRightReturnToCoordinatorAfterGate { get; set; } = true;
+
     // Persisted (not just an in-memory static flag) so a plugin reload mid-window doesn't forget
     // "already handled this window" and immediately search for/walk to the same NPC again.
     public long LastCoordinatorHandledUtcTicks { get; set; }

@@ -1,3 +1,4 @@
+using Saucy.Framework;
 using Saucy.IPC;
 namespace Saucy.OtherGames;
 
@@ -7,5 +8,6 @@ internal static class GateShared
     {
         BossMod.TryDisableGateAi();
         WindBlowsGateMovement.ReleaseIfOwned();
+        GateScheduleAutomation.CancelAfterGateReturn("停止自動化");
     }
 }

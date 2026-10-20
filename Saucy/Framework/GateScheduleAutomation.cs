@@ -64,8 +64,11 @@ internal static unsafe class GateScheduleAutomation
 
     public static void Tick()
     {
+        ObserveGateEnd();
+
         if (!GateDirector.InSaucer || GateDirector.IsPlayerOnStage())
         {
+            CancelAfterGateReturn(null);
             ReleaseJoinNavigation();
             manualCoordinatorTarget = null;
             manualJoinUntilUtc = null;
@@ -84,6 +87,7 @@ internal static unsafe class GateScheduleAutomation
 
         if (manualCoordinatorTarget is { } manualTarget)
         {
+            CancelAfterGateReturn("你手動要走去活動解說員");
             if (NavigateAndInteractCoordinator(manualTarget))
             {
                 manualCoordinatorTarget = null;
@@ -91,6 +95,7 @@ internal static unsafe class GateScheduleAutomation
         }
         else if (IsCoordinatorWindow)
         {
+            CancelAfterGateReturn("活動解說員時段開始，交給排程");
             if (GateEmergencyHold.IsHeld)
             {
                 if (C.GoldSaucerGates.EventCoordinatorAutoNavigate)
@@ -108,6 +113,7 @@ internal static unsafe class GateScheduleAutomation
         else
         {
             coordinatorSteer.Reset();
+            TickAfterGateReturn();
         }
 
         // Per-GATE toggles (AirForceAutoJoin/WindBlowsAutoJoin/etc.) are applied inside
@@ -169,6 +175,257 @@ internal static unsafe class GateScheduleAutomation
         }
 
         return hadManual;
+    }
+
+    // ── GATE 結束後走回活動解說員（暴風倖存者、必中一閃快刀斬魔） ──
+    // 「結束」＝看過自己在場上，之後不在場上、而且這場 GATE 本身也停了（導演不見、IsFinished、或換成別的 GATE）；
+    // 被淘汰但 GATE 還在跑時先等它結束，再過 AfterGateSettleMs 才動。只走過去、不對話：對話與選目的地照舊交給 :55 時段的排程。
+
+    private const long AfterGateSettleMs = 5_000;
+
+    private const long AfterGateWalkLimitMs = 120_000;
+
+    private const long AfterGateRetryMs = 1_000;
+
+    private static readonly ManualSteerYield afterGateSteer = new("GATE 結束後走回活動解說員");
+
+    /// <summary>有開這個選項、目前（或剛剛）在場上的 GATE；None＝沒在等結束。</summary>
+    private static Module.GateType afterGateWatch;
+
+    /// <summary>自己離開場上的時刻（<see cref="Environment.TickCount64"/>）；0＝還在場上。</summary>
+    private static long afterGateOffStageSince;
+
+    /// <summary>這場 GATE 本身也停了的時刻；0＝還沒停。</summary>
+    private static long afterGateEndedSince;
+
+    private static GateNpcSpot? afterGateTarget;
+
+    private static long afterGateStartedAt;
+
+    private static long afterGateNextTryAt;
+
+    private static bool afterGateNavOwned;
+
+    /// <summary>這一場在場上時被停止過：這一場結束後不走回；下一場重新開始看。</summary>
+    private static bool afterGateStoppedThisGate;
+
+    /// <summary>正在等 GATE 結束或正在走回活動解說員：報名 NPC 的自動靠近這段時間讓開，不把人拉回報名處。</summary>
+    public static bool IsReturningAfterGate => afterGateTarget != null || afterGateOffStageSince != 0;
+
+    private static bool ReturnsAfterGate(Module.GateType gate) => gate switch
+    {
+        Module.GateType.AnyWayTheWindBlows =>
+            C.GoldSaucerGates.WindBlowsReturnToCoordinatorAfterGate && C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows),
+        Module.GateType.SliceIsRight =>
+            C.GoldSaucerGates.SliceIsRightReturnToCoordinatorAfterGate && C.IsModuleEnabled(ModuleNames.SliceIsRight),
+        _ => false
+    };
+
+    private static unsafe void ObserveGateEnd()
+    {
+        if (GateDirector.InSaucer && GateDirector.IsPlayerOnStage())
+        {
+            var gate = GateDirector.GetCurrentGate();
+            afterGateWatch = !afterGateStoppedThisGate && ReturnsAfterGate(gate) ? gate : Module.GateType.None;
+            afterGateOffStageSince = 0;
+            afterGateEndedSince = 0;
+            return;
+        }
+
+        afterGateStoppedThisGate = false;
+        if (afterGateWatch == Module.GateType.None)
+        {
+            return;
+        }
+
+        if (!GateDirector.InSaucer)
+        {
+            ForgetGateEndWatch();
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        var hasDirector = GateDirector.TryGetDirector(out var director);
+        var flags = hasDirector ? director->Flags : default;
+        var directorGate = hasDirector ? (Module.GateType)director->GateType : Module.GateType.None;
+        var gateStopped = !hasDirector || flags.HasFlag(FFXIVClientStructs.FFXIV.Client.Game.GoldSaucer.GFateDirectorFlag.IsFinished) ||
+                          directorGate != afterGateWatch;
+        if (afterGateOffStageSince == 0)
+        {
+            afterGateOffStageSince = now;
+            Svc.Log.Information($"[Saucy] GATE 結束後走回：{afterGateWatch} 已不在場上（導演{(hasDirector ? $"在，Flags={flags}，GateType={directorGate}" : "不在")}）；" +
+                                (gateStopped ? $"GATE 已結束，{AfterGateSettleMs / 1000} 秒後走回最近的活動解說員" : "GATE 還在跑，等它結束"));
+        }
+
+        if (!gateStopped)
+        {
+            afterGateEndedSince = 0;
+            return;
+        }
+
+        if (afterGateEndedSince == 0)
+        {
+            afterGateEndedSince = now;
+        }
+
+        if (now - afterGateEndedSince < AfterGateSettleMs)
+        {
+            return;
+        }
+
+        var ended = afterGateWatch;
+        ForgetGateEndWatch();
+        if (!ReturnsAfterGate(ended))
+        {
+            return;
+        }
+
+        if (GateEmergencyHold.IsHeld)
+        {
+            GateEmergencyHold.NoteSkipped("GATE 結束後走回活動解說員");
+            return;
+        }
+
+        var nearest = NearestRecordedCoordinator();
+        if (nearest == null)
+        {
+            Svc.Log.Information("[Saucy] GATE 結束後走回：沒有已記錄的活動解說員位置，不移動");
+            return;
+        }
+
+        afterGateTarget = nearest;
+        afterGateStartedAt = now;
+        afterGateNextTryAt = 0;
+        afterGateNavOwned = false;
+        afterGateSteer.Reset();
+        Svc.Log.Information($"[Saucy] GATE 結束後走回：{ended} 結束，離開場地走向活動解說員（{nearest.X:F1}, {nearest.Y:F1}, {nearest.Z:F1}）");
+    }
+
+    private static void ForgetGateEndWatch()
+    {
+        afterGateWatch = Module.GateType.None;
+        afterGateOffStageSince = 0;
+        afterGateEndedSince = 0;
+    }
+
+    private static GateNpcSpot? NearestRecordedCoordinator()
+    {
+        if (!Player.Available)
+        {
+            return null;
+        }
+
+        var playerPos = Player.Position;
+        return C.GoldSaucerGates.EventCoordinatorSpots
+            .Where(s => s.Recorded)
+            .OrderBy(s => Vector3.Distance(playerPos, new Vector3(s.X, s.Y, s.Z)))
+            .FirstOrDefault();
+    }
+
+    private static void TickAfterGateReturn()
+    {
+        if (afterGateTarget is not { } spot)
+        {
+            return;
+        }
+
+        if (GateEmergencyHold.IsHeld)
+        {
+            CancelAfterGateReturn("急停");
+            return;
+        }
+
+        if (IsJoinWindow || manualJoinUntilUtc != null)
+        {
+            CancelAfterGateReturn("GATE 報名時段開始，交給排程");
+            return;
+        }
+
+        if (!Vnavmesh.IsInstalled || !Player.Available)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        var destination = new Vector3(spot.X, spot.Y, spot.Z);
+        if (Vnavmesh.IsWithinHorizontalRange(destination, GateNpcNavigation.CloseRange))
+        {
+            CancelAfterGateReturn("已走到活動解說員旁，交回排程");
+            return;
+        }
+
+        switch (afterGateSteer.Tick(afterGateNavOwned, busy: false, out var pausedFor))
+        {
+            case ManualSteerYield.Result.Hold:
+                return;
+            case ManualSteerYield.Result.GaveUp:
+                // 使用者還在自己走：不停他的移動，只結束這一趟。
+                afterGateNavOwned = false;
+                CancelAfterGateReturn("你自己移動太久，不再接續");
+                Svc.Chat.Print($"[Saucy] 已停止 GATE 結束後走回活動解說員：你自己移動超過 {ManualSteerWatch.MaxYieldMs / 1000} 秒。");
+                return;
+            case ManualSteerYield.Result.Resumed:
+                afterGateStartedAt += (long)pausedFor.TotalMilliseconds;
+                break;
+        }
+
+        if (now - afterGateStartedAt > AfterGateWalkLimitMs)
+        {
+            CancelAfterGateReturn($"{AfterGateWalkLimitMs / 1000} 秒內沒走到");
+            return;
+        }
+
+        if (Vnavmesh.IsMoving() || now < afterGateNextTryAt)
+        {
+            return;
+        }
+
+        afterGateNextTryAt = now + AfterGateRetryMs;
+        if (Vnavmesh.TryMoveTo(destination, false, GateNpcNavigation.CloseRange))
+        {
+            afterGateNavOwned = true;
+        }
+    }
+
+    /// <summary>取消「GATE 結束後走回」（含還在等結束的那一段），停下自己送的路徑；<paramref name="reason"/> 為 null 時不寫 log。回傳原本有沒有在跑。只在 framework 執行緒呼叫。</summary>
+    public static bool CancelAfterGateReturn(string? reason)
+    {
+        var onStageWatch = afterGateWatch != Module.GateType.None && afterGateOffStageSince == 0;
+        var active = IsReturningAfterGate || (reason != null && onStageWatch);
+        if (reason != null && onStageWatch)
+        {
+            afterGateStoppedThisGate = true;
+        }
+
+        if (reason != null)
+        {
+            ForgetGateEndWatch();
+        }
+
+        if (afterGateTarget == null)
+        {
+            if (active && reason != null)
+            {
+                Svc.Log.Information($"[Saucy] GATE 結束後走回：取消等待（{reason}）");
+            }
+
+            return active;
+        }
+
+        if (afterGateNavOwned && Vnavmesh.IsInstalled && Vnavmesh.IsMoving())
+        {
+            Vnavmesh.StopPath();
+        }
+
+        afterGateTarget = null;
+        afterGateNavOwned = false;
+        afterGateSteer.Reset();
+        if (reason != null)
+        {
+            Svc.Log.Information($"[Saucy] GATE 結束後走回：結束（{reason}）");
+        }
+
+        return true;
     }
 
     /// <summary>Public so the Event Coordinator panel's "立即移動至最近的" button can trigger the
