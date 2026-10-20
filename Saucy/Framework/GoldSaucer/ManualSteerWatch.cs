@@ -76,17 +76,7 @@ internal sealed class ManualSteerWatch
     /// <param name="now">單調遞增的毫秒時間。</param>
     public Step Observe(Vector3 player, bool navigating, bool manualKey, bool busy, long now)
     {
-        if (now >= nextSampleAt)
-        {
-            nextSampleAt = now + SampleIntervalMs;
-            speed = Push(player, now);
-        }
-
-        if (navigating)
-        {
-            lastNavigatingAt = now;
-        }
-
+        Sample(player, navigating, now);
         if (!Yielding)
         {
             if (!manualKey && !busy)
@@ -130,6 +120,29 @@ internal sealed class ManualSteerWatch
         }
 
         return Step.None;
+    }
+
+    /// <summary>只記位置、不判斷，並結束進行中的讓位：呼叫端這一幀不需要讓位判斷（已經到了、被別的狀態擋住），
+    /// 但下一次 <see cref="Observe"/> 要有速度可用。</summary>
+    public void Track(Vector3 player, bool navigating, long now)
+    {
+        Sample(player, navigating, now);
+        yieldStartedAt = 0;
+        stillSince = 0;
+    }
+
+    private void Sample(Vector3 player, bool navigating, long now)
+    {
+        if (now >= nextSampleAt)
+        {
+            nextSampleAt = now + SampleIntervalMs;
+            speed = Push(player, now);
+        }
+
+        if (navigating)
+        {
+            lastNavigatingAt = now;
+        }
     }
 
     // 記下這一筆，回傳到時間窗以前最近那一筆的水平速度；歷史不夠長回 -1。瞬移時清掉歷史、回 -1。

@@ -142,6 +142,12 @@ internal static unsafe class GateScheduleAutomation
         }
     }
 
+    /// <summary>活動解說員那一段正在管移動（手動「立即移動」，或 :55／:15／:35 時段且有開自動走去、沒被急停壓住）：
+    /// 報名 NPC 的自動靠近這段時間不出發。整個時段都算（處理過 30 秒後它還會再找一次）。</summary>
+    public static bool IsCoordinatorRunActive =>
+        manualCoordinatorTarget != null ||
+        (IsCoordinatorWindow && C.GoldSaucerGates.EventCoordinatorAutoNavigate && !GateEmergencyHold.IsHeld);
+
     /// <summary>Manual "開始導航" trigger — runs the same GATE-join search/walk/interact flow as
     /// the :00/:20/:40 window, right now, ignoring the clock and the "already handled" latch. Use
     /// when testing or entering the area early/outside the normal window.</summary>
