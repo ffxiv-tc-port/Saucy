@@ -16,6 +16,9 @@ internal static unsafe partial class TriadMapNavigation
 
     private const float NpcMinStandoffDistance = 2.75f;
     private const float NpcBackoffDistance = 4.5f;
+
+    // 到目的地（3D 距離）短於此值就不上坐騎、不飛，直接走；與 Questionable 採集／visland／AutoDuty 同值。
+    private const float WalkWithoutMountDistance = 20f;
     private static readonly TimeSpan DefaultNavigationTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan NavMeshBuildWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PathfindStartTimeout = TimeSpan.FromSeconds(30);

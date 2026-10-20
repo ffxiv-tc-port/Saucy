@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using ECommons.GameHelpers;
 using ECommons.LanguageHelpers;
 using Saucy.IPC;
 using System;
@@ -106,7 +107,7 @@ internal static partial class TriadMapNavigation
             pending.LastAnnouncedBuildProgress = -1;
         }
 
-        if (pending.AttemptMountBeforeNav && !TryResolveMountForNav(pending))
+        if (pending.AttemptMountBeforeNav && !TryResolveMountForNpcLeg(pending))
         {
             if (DateTime.UtcNow - pending.PhaseStartedUtc > MountBeforeNavTimeout)
             {
@@ -125,7 +126,7 @@ internal static partial class TriadMapNavigation
             return;
         }
 
-        if (!TryResolveMountForNav(pending))
+        if (!TryResolveMountForNpcLeg(pending))
         {
             return;
         }
@@ -218,6 +219,34 @@ internal static partial class TriadMapNavigation
         return TravelMountHelper.TryMount() != MountAttemptResult.InProgress;
     }
 
+    /// <summary>
+    /// 人已在目標區域、離目的地不到 <see cref="WalkWithoutMountDistance"/>。
+    /// 判不出來（玩家不可用、不在目標區域）一律回 false＝照舊上坐騎。
+    /// </summary>
+    private static bool IsShortWalkToDestination(PendingNavigation pending)
+    {
+        if (!Player.Available)
+        {
+            return false;
+        }
+
+        var inTargetTerritory = pending.Npc != null
+            ? IsPlayerInNpcTerritory(pending.Npc)
+            : pending.TargetTerritoryId == 0 || Svc.ClientState.TerritoryType == pending.TargetTerritoryId;
+        return inTargetTerritory &&
+               Vector3.Distance(Player.Position, pending.Destination) < WalkWithoutMountDistance;
+    }
+
+    /// <summary>走向 NPC／目的地這一段的坐騎前置；距離短時直接定案成走路。</summary>
+    private static bool TryResolveMountForNpcLeg(PendingNavigation pending) =>
+        IsShortWalkToDestination(pending) || TryResolveMountForNav(pending);
+
+    // 距離短一律不飛；但人已在空中就沿用原判斷，不把 fly=false 交給還在飛的角色。
+    // fly=true 仍只在 ResolveUseFlying 確認騎乘中時才會出現。
+    private static bool ResolveNavFly(PendingNavigation pending) =>
+        TravelMountHelper.ResolveUseFlying(pending.Fly) &&
+        (Svc.Condition[ConditionFlag.InFlight] || !IsShortWalkToDestination(pending));
+
     private static bool TryStartVnav(PendingNavigation pending)
     {
         if (_pending != null &&
@@ -232,7 +261,7 @@ internal static partial class TriadMapNavigation
             return false;
         }
 
-        if (!TryResolveMountForNav(pending))
+        if (!TryResolveMountForNpcLeg(pending))
         {
             return false;
         }
@@ -251,7 +280,7 @@ internal static partial class TriadMapNavigation
         }
 
         var destination = ResolvePathDestination(pending);
-        var fly = TravelMountHelper.ResolveUseFlying(pending.Fly);
+        var fly = ResolveNavFly(pending);
 
         if (Vnavmesh.TryPathfindAndMoveTo(destination, fly))
         {
@@ -276,12 +305,12 @@ internal static partial class TriadMapNavigation
             return false;
         }
 
-        if (!TryResolveMountForNav(pending))
+        if (!TryResolveMountForNpcLeg(pending))
         {
             return false;
         }
 
-        var fly = TravelMountHelper.ResolveUseFlying(pending.Fly);
+        var fly = ResolveNavFly(pending);
         if (Vnavmesh.TryMoveTo(npcPos, fly, NpcPathArrivalRange))
         {
             return true;
