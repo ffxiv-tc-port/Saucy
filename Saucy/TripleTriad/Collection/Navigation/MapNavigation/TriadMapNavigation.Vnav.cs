@@ -225,27 +225,28 @@ internal static partial class TriadMapNavigation
     /// </summary>
     private static bool IsShortWalkToDestination(PendingNavigation pending)
     {
-        if (!Player.Available)
-        {
-            return false;
-        }
-
         var inTargetTerritory = pending.Npc != null
             ? IsPlayerInNpcTerritory(pending.Npc)
             : pending.TargetTerritoryId == 0 || Svc.ClientState.TerritoryType == pending.TargetTerritoryId;
-        return inTargetTerritory &&
-               Vector3.Distance(Player.Position, pending.Destination) < WalkWithoutMountDistance;
+        return inTargetTerritory && IsShortWalkTo(pending.Destination);
     }
+
+    /// <summary>呼叫端負責確認 <paramref name="destination"/> 與玩家在同一區域。</summary>
+    private static bool IsShortWalkTo(Vector3 destination) =>
+        Player.Available && Vector3.Distance(Player.Position, destination) < WalkWithoutMountDistance;
 
     /// <summary>走向 NPC／目的地這一段的坐騎前置；距離短時直接定案成走路。</summary>
     private static bool TryResolveMountForNpcLeg(PendingNavigation pending) =>
         IsShortWalkToDestination(pending) || TryResolveMountForNav(pending);
 
+    private static bool ResolveNavFly(PendingNavigation pending) =>
+        ResolveFlyForLeg(pending.Fly, IsShortWalkToDestination(pending));
+
     // 距離短一律不飛；但人已在空中就沿用原判斷，不把 fly=false 交給還在飛的角色。
     // fly=true 仍只在 ResolveUseFlying 確認騎乘中時才會出現。
-    private static bool ResolveNavFly(PendingNavigation pending) =>
-        TravelMountHelper.ResolveUseFlying(pending.Fly) &&
-        (Svc.Condition[ConditionFlag.InFlight] || !IsShortWalkToDestination(pending));
+    private static bool ResolveFlyForLeg(bool requestedFly, bool shortWalk) =>
+        TravelMountHelper.ResolveUseFlying(requestedFly) &&
+        (Svc.Condition[ConditionFlag.InFlight] || !shortWalk);
 
     private static bool TryStartVnav(PendingNavigation pending)
     {

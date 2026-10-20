@@ -325,12 +325,15 @@ internal static partial class TriadMapNavigation
             return;
         }
 
-        if (!TryResolveMountForNav(pending))
+        // 判不出以太之光在哪一區就當成不短，照舊上坐騎。
+        var shortWalk = AetheryteHelper.IsPlayerInAetheryteTerritory(pending.HubAetheryteId) &&
+                        IsShortWalkTo(hubPos.Value);
+        if (!shortWalk && !TryResolveMountForNav(pending))
         {
             return;
         }
 
-        var useFly = TravelMountHelper.ResolveUseFlying(pending.Fly);
+        var useFly = ResolveFlyForLeg(pending.Fly, shortWalk);
         if (Vnavmesh.TryMoveTo(hubPos.Value, useFly, AetheryteHelper.AethernetHubUseRange) ||
             (useFly && Vnavmesh.TryMoveTo(hubPos.Value, false, AetheryteHelper.AethernetHubUseRange)))
         {
