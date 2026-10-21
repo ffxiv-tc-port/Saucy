@@ -172,7 +172,7 @@ internal static unsafe class GoldSaucerEventTracker
     }
 
     /// <summary>每日 15:00 UTC 重置（＝台北時間 23:00）。比這個時間早的快照已經過期。</summary>
-    private static DateTime LastDailyResetUtc()
+    internal static DateTime LastDailyResetUtc()
     {
         var now = DateTime.UtcNow;
         var todayReset = new DateTime(now.Year, now.Month, now.Day, 15, 0, 0, DateTimeKind.Utc);

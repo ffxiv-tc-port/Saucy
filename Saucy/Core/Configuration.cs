@@ -84,6 +84,10 @@ public class Configuration : IPluginConfiguration
     /// 只在使用者按下導航、且 MiniCactpot 模組啟用時生效；其他導航目的地一律只移動不對話。</summary>
     public bool MiniCactpotAutoTalkOnArrival { get; set; } = false;
 
+    /// <summary>仙人微彩：當天彩券確定打完（剩 0 張）時，請 Questionable 開始友好部族日常；每個角色每個遊戲日最多一次。
+    /// 只在 MiniCactpot 模組啟用時生效；Questionable 那邊要先勾要做的部族。</summary>
+    public bool MiniCactpotStartQuestionableAlliedDailies { get; set; } = false;
+
     /// <summary>仙人微彩：兩次點擊之間的最短間隔（毫秒）。
     /// 🔴 金碟遊樂園的自動化是伺服器看得見的行為，「看起來像人在操作」本身就有價值。
     /// 下限刻意留在 <see cref="MiniCactpotMinClickIntervalMs"/>，明顯慢於同類外掛的 100 ms —— 不要為了快把節奏壓到極限。</summary>

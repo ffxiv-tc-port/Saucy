@@ -2,6 +2,7 @@ using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using ECommons.Automation;
 using ECommons.Automation.NeoTaskManager;
+using ECommons.LanguageHelpers;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -9,9 +10,11 @@ using Saucy.Framework;
 using Saucy.Framework.GoldSaucer;
 using Saucy.IPC;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using static ECommons.GenericHelpers;
 using AgentId = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId;
+using ConditionFlag = Dalamud.Game.ClientState.Conditions.ConditionFlag;
 using ValueType = FFXIVClientStructs.FFXIV.Component.GUI.ValueType;
 
 namespace Saucy.MiniCactpot;
@@ -111,6 +114,15 @@ public unsafe class MiniCactpotModule : Module
     /// <summary>這一張已回報過「面板派彩表與硬編表不同」，避免每幀洗 log。</summary>
     private bool payoutTableDiffLogged;
 
+    /// <summary>這一張九格都翻開過（不是玩到一半關掉）。</summary>
+    private bool boardCompleted;
+
+    /// <summary>排了「交棒給 Questionable」的時間；null＝沒排。</summary>
+    private DateTime? handOffArmedUtc;
+
+    /// <summary>角色 ContentId → 上一次呼叫 Questionable 的時間。只放記憶體：剩 0 張之後當天開不了新面板，重載也不會再觸發。</summary>
+    private static readonly Dictionary<ulong, DateTime> HandOffCalledUtc = [];
+
     private bool solveInFlight;
     private bool hasSolvedCell;
     private ulong solvedBoardKey;
@@ -160,6 +172,7 @@ public unsafe class MiniCactpotModule : Module
         TaskManager.Abort();
         ResetTicketState();
         ResetPlayAgainState();
+        handOffArmedUtc = null;
         boardLayoutSeen = false;
         addonGoneSinceUtc = null;
         LastAction = "等待開啟仙人微彩面板";
@@ -172,12 +185,16 @@ public unsafe class MiniCactpotModule : Module
             case AddonEvent.PostSetup:
                 ResetTicketState();
                 ResetPlayAgainState();
+                handOffArmedUtc = null;
                 TaskManager.Abort();
                 GoldSaucerEventTracker.NoteMiniCactpotTicketOpened();
                 break;
             case AddonEvent.PreFinalize:
+                var ticketFinished = boardCompleted;
                 ResetTicketState();
                 ResetPlayAgainState();
+                var known = GoldSaucerEventTracker.TryGetMiniCactpotRemainingToday(out var remaining);
+                ArmQuestionableHandOff(ticketFinished, known, remaining);
                 if (C.MiniCactpotAutoPlayAgain)
                 {
                     // 台服關面板後是發放員再講一句話、接著跳購票確認框（事件開的，沒有 agent 歸屬）。
@@ -190,7 +207,6 @@ public unsafe class MiniCactpotModule : Module
                         OnTaskTimeout = OnPlayAgainTimedOut
                     };
                     TaskManager.Abort();
-                    var known = GoldSaucerEventTracker.TryGetMiniCactpotRemainingToday(out var remaining);
                     if (!ShouldWaitForPlayAgain(known, remaining))
                     {
                         LastAction = "今日彩券已打完，不等「購買下一張」";
@@ -264,6 +280,7 @@ public unsafe class MiniCactpotModule : Module
 
     private void OnUpdate(IFramework framework)
     {
+        TickQuestionableHandOff();
         var addon = GetLotteryDailyAddon();
         if (addon == null)
         {
@@ -551,6 +568,7 @@ public unsafe class MiniCactpotModule : Module
     private void TickCloseStage(AddonLotteryDaily* addon, ReadOnlySpan<int> board)
     {
         closeArmedUtc ??= DateTime.UtcNow;
+        boardCompleted = true;
 
         // 九格全翻開＝已開獎。派彩在關窗延遲之前就先算，免得延遲設成 0 時整個跳過。
         HandleJackpot(addon, board);
@@ -792,6 +810,79 @@ public unsafe class MiniCactpotModule : Module
     internal static bool ShouldWaitForPlayAgain(bool remainingKnown, int remaining) =>
         !(remainingKnown && remaining == 0);
 
+    /// <summary>關掉一張面板的當下：今天確定打完、這個角色今天還沒交棒過，就排一次交棒（等發放員的道別對話結束才呼叫）。</summary>
+    private void ArmQuestionableHandOff(bool ticketFinished, bool known, int remaining)
+    {
+        var enabled = C.MiniCactpotStartQuestionableAlliedDailies;
+        if (!enabled || !ticketFinished)
+        {
+            return;
+        }
+
+        var contentId = Svc.PlayerState.ContentId;
+        DateTime? lastCalled = HandOffCalledUtc.TryGetValue(contentId, out var called) ? called : null;
+        if (MiniCactpotQuestionableHandOff.ShouldArm(
+                enabled, ticketFinished, known, remaining, lastCalled, GoldSaucerEventTracker.LastDailyResetUtc()))
+        {
+            handOffArmedUtc = DateTime.UtcNow;
+            Log("今日剩餘張數確定是 0，等發放員的對話結束後請 Questionable 開始友好部族日常");
+        }
+        else if (!known)
+        {
+            Log("今日剩餘張數不知道，不交棒給 Questionable（只有確定打完才交棒）");
+        }
+        else if (remaining == 0)
+        {
+            Log($"這個角色這個遊戲日已經交棒過一次（{lastCalled?.ToLocalTime():HH:mm}），不再呼叫 Questionable");
+        }
+    }
+
+    private void TickQuestionableHandOff()
+    {
+        if (handOffArmedUtc is not { } armedUtc)
+        {
+            return;
+        }
+
+        var step = MiniCactpotQuestionableHandOff.Pending(
+            IsEnabled && C.MiniCactpotStartQuestionableAlliedDailies,
+            GetLotteryDailyAddon() != null,
+            IsHandOffBusy(),
+            (long)(DateTime.UtcNow - armedUtc).TotalMilliseconds);
+        if (step == MiniCactpotQuestionableHandOff.PendingStep.Wait)
+        {
+            return;
+        }
+
+        handOffArmedUtc = null;
+        if (step == MiniCactpotQuestionableHandOff.PendingStep.Drop)
+        {
+            Log("取消交棒給 Questionable：又開了彩券面板，或開關／模組被關掉");
+            return;
+        }
+
+        HandOffCalledUtc[Svc.PlayerState.ContentId] = DateTime.UtcNow;
+        switch (Questionable.TryStartAlliedSocietyDailies(out var detail))
+        {
+            case Questionable.AlliedDailiesStart.Started:
+                Log("已請 Questionable 開始友好部族日常，它回報已開始");
+                Svc.Chat.Print("[Saucy] " + "Mini Cactpot is done for today; Questionable has started the allied society dailies.".Loc());
+                break;
+            case Questionable.AlliedDailiesStart.Declined:
+                Log("已請 Questionable 開始友好部族日常，它回報不開始（原因寫在 Questionable 自己的 log）");
+                Svc.Chat.Print("[Saucy] " + "Mini Cactpot is done for today, but Questionable did not start the allied society dailies (see its own message for why).".Loc());
+                break;
+            default:
+                Log($"呼叫不到 Questionable 的「開始友好部族日常」：{detail}");
+                Svc.Chat.Print("[Saucy] " + "Mini Cactpot is done for today, but Questionable could not be asked to start the allied society dailies (not loaded, or too old).".Loc());
+                break;
+        }
+    }
+
+    private static bool IsHandOffBusy() =>
+        Svc.Condition[ConditionFlag.OccupiedInQuestEvent] || Svc.Condition[ConditionFlag.OccupiedInEvent] ||
+        TalkHelper.IsVisible() || SelectYesnoHelper.IsVisible() || SelectStringHelper.IsNpcListMenuVisible();
+
     private void ResetPlayAgainState()
     {
         playAgainArmedUntilUtc = null;
@@ -820,6 +911,7 @@ public unsafe class MiniCactpotModule : Module
         LastPayoutMgp = 0;
         closeChainStage = 0;
         closeChainAddress = nint.Zero;
+        boardCompleted = false;
 
         lock (solveLock)
         {

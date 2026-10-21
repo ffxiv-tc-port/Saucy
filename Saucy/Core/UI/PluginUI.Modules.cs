@@ -561,6 +561,22 @@ public unsafe partial class PluginUI
                                   "Other dialogs, NPCs and destinations are never touched. Stop it any time with Stop on the Navigation panel.").Loc());
             }
 
+            var alliedDailies = C.MiniCactpotStartQuestionableAlliedDailies;
+            if (ImGui.Checkbox("When today's tickets are done, start Questionable's allied society dailies".Loc() +
+                               "##MiniCactpotQuestionableAlliedDailies", ref alliedDailies))
+            {
+                C.MiniCactpotStartQuestionableAlliedDailies = alliedDailies;
+                C.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(("Requires Questionable, with the allied societies you want ticked in Questionable's own settings first; Saucy only asks it to start.\n" +
+                                  "Only after a finished ticket's panel closes and today's remaining count is known to be 0 (from the broker's event). If the count is unknown it does not ask.\n" +
+                                  "At most once per character per game day (resets at the daily reset). It waits for the broker's closing dialog to end, up to 10 seconds.\n" +
+                                  "Questionable decides the rest: if it is already running, or there is nothing to do today, it does not start and says why in its own log.\n" +
+                                  "One line in chat either way. Logging in, zoning or loading never starts it.").Loc());
+            }
+
             ImGui.Dummy(new(0, 4));
 
             var clickInterval = C.MiniCactpotClickIntervalMs;
