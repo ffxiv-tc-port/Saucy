@@ -114,20 +114,16 @@ internal static class GoldSaucerNavigator
             return;
         }
 
-        var label = journey.Label;
+        var active = journey;
         journey = null;
-        Log(label, announce ? "已取消" : "被新的導航取代");
+        Log(active.Label, announce ? "已取消" : "被新的導航取代");
 
-        if (Vnavmesh.IsInstalled)
-        {
-            Vnavmesh.StopPath();
-        }
-
+        StopOwnPath(active);
         Lifestream.TryAbort();
 
         if (announce)
         {
-            Svc.Chat.Print("[Saucy] " + "Navigation to ?? cancelled.".Loc(label));
+            Svc.Chat.Print("[Saucy] " + "Navigation to ?? cancelled.".Loc(active.Label));
         }
     }
 
@@ -279,10 +275,7 @@ internal static class GoldSaucerNavigator
         // Release our own path FIRST. Lifestream walks the player to the nearest aethernet access
         // point using vnavmesh, so stopping the path after issuing the command would race with — and
         // sometimes cancel — Lifestream's own movement.
-        if (Vnavmesh.IsInstalled && Vnavmesh.IsMoving())
-        {
-            Vnavmesh.StopPath();
-        }
+        StopOwnPath(active);
 
         if (!Lifestream.TryAethernetViaLiCommand(stop.Name))
         {
@@ -320,6 +313,11 @@ internal static class GoldSaucerNavigator
         if (journey is not { } active)
         {
             return;
+        }
+
+        if (active.NavOwned && !Vnavmesh.IsMoving())
+        {
+            active.NavOwned = false;
         }
 
         // Zoning: hold everything, and keep the clock from running out mid-loading-screen.
@@ -517,11 +515,7 @@ internal static class GoldSaucerNavigator
 
         if (GoldSaucerVenue.HorizontalDistance(Player.Position, active.Target) <= ArriveRange)
         {
-            if (Vnavmesh.IsMoving())
-            {
-                Vnavmesh.StopPath();
-            }
-
+            StopOwnPath(active);
             TargetOnArrival(active);
             Finish(active);
             if (active.Destination?.Key == GoldSaucerVenue.MiniCactpotKey)
@@ -555,7 +549,8 @@ internal static class GoldSaucerNavigator
             return;
         }
 
-        if (!Vnavmesh.TryMoveTo(active.Target, false, ArriveRange))
+        active.NavOwned = Vnavmesh.TryMoveTo(active.Target, false, ArriveRange);
+        if (!active.NavOwned)
         {
             active.MoveRetries++;
         }
@@ -634,11 +629,7 @@ internal static class GoldSaucerNavigator
         switch (step)
         {
             case ManualSteerWatch.Step.Started:
-                if (navigating)
-                {
-                    Vnavmesh.StopPath();
-                }
-
+                StopOwnPath(active);
                 active.YieldStartedUtc = DateTime.UtcNow;
                 active.Status = "Paused: you are moving on your own. Picks up again once you stop for ?? seconds."
                     .Loc(ManualSteerWatch.ResumeQuietMs / 1000);
@@ -673,15 +664,26 @@ internal static class GoldSaucerNavigator
         Log(active.Label, $"停止（階段 {active.Phase}）：{message}");
         if (releaseMovement)
         {
-            if (Vnavmesh.IsInstalled)
-            {
-                Vnavmesh.StopPath();
-            }
-
+            StopOwnPath(active);
             Lifestream.TryAbort();
         }
 
         Svc.Chat.PrintError("[Saucy] " + message);
+    }
+
+    /// <summary>只停這一趟自己送的步行路徑；別的插件的路徑不碰。Lifestream 的移動由 <see cref="Lifestream.TryAbort"/> 自己收。</summary>
+    private static void StopOwnPath(Journey active)
+    {
+        if (!active.NavOwned)
+        {
+            return;
+        }
+
+        active.NavOwned = false;
+        if (Vnavmesh.IsMoving())
+        {
+            Vnavmesh.StopOwnPath();
+        }
     }
 
     private static void SetPhase(Journey active, Phase phase, string status)
@@ -753,6 +755,10 @@ internal static class GoldSaucerNavigator
         public AethernetHopWatch? Hop;
         public required string Label;
         public int MoveRetries;
+
+        /// <summary>vnavmesh 現在走的是這一趟自己送的步行路徑：送路徑成功才設，vnavmesh 停了就清。</summary>
+        public bool NavOwned;
+
         public uint ObjectId;
         public Phase Phase;
         public DateTime PhaseStartedUtc;
