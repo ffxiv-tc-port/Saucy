@@ -9,15 +9,17 @@ using Saucy.Framework;
 using Saucy.Framework.GoldSaucer;
 using Saucy.IPC;
 using System;
+using System.Text;
 using static ECommons.GenericHelpers;
+using AtkValueType = FFXIVClientStructs.FFXIV.Component.GUI.ValueType;
 namespace Saucy.LeapOfFaith;
 
 // 本檔契約：狀態只在 framework 執行緒讀寫（模組的 Framework.Update、SelectYesno 的 PreSetup、停止指令）。
 // 只在「這次啟用後親眼看到入場」時才開始倒數：插件載入、模組啟用、選項打開時人已經在裡面都不算。
-// 退出只走介面：副本選單第 0 項是「退出任務」才按；確認框在 PreSetup 比中「確定要退出任務嗎？」才請 YesAlready 暫停並記下那一扇，
+// 退出只走介面：副本選單同一幀過 ContentsFinderMenuGate（排法指紋＋「退出」可按）才送；確認框在 PreSetup 比中「確定要退出任務嗎？」才請 YesAlready 暫停並記下那一扇，
 // 之後只按同一位址、同一句；暫停失敗就不按。視窗位址只做等值比較、永不解參，要碰視窗都當幀以名稱重取。
 
-/// <summary>登高跳跳樂：入場後等固定秒數，經副本選單「退出任務」直接退出（拿最低獎勵）。</summary>
+/// <summary>登高跳跳樂：入場後等固定秒數，經副本選單「退出」直接退出任務（拿最低獎勵）。</summary>
 internal static unsafe class LeapOfFaithQuickExit
 {
     private enum Phase
@@ -32,8 +34,7 @@ internal static unsafe class LeapOfFaithQuickExit
     /// <summary>Addon#2545＝「確定要退出任務嗎？」。</summary>
     private const uint LeavePromptRow = 2545;
 
-    /// <summary>Addon#3792＝副本選單的「退出任務」。</summary>
-    private const uint LeaveEntryRow = 3792;
+    private const int DumpSlots = 24;
 
     private const int YesAlreadyPauseMs = 3_000;
 
@@ -41,7 +42,7 @@ internal static unsafe class LeapOfFaithQuickExit
 
     private const long MenuRetryMs = 1_000;
 
-    // 按了「退出任務」之後這麼久都沒有確認框就放棄；關閉中的選單只有幾幀，遠小於這個值。
+    // 按了「退出」之後這麼久都沒有確認框就放棄；關閉中的選單只有幾幀，遠小於這個值。
     private const long MenuSettleMs = 3_000;
 
     private const long ExitLimitMs = 60_000;
@@ -79,8 +80,6 @@ internal static unsafe class LeapOfFaithQuickExit
     private static bool textsLoaded;
 
     private static string? leavePrompt;
-
-    private static string? leaveEntry;
 
     public static bool IsActive => phase != Phase.Off;
 
@@ -239,7 +238,7 @@ internal static unsafe class LeapOfFaithQuickExit
 
         phase = Phase.Exiting;
         phaseSince = now;
-        Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：等滿 {delaySeconds} 秒，開始退出（副本選單「退出任務」→ 確認框；{ExitLimitMs / 1000} 秒內沒離開就放棄）");
+        Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：等滿 {delaySeconds} 秒，開始退出（副本選單「退出」→ 確認框；{ExitLimitMs / 1000} 秒內沒離開就放棄）");
     }
 
     private static void TickExiting(long now)
@@ -252,7 +251,7 @@ internal static unsafe class LeapOfFaithQuickExit
 
         if (now - phaseSince > ExitLimitMs)
         {
-            Fail($"{ExitLimitMs / 1000} 秒內沒離開：叫出副本選單 {menuShows} 次、{(pressedMenu != 0 ? "按了" : "沒按到")}「退出任務」、確認框{(confirmSeen ? "看到了" : "沒看到")}");
+            Fail($"{ExitLimitMs / 1000} 秒內沒離開：叫出副本選單 {menuShows} 次、{(pressedMenu != 0 ? "按了" : "沒按到")}「退出」、確認框{(confirmSeen ? "看到了" : "沒看到")}");
             return;
         }
 
@@ -272,7 +271,7 @@ internal static unsafe class LeapOfFaithQuickExit
         {
             if (now - pressedAt >= MenuSettleMs)
             {
-                Fail($"按了「退出任務」{MenuSettleMs / 1000} 秒都沒有出現確認框");
+                Fail($"按了「退出」{MenuSettleMs / 1000} 秒都沒有出現確認框");
             }
 
             return;
@@ -312,11 +311,11 @@ internal static unsafe class LeapOfFaithQuickExit
             return;
         }
 
-        var first = FirstMenuEntry(menu);
-        var leave = LeaveEntry();
-        if (leave == null || first == null || first.ReplaceLineEndings(string.Empty) != leave)
+        var refusal = MenuRefusal(menu);
+        if (refusal != null)
         {
-            Fail($"副本選單第一項是「{first ?? "（沒有字串）"}」，不是 Addon#{LeaveEntryRow}「{leave ?? "（讀不到）"}」，不按");
+            DumpMenu(menu, $"不按：{refusal}");
+            Fail($"副本選單不能按「退出」：{refusal}");
             return;
         }
 
@@ -328,8 +327,63 @@ internal static unsafe class LeapOfFaithQuickExit
         // 先記下再按：確認框可能在 Fire 裡同步建立，PreSetup 要認得出是自己按出來的。
         pressedMenu = (nint)menu;
         pressedAt = now;
-        Callback.Fire(menu, true, 0);
-        Svc.Log.Information("[Saucy] 登高跳跳樂提早退出：副本選單按「退出任務」");
+        DumpMenu(menu, $"按「退出」（callback {ContentsFinderMenuGate.LeaveCallbackValue}）");
+        Callback.Fire(menu, true, ContentsFinderMenuGate.LeaveCallbackValue);
+    }
+
+    // 同一幀把 AtkValues 抄成值交給純函式；values 為空時不讀任何一格。
+    private static string? MenuRefusal(AtkUnitBase* menu)
+    {
+        var values = menu->AtkValues;
+        if (values == null)
+        {
+            return "AtkValues 是空的";
+        }
+
+        int count = menu->AtkValuesCount;
+        Span<int> types = stackalloc int[ContentsFinderMenuGate.FingerprintLength];
+        var n = Math.Min(count, types.Length);
+        for (var i = 0; i < n; i++)
+        {
+            types[i] = (int)values[i].Type;
+        }
+
+        return ContentsFinderMenuGate.Refusal(count, types[..n], n > 0 ? values[0].UInt : 0, n > 1 ? values[1].Byte : (byte)0);
+    }
+
+    // 每場只在決定的那一刻寫一次（按：guard 放行之後；不按：緊接著 Fail）。
+    private static void DumpMenu(AtkUnitBase* menu, string decision)
+    {
+        var values = menu->AtkValues;
+        int count = values == null ? 0 : menu->AtkValuesCount;
+        var sb = new StringBuilder($"[Saucy] 登高跳跳樂提早退出：副本選單 count={count} 區域={Svc.ClientState.TerritoryType}");
+        for (var i = 0; i < Math.Min(count, DumpSlots); i++)
+        {
+            var v = values[i];
+            sb.Append($" [{i}]{(int)v.Type:X2}:");
+            switch ((AtkValueType)((int)v.Type & (int)AtkValueType.TypeMask))
+            {
+                case AtkValueType.Bool:
+                    sb.Append(v.Byte);
+                    break;
+                case AtkValueType.Int:
+                    sb.Append(v.Int);
+                    break;
+                case AtkValueType.UInt:
+                    sb.Append(v.UInt);
+                    break;
+                case AtkValueType.String or AtkValueType.String8:
+                    var text = GetAtkValueTextOrNull(menu, i);
+                    sb.Append(text == null ? "?" : $"「{text.ReplaceLineEndings("⏎")}」");
+                    break;
+                default:
+                    sb.Append('-');
+                    break;
+            }
+        }
+
+        sb.Append(" → ").Append(decision);
+        Svc.Log.Information(sb.ToString());
     }
 
     /// <summary>確認框 Setup 之前先認：是自己按出來的退出確認才請 YesAlready 讓開並記下那一扇；認不出就什麼都不做，YesAlready 照常判斷。</summary>
@@ -421,32 +475,10 @@ internal static unsafe class LeapOfFaithQuickExit
                  c[ConditionFlag.Occupied] || c[ConditionFlag.WatchingCutscene] || c[ConditionFlag.WatchingCutscene78]);
     }
 
-    // 當幀讀完：只取文字 payload，最多看 32 格。
-    private static string? FirstMenuEntry(AtkUnitBase* menu)
-    {
-        var count = Math.Min((int)menu->AtkValuesCount, 32);
-        for (var i = 0; i < count; i++)
-        {
-            var text = GetAtkValueTextOrNull(menu, i);
-            if (!string.IsNullOrEmpty(text))
-            {
-                return text;
-            }
-        }
-
-        return null;
-    }
-
     private static string? LeavePrompt()
     {
         LoadTexts();
         return leavePrompt;
-    }
-
-    private static string? LeaveEntry()
-    {
-        LoadTexts();
-        return leaveEntry;
     }
 
     private static void LoadTexts()
@@ -459,7 +491,6 @@ internal static unsafe class LeapOfFaithQuickExit
         textsLoaded = true;
         var sheet = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>();
         leavePrompt = Normalize(sheet?.GetRowOrDefault(LeavePromptRow)?.Text.ExtractText());
-        leaveEntry = Normalize(sheet?.GetRowOrDefault(LeaveEntryRow)?.Text.ExtractText());
     }
 
     private static string? Normalize(string? text) =>
