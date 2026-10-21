@@ -97,6 +97,23 @@ internal static class Vnavmesh
         }
     }
 
+    /// <summary>停呼叫端確定是自己送的路徑：已經在走（尋路算完）就只送 <c>Path.Stop</c>，
+    /// 不連帶作廢別人排隊中的尋路；還在算路時才全域取消（vnavmesh 沒有逐筆取消）。</summary>
+    public static void StopOwnPath()
+    {
+        if (!IsInstalled)
+        {
+            return;
+        }
+
+        if (!IsPathRunning() && IsPathfindInProgress())
+        {
+            NavPathfindCancelAllRpc.TryInvoke();
+        }
+
+        PathStopRpc();
+    }
+
     public static Vector3? TryGetPointOnFloor(Vector3 position, bool allowUnlandable = false, float halfExtentXz = 3f) =>
         IsInstalled && QueryMeshPointOnFloorRpc.TryInvoke(position, allowUnlandable, halfExtentXz, out var point)
             ? point

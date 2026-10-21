@@ -118,6 +118,12 @@ internal static unsafe partial class TriadMapNavigation
             return;
         }
 
+        // 自己送的路徑跑完或被停了，之後 vnavmesh 上的路徑就不是自己的（每個階段都要清，不只送路徑的階段）。
+        if (pending.NavOwned && !Vnavmesh.IsMoving())
+        {
+            pending.NavOwned = false;
+        }
+
         if (TriadUiState.IsAutomationFlowActive())
         {
             CancelActiveNavigation();
@@ -387,12 +393,7 @@ internal static unsafe partial class TriadMapNavigation
             return false;
         }
 
-        // 自己送的路徑跑完之後，vnavmesh 上若還有路徑就是別人的：讓位時只停自己的，絕不全域取消別人的尋路。
-        if (!Vnavmesh.IsMoving())
-        {
-            pending.NavOwned = false;
-        }
-
+        // NavOwned 在 Tick 開頭已依「vnavmesh 還在不在動」清過：讓位時只停自己的路徑。
         switch (pending.Steer.Tick(ownsPath: pending.NavOwned, busy: false, out var paused))
         {
             case ManualSteerYield.Result.Hold:
