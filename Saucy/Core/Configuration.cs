@@ -80,8 +80,8 @@ public class Configuration : IPluginConfiguration
     /// 只在 MiniCactpot 模組啟用時生效。</summary>
     public bool MiniCactpotAutoPlayAgain { get; set; } = true;
 
-    /// <summary>仙人微彩：從「導航」抵達仙人微彩發放員後，自動對話並在選單選「參加」；對話與購票確認交給 YesAlready 或使用者，Saucy 不按。
-    /// 只在使用者按下導航、且 MiniCactpot 模組啟用時生效；其他導航目的地一律只移動不對話。</summary>
+    /// <summary>仙人微彩：抵達仙人微彩發放員後（導航抵達，或不論怎麼走到旁邊站定），自動對話並在選單選「參加」；對話與購票確認交給 YesAlready 或使用者，Saucy 不按。
+    /// 只在 MiniCactpot 模組啟用時生效；其他導航目的地一律只移動不對話。</summary>
     public bool MiniCactpotAutoTalkOnArrival { get; set; } = false;
 
     /// <summary>仙人微彩：當天彩券確定打完（剩 0 張）時，請 Questionable 開始友好部族日常；每個角色每個遊戲日最多一次。

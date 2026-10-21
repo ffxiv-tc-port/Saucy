@@ -5,6 +5,7 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 using Saucy.Framework;
 using Saucy.Framework.GoldSaucer;
 using Saucy.IPC;
+using Saucy.JumboCactpot;
 using System;
 using System.Numerics;
 using GoldSaucerTextData = Lumina.Excel.Sheets.GoldSaucerTextData;
@@ -12,9 +13,10 @@ using GoldSaucerTextData = Lumina.Excel.Sheets.GoldSaucerTextData;
 namespace Saucy.MiniCactpot;
 
 /// <summary>
-/// 從「導航」抵達仙人微彩發放員之後的接手：跟發放員對話、在發放員選單選「參加」，其餘只看不按——
+/// 抵達仙人微彩發放員之後的接手：跟發放員對話、在發放員選單選「參加」，其餘只看不按——
 /// 對話與購票確認交給使用者的 YesAlready 或使用者自己，彩券面板交給 <see cref="MiniCactpotModule"/>，
-/// 之後的每一張照舊走模組的「自動購買下一張」。只由 <see cref="GoldSaucerNavigator"/> 抵達時啟動。
+/// 之後的每一張照舊走模組的「自動購買下一張」。由 <see cref="GoldSaucerNavigator"/> 抵達時啟動，
+/// 或不論怎麼走到發放員旁、站定之後啟動（<see cref="MiniCactpotArrivalPolicy"/>，這種一趟不會自己去追發放員）。
 /// </summary>
 /// <remarks>
 /// 契約：只在 framework 執行緒呼叫；物件與視窗每幀重查，跨幀只留位址做等值比較，從不解參。
@@ -61,8 +63,23 @@ internal static unsafe class MiniCactpotAutoPlay
     private static readonly TimeSpan IdleEnd = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan OverallTimeout = TimeSpan.FromMinutes(5);
 
+    /// <summary>「走到發放員旁」的取樣間隔（毫秒）：要掃物件表、問互動距離，不必每幀做。</summary>
+    private const long ArrivalCheckIntervalMs = 200;
+
+    private const long ArrivalErrorBackoffMs = 30_000;
+
+    private static readonly ConditionFlag[] ArrivalBusyFlags =
+    [
+        ConditionFlag.Occupied, ConditionFlag.Occupied30, ConditionFlag.OccupiedInEvent, ConditionFlag.OccupiedInQuestEvent,
+        ConditionFlag.Occupied33, ConditionFlag.OccupiedInCutSceneEvent, ConditionFlag.Occupied38, ConditionFlag.Occupied39,
+        ConditionFlag.OccupiedSummoningBell, ConditionFlag.WatchingCutscene, ConditionFlag.WatchingCutscene78, ConditionFlag.InCombat
+    ];
+
     private static Session? session;
     private static string? joinOptionText;
+    private static readonly MiniCactpotArrivalPolicy Arrival = new();
+    private static long nextArrivalCheckMs;
+    private static bool arrivalWatchErrorLogged;
 
     public static bool IsActive => session != null;
 
@@ -91,19 +108,26 @@ internal static unsafe class MiniCactpotAutoPlay
             return;
         }
 
+        Begin(passive: false);
+        Log($"抵達發放員，開始自動對話（今日剩餘：{(known ? remaining.ToString() : "未知")}）");
+    }
+
+    private static void Begin(bool passive)
+    {
         var now = DateTime.UtcNow;
         session = new Session
         {
+            Passive = passive,
             StartedUtc = now,
             LastActivityUtc = now,
             WaitingSinceUtc = now,
             Status = "Mini Cactpot: talking to the broker...".Loc()
         };
-        Log($"抵達發放員，開始自動對話（今日剩餘：{(known ? remaining.ToString() : "未知")}）");
     }
 
     public static void Cancel(bool announce = true)
     {
+        Arrival.Disarm();
         if (session is not { } s)
         {
             return;
@@ -121,9 +145,11 @@ internal static unsafe class MiniCactpotAutoPlay
     {
         if (session is not { } s)
         {
+            TickArrivalWatch();
             return;
         }
 
+        Arrival.Disarm();
         try
         {
             TickSession(s, DateTime.UtcNow);
@@ -135,6 +161,99 @@ internal static unsafe class MiniCactpotAutoPlay
             Stop(s, "an unexpected error occurred".Loc());
         }
     }
+
+    /// <summary>不經導航、自己（或別的插件）走到發放員旁站定時接手；條件見 <see cref="MiniCactpotArrivalPolicy"/>。</summary>
+    private static void TickArrivalWatch()
+    {
+        var nowMs = Environment.TickCount64;
+        if (nowMs < nextArrivalCheckMs)
+        {
+            return;
+        }
+
+        nextArrivalCheckMs = nowMs + ArrivalCheckIntervalMs;
+        try
+        {
+            ObserveArrival(nowMs);
+        }
+        catch (Exception ex)
+        {
+            // 別的插件的 IPC 剛好在卸載也會走到這裡：退避重試，錯誤只記一次。
+            nextArrivalCheckMs = nowMs + ArrivalErrorBackoffMs;
+            if (!arrivalWatchErrorLogged)
+            {
+                arrivalWatchErrorLogged = true;
+                Svc.Log.Error(ex, "[MiniCactpotAutoPlay] 判斷是否走到發放員旁時發生例外，30 秒後重試（之後的同類錯誤不再記）");
+            }
+        }
+    }
+
+    private static void ObserveArrival(long nowMs)
+    {
+        if (!C.MiniCactpotAutoTalkOnArrival || !GoldSaucerVenue.InSaucer || !IsModuleActive())
+        {
+            Arrival.Reset();
+            return;
+        }
+
+        // 城內傳送的讀取畫面：保留狀態，傳送前後的位置差才看得出「離開過」。
+        if (!Player.Available || Svc.Condition[ConditionFlag.BetweenAreas] || Svc.Condition[ConditionFlag.BetweenAreas51])
+        {
+            return;
+        }
+
+        var player = Player.Position;
+        var broker = ObjectHelper.FindNearestByBaseId(GoldSaucerVenue.MiniCactpotBrokerId);
+        var distance = broker == null ? float.NaN : GoldSaucerVenue.HorizontalDistance(player, broker.Position);
+        var near = broker != null && distance <= MiniCactpotArrivalPolicy.NearDistance;
+        var busy = near && IsArrivalBusy();
+        var moving = near && IsArrivalMoving();
+        var inRange = near && !busy && !moving &&
+                      (InteractRangeCheck.IsWithinRange(broker!, "MiniCactpotAutoPlay") ?? distance <= FallbackInteractRange);
+        var known = GoldSaucerEventTracker.TryGetMiniCactpotRemainingToday(out var remaining);
+
+        var decision = Arrival.Decide(nowMs, player, distance, inRange, busy, moving, known && remaining == 0, out var note);
+        switch (note)
+        {
+            case MiniCactpotArrivalPolicy.Note.OutOfInteractRange:
+                Log($"站定在離發放員 {distance:0.0} 米處，不在互動距離內，不自動對話（走近一點站定就會開始）");
+                break;
+            case MiniCactpotArrivalPolicy.Note.KnownZero:
+                Log("站定在發放員旁，但今天的仙人微彩已知用完（剩 0 張），不自動對話");
+                break;
+            case MiniCactpotArrivalPolicy.Note.Busy:
+                Log("在發放員旁時正在對話、事件或選單中（多半是你自己先開始了），這次靠近不自動對話");
+                break;
+        }
+
+        if (decision != MiniCactpotArrivalPolicy.Decision.Fire)
+        {
+            return;
+        }
+
+        Begin(passive: true);
+        Log($"走到發放員旁站定（{distance:0.0} 米，不是經由導航），開始自動對話（今日剩餘：{(known ? remaining.ToString() : "未知")}）");
+        Svc.Chat.Print("[Saucy] " + "Mini Cactpot: you are standing next to the broker, so Saucy is talking to them. Move to cancel.".Loc());
+    }
+
+    private static bool IsArrivalBusy()
+    {
+        foreach (var flag in ArrivalBusyFlags)
+        {
+            if (Svc.Condition[flag])
+            {
+                return true;
+            }
+        }
+
+        return TalkHelper.IsVisible() || SelectYesnoHelper.IsVisible() || SelectStringHelper.IsNpcListMenuVisible() ||
+               IsLotteryDailyVisible();
+    }
+
+    /// <summary>角色還在被帶著走、你按著移動鍵，或現在不能互動：都還不算站定。</summary>
+    private static bool IsArrivalMoving() =>
+        GoldSaucerNavigator.IsActive || JumboCactpotAutoTalk.IsActive || Vnavmesh.IsMoving() || Lifestream.IsBusyNow() ||
+        GoldSaucerNavigator.IsManualMovementRequested() || !Player.Interactable || Player.IsAnimationLocked;
 
     private static void TickSession(Session s, DateTime now)
     {
@@ -238,6 +357,9 @@ internal static unsafe class MiniCactpotAutoPlay
         // 使用者自己動了就讓位：不重送靠近路徑，停手 2 秒再接續；讓位太久就停下這一趟。
         switch (s.Steer.Tick(ownsPath: s.Approaching, busy: false, out var paused))
         {
+            case ManualSteerYield.Result.Hold when s.Passive && s.Steer.Yielding:
+                Stop(s, "manual movement detected".Loc());
+                return;
             case ManualSteerYield.Result.Hold:
                 s.Status = "Mini Cactpot: paused while you move on your own...".Loc();
                 return;
@@ -269,6 +391,13 @@ internal static unsafe class MiniCactpotAutoPlay
 
         var inRange = InteractRangeCheck.IsWithinRange(broker, "MiniCactpotAutoPlay") ??
                       GoldSaucerVenue.HorizontalDistance(Player.Position, broker.Position) <= FallbackInteractRange;
+        if (!inRange && s.Passive)
+        {
+            // 不是你按導航叫它去的：不追著發放員走。
+            Stop(s, "no longer within talking range of the broker".Loc());
+            return;
+        }
+
         if (!inRange)
         {
             TickApproach(s, broker.Position);
@@ -507,6 +636,9 @@ internal static unsafe class MiniCactpotAutoPlay
 
     private sealed class Session
     {
+        /// <summary>true＝站定觸發（不是導航抵達）：你一動或離開互動距離就停，不自己靠近。</summary>
+        public bool Passive;
+
         public bool Approaching;
         public int ApproachMoves;
         public readonly ManualSteerYield Steer = new("仙人微彩接手靠近發放員");

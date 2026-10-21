@@ -545,7 +545,7 @@ public unsafe partial class PluginUI
             }
 
             var autoTalk = C.MiniCactpotAutoTalkOnArrival;
-            if (ImGui.Checkbox("After arriving from Navigation, talk to the broker and play today's tickets".Loc() +
+            if (ImGui.Checkbox("When you stand next to the broker (however you got there), talk to them and play today's tickets".Loc() +
                                "##MiniCactpotAutoTalk", ref autoTalk))
             {
                 C.MiniCactpotAutoTalkOnArrival = autoTalk;
@@ -553,12 +553,12 @@ public unsafe partial class PluginUI
             }
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip(("Only runs when you press Go on the Mini Cactpot row of the Navigation panel and the walk reaches the broker.\n" +
+                ImGui.SetTooltip(("Talks to the broker once you are standing still next to them in the Gold Saucer, however you got there: the Navigation panel, DailyDuty, Lifestream, or on foot.\n" +
+                                  "It starts after you have stood still within talking range for about 1 second, once per approach: you must have been more than 10 yalms away (or teleported in) first. Logging in, or turning this on while already standing there, does not start it.\n" +
+                                  "It does not start while you are talking, in an event, a menu or combat, or if today's tickets are already known to be used up. If you started talking yourself, it leaves that visit alone.\n" +
                                   "It talks to the broker and picks the join option, nothing more. The broker's dialog and the purchase confirmation (10 MGP a ticket) must be handled by YesAlready or by you; Saucy never presses them.\n" +
-                                  "This module then reveals, picks a line and collects; later tickets follow \"auto-buy the next ticket\" as before.\n" +
                                   "While picking the join option it asks YesAlready to pause its list selection for a few seconds, so the two never pick at the same time.\n" +
-                                  "If today's tickets are already known to be used up, it does not talk and prints one line instead. If no ticket opens within 30 seconds, it stops and says why.\n" +
-                                  "Other dialogs, NPCs and destinations are never touched. Stop it any time with Stop on the Navigation panel.").Loc());
+                                  "If you move before the broker answers, it stops; only a Navigation trip walks closer on its own. If no ticket opens within 30 seconds, it stops and says why. Stop it any time with Stop on the Navigation panel.").Loc());
             }
 
             var alliedDailies = C.MiniCactpotStartQuestionableAlliedDailies;
