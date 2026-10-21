@@ -58,6 +58,10 @@ internal static class GateNpcNavigation
         public readonly string InteractKey = $"Saucy.GateNpc.{key}";
         public readonly GateApproachPolicy Policy = new();
         public bool Owns;
+
+        /// <summary>vnavmesh 現在走的是這一趟自己送的路徑：送路徑成功才設，vnavmesh 停了就清（<see cref="Owns"/> 是整趟、這個是單條路徑）。</summary>
+        public bool NavOwned;
+
         public DateTime LastTickUtc;
     }
 
@@ -209,6 +213,11 @@ internal static class GateNpcNavigation
         }
 
         approach.LastTickUtc = frame;
+        if (approach.NavOwned && !Vnavmesh.IsMoving())
+        {
+            approach.NavOwned = false;
+        }
+
         return true;
     }
 
@@ -271,10 +280,11 @@ internal static class GateNpcNavigation
             case GateApproachPolicy.Decision.Hold:
                 if (note == GateApproachPolicy.Note.YieldStarted)
                 {
-                    var stopped = navigating && approach.Owns;
+                    var stopped = navigating && approach.NavOwned;
                     if (stopped)
                     {
-                        Vnavmesh.StopPath();
+                        approach.NavOwned = false;
+                        Vnavmesh.StopOwnPath();
                     }
 
                     Svc.Log.Information($"[Saucy] {approach.Label}：你自己接手移動，讓位、不重送路徑" +
@@ -286,6 +296,7 @@ internal static class GateNpcNavigation
             case GateApproachPolicy.Decision.GaveUp:
                 // 讓位時自己的路徑早就停了；這時候在跑的移動是使用者自己的，不去停它。
                 approach.Owns = false;
+                approach.NavOwned = false;
                 if (note == GateApproachPolicy.Note.WalkingAway)
                 {
                     Svc.Log.Information($"[Saucy] {approach.Label}：你在走開（離目的地 {distance:F1} 米，比讓位中最近時遠 " +
@@ -309,7 +320,7 @@ internal static class GateNpcNavigation
         {
             if (!Vnavmesh.IsMoving())
             {
-                Vnavmesh.TryMoveTo(destination, false, CloseRange);
+                approach.NavOwned = Vnavmesh.TryMoveTo(destination, false, CloseRange);
             }
 
             return;
@@ -323,6 +334,7 @@ internal static class GateNpcNavigation
         if (Vnavmesh.TryMoveTo(destination, false, CloseRange))
         {
             approach.Owns = true;
+            approach.NavOwned = true;
         }
     }
 
@@ -434,9 +446,10 @@ internal static class GateNpcNavigation
         }
 
         approach.Owns = false;
-        if (Vnavmesh.IsInstalled)
+        if (approach.NavOwned)
         {
-            Vnavmesh.StopPath();
+            approach.NavOwned = false;
+            Vnavmesh.StopOwnPath();
         }
     }
 }
