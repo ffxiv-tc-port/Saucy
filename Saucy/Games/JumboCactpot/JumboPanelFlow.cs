@@ -10,7 +10,7 @@ namespace Saucy.JumboCactpot;
 /// </summary>
 /// <remarks>
 /// 「第幾張」＝實際買了幾張：與發放員對話時伺服器送的本週已買張數，加上之後看到幾次「要不要再買一次？」（＝上一張買成了）；
-/// 兩者取與「Saucy 自己送過幾次」的較大值，所以提示框認不出來時退回舊算法、不會變差。本週張數不知道或太舊時，改用這次進場的計數。
+/// 兩者取與「Saucy 自己送過幾次（從最後一次收到本週張數起算）」的較大值，所以提示框認不出來時退回舊算法、不會變差。本週張數不知道或太舊時，改用這次進場的計數。
 /// 「這扇已送過」只在看到「要不要再買一次？」、面板位址換了、或面板重建／銷毀時才解除：在確認框按「否」回到同一扇面板不會重送。
 /// </remarks>
 internal sealed class JumboPanelFlow
@@ -70,7 +70,7 @@ internal sealed class JumboPanelFlow
     public Block LastBlock { get; private set; }
 
     /// <param name="ChangedMs">本週張數內容最後一次變動的時刻；從這之後看到的購買才往上加。</param>
-    /// <param name="CapturedMs">最後一次收到的時刻；太舊就不採信。</param>
+    /// <param name="CapturedMs">最後一次收到的時刻；太舊就不採信。Saucy 送過幾次也從這裡起算。</param>
     public readonly record struct Weekly(bool Known, int Bought, long ChangedMs, long CapturedMs);
 
     public readonly record struct Frame(
@@ -217,7 +217,9 @@ internal sealed class JumboPanelFlow
     {
         if (week.Known && week.Bought >= 0 && now - week.CapturedMs <= WeeklyFreshMs)
         {
-            return week.Bought + Math.Max(CountSince(buyAgainTimes, week.ChangedMs), CountSince(submitTimes, week.ChangedMs));
+            // 送出之後又收到同內容的本週張數＝那次沒買成（例如確認框按「否」），所以送出次數只從最後一次收到起算；
+            // 「要不要再買一次？」本身就代表買成了，照舊從內容變動起算。
+            return week.Bought + Math.Max(CountSince(buyAgainTimes, week.ChangedMs), CountSince(submitTimes, week.CapturedMs));
         }
 
         return Math.Max(visitBuyAgain, visitSubmitted);
