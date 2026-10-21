@@ -117,10 +117,16 @@ public unsafe class MiniCactpotModule : Module
     /// <summary>這一張九格都翻開過（不是玩到一半關掉）。</summary>
     private bool boardCompleted;
 
-    /// <summary>排了「交棒給 Questionable」的時間；null＝沒排。</summary>
+    /// <summary>排了「交棒給 Questionable」的時間（呼叫不到後重排時是未來的時刻）；null＝沒排。</summary>
     private DateTime? handOffArmedUtc;
 
-    /// <summary>角色 ContentId → 上一次呼叫 Questionable 的時間。只放記憶體：剩 0 張之後當天開不了新面板，重載也不會再觸發。</summary>
+    /// <summary>這一輪交棒第一次呼叫的時間；null＝還沒呼叫過。</summary>
+    private DateTime? handOffFirstTryUtc;
+
+    /// <summary>排交棒的角色；換了角色就不呼叫。</summary>
+    private ulong handOffContentId;
+
+    /// <summary>角色 ContentId → 上一次 Questionable 收到交棒（開始或拒絕）的時間。只放記憶體：剩 0 張之後當天開不了新面板，重載也不會再觸發。</summary>
     private static readonly Dictionary<ulong, DateTime> HandOffCalledUtc = [];
 
     private bool solveInFlight;
@@ -186,6 +192,7 @@ public unsafe class MiniCactpotModule : Module
                 ResetTicketState();
                 ResetPlayAgainState();
                 handOffArmedUtc = null;
+                handOffFirstTryUtc = null;
                 TaskManager.Abort();
                 GoldSaucerEventTracker.NoteMiniCactpotTicketOpened();
                 break;
@@ -825,6 +832,8 @@ public unsafe class MiniCactpotModule : Module
                 enabled, ticketFinished, known, remaining, lastCalled, GoldSaucerEventTracker.LastDailyResetUtc()))
         {
             handOffArmedUtc = DateTime.UtcNow;
+            handOffFirstTryUtc = null;
+            handOffContentId = contentId;
             Log("今日剩餘張數確定是 0，等發放員的對話結束後請 Questionable 開始友好部族日常");
         }
         else if (!known)
@@ -839,8 +848,16 @@ public unsafe class MiniCactpotModule : Module
 
     private void TickQuestionableHandOff()
     {
-        if (handOffArmedUtc is not { } armedUtc)
+        if (handOffArmedUtc is not { } armedUtc || DateTime.UtcNow < armedUtc)
         {
+            return;
+        }
+
+        if (Svc.PlayerState.ContentId != handOffContentId)
+        {
+            handOffArmedUtc = null;
+            handOffFirstTryUtc = null;
+            Log("取消交棒給 Questionable：已經換了角色或登出");
             return;
         }
 
@@ -857,12 +874,28 @@ public unsafe class MiniCactpotModule : Module
         handOffArmedUtc = null;
         if (step == MiniCactpotQuestionableHandOff.PendingStep.Drop)
         {
+            handOffFirstTryUtc = null;
             Log("取消交棒給 Questionable：又開了彩券面板，或開關／模組被關掉");
             return;
         }
 
-        HandOffCalledUtc[Svc.PlayerState.ContentId] = DateTime.UtcNow;
-        switch (Questionable.TryStartAlliedSocietyDailies(out var detail))
+        var now = DateTime.UtcNow;
+        handOffFirstTryUtc ??= now;
+        var result = Questionable.TryStartAlliedSocietyDailies(out var detail);
+        var outcome = MiniCactpotQuestionableHandOff.AfterCall(result, (long)(now - handOffFirstTryUtc.Value).TotalMilliseconds);
+        if (outcome == MiniCactpotQuestionableHandOff.CallOutcome.Record)
+        {
+            HandOffCalledUtc[handOffContentId] = now;
+        }
+        else if (outcome == MiniCactpotQuestionableHandOff.CallOutcome.Retry)
+        {
+            handOffArmedUtc = now.AddMilliseconds(MiniCactpotQuestionableHandOff.UnavailableRetryMs);
+            Log($"呼叫不到 Questionable 的「開始友好部族日常」：{detail}；不算用掉今天這一次，{MiniCactpotQuestionableHandOff.UnavailableRetryMs / 1000} 秒後再試");
+            return;
+        }
+
+        handOffFirstTryUtc = null;
+        switch (result)
         {
             case Questionable.AlliedDailiesStart.Started:
                 Log("已請 Questionable 開始友好部族日常，它回報已開始");
@@ -873,7 +906,7 @@ public unsafe class MiniCactpotModule : Module
                 Svc.Chat.Print("[Saucy] " + "Mini Cactpot is done for today, but Questionable did not start the allied society dailies (see its own message for why).".Loc());
                 break;
             default:
-                Log($"呼叫不到 Questionable 的「開始友好部族日常」：{detail}");
+                Log($"呼叫不到 Questionable 的「開始友好部族日常」：{detail}；重試 {MiniCactpotQuestionableHandOff.UnavailableRetryWindowMs / 60_000} 分鐘仍不行，這一輪不再呼叫");
                 Svc.Chat.Print("[Saucy] " + "Mini Cactpot is done for today, but Questionable could not be asked to start the allied society dailies (not loaded, or too old).".Loc());
                 break;
         }

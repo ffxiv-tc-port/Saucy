@@ -73,6 +73,20 @@ internal static unsafe class LeapOfFaithQuickExit
 
     private static bool confirmSeen;
 
+    /// <summary>自己叫出來的那一扇選單（只做等值比較）；0＝目前沒有。</summary>
+    private static nint ownMenu;
+
+    private static bool awaitingOwnMenu;
+
+    // 暫時不能按之後（關了自己的選單），到這一刻前不碰選單也不重叫。
+    private static long menuCooldownUntil;
+
+    private static int menuRefusals;
+
+    private static ContentsFinderMenuGate.Verdict lastVerdict;
+
+    private static string? lastRefusal;
+
     private static nint claimedYesno;
 
     private static long claimDeadline;
@@ -167,6 +181,12 @@ internal static unsafe class LeapOfFaithQuickExit
         nextMenuShowAt = 0;
         menuShows = 0;
         confirmSeen = false;
+        ownMenu = 0;
+        awaitingOwnMenu = false;
+        menuCooldownUntil = 0;
+        menuRefusals = 0;
+        lastVerdict = ContentsFinderMenuGate.Verdict.Press;
+        lastRefusal = null;
         claimedYesno = 0;
         steer.Reset();
     }
@@ -191,8 +211,10 @@ internal static unsafe class LeapOfFaithQuickExit
         Svc.Chat.Print($"[Saucy] 登高跳跳樂：{delaySeconds} 秒後退出任務（拿最低獎勵）。自己移動或 /saucy stop 可取消。");
     }
 
+    // 只從 TickExiting 呼叫（框架執行緒）：放棄前把自己叫出來的選單關掉。
     private static void Fail(string reason)
     {
+        CloseOwnMenu("放棄");
         Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：放棄（{reason}）");
         Svc.Chat.Print($"[Saucy] 登高跳跳樂：沒有自動退出（{reason}），需要的話請自己退出任務。");
         ClearRun();
@@ -251,7 +273,9 @@ internal static unsafe class LeapOfFaithQuickExit
 
         if (now - phaseSince > ExitLimitMs)
         {
-            Fail($"{ExitLimitMs / 1000} 秒內沒離開：叫出副本選單 {menuShows} 次、{(pressedMenu != 0 ? "按了" : "沒按到")}「退出」、確認框{(confirmSeen ? "看到了" : "沒看到")}");
+            Fail(lastRefusal != null && pressedMenu == 0 && !confirmSeen
+                ? $"{ExitLimitMs / 1000} 秒內副本選單一直不能按「退出」：{lastRefusal}"
+                : $"{ExitLimitMs / 1000} 秒內沒離開：叫出副本選單 {menuShows} 次、{(pressedMenu != 0 ? "按了" : "沒按到")}「退出」、確認框{(confirmSeen ? "看到了" : "沒看到")}");
             return;
         }
 
@@ -267,6 +291,12 @@ internal static unsafe class LeapOfFaithQuickExit
 
         var found = TryGetAddonByName<AtkUnitBase>(MenuAddon, out var menu);
         var ready = found && IsAddonReady(menu);
+        if (ready && awaitingOwnMenu)
+        {
+            ownMenu = (nint)menu;
+            awaitingOwnMenu = false;
+        }
+
         if (pressedMenu != 0)
         {
             if (now - pressedAt >= MenuSettleMs)
@@ -274,6 +304,11 @@ internal static unsafe class LeapOfFaithQuickExit
                 Fail($"按了「退出」{MenuSettleMs / 1000} 秒都沒有出現確認框");
             }
 
+            return;
+        }
+
+        if (now < menuCooldownUntil)
+        {
             return;
         }
 
@@ -305,17 +340,39 @@ internal static unsafe class LeapOfFaithQuickExit
             if (agent != null)
             {
                 menuShows++;
+                awaitingOwnMenu = true;
                 agent->Show();
             }
 
             return;
         }
 
-        var refusal = MenuRefusal(menu);
-        if (refusal != null)
+        var verdict = JudgeMenu(menu, out var refusal);
+        if (verdict != ContentsFinderMenuGate.Verdict.Press)
         {
-            DumpMenu(menu, $"不按：{refusal}");
-            Fail($"副本選單不能按「退出」：{refusal}");
+            if (!ContentsFinderMenuGate.CanRetry(verdict))
+            {
+                DumpMenu(menu, $"不按：{refusal}");
+                Fail($"副本選單不能按「退出」：{refusal}");
+                return;
+            }
+
+            // 暫時不能按：關掉自己叫出來的那扇、冷卻後重叫；別人開的不關，冷卻後重讀。總時限在上面。
+            menuRefusals++;
+            lastRefusal = refusal;
+            var own = (nint)menu == ownMenu;
+            if (verdict != lastVerdict)
+            {
+                lastVerdict = verdict;
+                DumpMenu(menu, $"暫時不按：{refusal}；{(own ? "關掉選單、" : string.Empty)}{MenuRetryMs / 1000} 秒後再看（第 {menuRefusals} 次）");
+            }
+
+            if (own)
+            {
+                CloseOwnMenu("暫時不能按「退出」");
+            }
+
+            menuCooldownUntil = now + MenuRetryMs;
             return;
         }
 
@@ -325,19 +382,45 @@ internal static unsafe class LeapOfFaithQuickExit
         }
 
         // 先記下再按：確認框可能在 Fire 裡同步建立，PreSetup 要認得出是自己按出來的。
+        lastRefusal = null;
         pressedMenu = (nint)menu;
         pressedAt = now;
         DumpMenu(menu, $"按「退出」（callback {ContentsFinderMenuGate.LeaveCallbackValue}）");
         Callback.Fire(menu, true, ContentsFinderMenuGate.LeaveCallbackValue);
     }
 
+    // 只關自己叫出來、當幀照名字重找到而且就緒的那一扇；按窗守衛擋住（例如正在關閉）就不送。
+    // 剛按了「退出」還在等確認框、或確認框已出現時不碰（那扇選單已經在走退出流程）。
+    private static void CloseOwnMenu(string why)
+    {
+        if (ownMenu == 0 || confirmSeen || claimedYesno != 0 || (pressedMenu != 0 && Environment.TickCount64 - pressedAt < MenuSettleMs))
+        {
+            return;
+        }
+
+        if (!TryGetAddonByName<AtkUnitBase>(MenuAddon, out var menu) || (nint)menu != ownMenu || !IsAddonReady(menu))
+        {
+            return;
+        }
+
+        if (!AddonPressGuard.TryBeginPress(MenuAddon, menu))
+        {
+            return;
+        }
+
+        ownMenu = 0;
+        Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：關掉自己叫出來的副本選單（{why}）");
+        Callback.Fire(menu, false, ContentsFinderMenuGate.CloseCallbackValue);
+    }
+
     // 同一幀把 AtkValues 抄成值交給純函式；values 為空時不讀任何一格。
-    private static string? MenuRefusal(AtkUnitBase* menu)
+    private static ContentsFinderMenuGate.Verdict JudgeMenu(AtkUnitBase* menu, out string? refusal)
     {
         var values = menu->AtkValues;
         if (values == null)
         {
-            return "AtkValues 是空的";
+            refusal = "AtkValues 是空的";
+            return ContentsFinderMenuGate.Verdict.TooFew;
         }
 
         int count = menu->AtkValuesCount;
@@ -348,10 +431,10 @@ internal static unsafe class LeapOfFaithQuickExit
             types[i] = (int)values[i].Type;
         }
 
-        return ContentsFinderMenuGate.Refusal(count, types[..n], n > 0 ? values[0].UInt : 0, n > 1 ? values[1].Byte : (byte)0);
+        return ContentsFinderMenuGate.Judge(count, types[..n], n > 0 ? values[0].UInt : 0, n > 1 ? values[1].Byte : (byte)0, out refusal);
     }
 
-    // 每場只在決定的那一刻寫一次（按：guard 放行之後；不按：緊接著 Fail）。
+    // 只在決定的那一刻寫（按：guard 放行之後；不按：緊接著 Fail；暫時不按：理由換了才寫）。
     private static void DumpMenu(AtkUnitBase* menu, string decision)
     {
         var values = menu->AtkValues;
