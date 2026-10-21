@@ -342,16 +342,26 @@ internal static partial class TriadMapNavigation
                (useFly && Vnavmesh.TryPathfindAndMoveTo(dest));
     }
 
-    // 只停目前這一趟自己送的路徑；別人的路徑不碰，交給各階段原本的等待（IsMoving 就不送）與逾時放棄。
+    // 只停目前這一趟自己送的路徑（含多區路線移動步驟送的）；別人的路徑不碰，交給各階段原本的等待（IsMoving 就不送）與逾時放棄。
     private static void StopVnavIfRunning()
     {
-        var pending = _pending;
-        if (pending is not { NavOwned: true })
+        if (_pending is not { } pending)
+        {
+            return;
+        }
+
+        var route = pending.RouteExecution;
+        if (!pending.NavOwned && route is not { NavOwned: true })
         {
             return;
         }
 
         pending.NavOwned = false;
+        if (route != null)
+        {
+            route.NavOwned = false;
+        }
+
         if (Vnavmesh.IsMoving())
         {
             Vnavmesh.StopOwnPath();

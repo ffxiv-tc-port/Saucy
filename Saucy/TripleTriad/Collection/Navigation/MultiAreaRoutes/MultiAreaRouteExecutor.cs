@@ -363,7 +363,7 @@ internal static unsafe class MultiAreaRouteExecutor
                 return false;
             }
 
-            if (TickManualSteer(execution, ownsPath: false))
+            if (TickManualSteer(execution))
             {
                 return false;
             }
@@ -388,6 +388,7 @@ internal static unsafe class MultiAreaRouteExecutor
             }
 
             execution.StepActionStarted = true;
+            execution.NavOwned = true;
             return false;
         }
 
@@ -399,7 +400,7 @@ internal static unsafe class MultiAreaRouteExecutor
         if (step.ArrivalObjectDataId != 0)
         {
             var target = FindObject(step.ArrivalObjectDataId);
-            if (target != null && Vnavmesh.TickArrival(target.Position, step.Range))
+            if (target != null && Vnavmesh.TickOwnArrival(target.Position, step.Range, ref execution.NavOwned))
             {
                 return TryCompleteMoveToStep(step);
             }
@@ -407,14 +408,14 @@ internal static unsafe class MultiAreaRouteExecutor
         else
         {
             var approachPoint = TriadMapNavigation.ResolveNpcPathPoint(ResolveApproachPoint(step));
-            if (Vnavmesh.TickArrival(approachPoint, step.Range))
+            if (Vnavmesh.TickOwnArrival(approachPoint, step.Range, ref execution.NavOwned))
             {
                 return TryCompleteMoveToStep(step);
             }
         }
 
         // 送過路徑之後只在使用者接手、停手之後重送一次；導航自己停在半路照舊不重送。
-        if (TickManualSteer(execution, ownsPath: true) || execution.Failed)
+        if (TickManualSteer(execution) || execution.Failed)
         {
             return false;
         }
@@ -429,10 +430,10 @@ internal static unsafe class MultiAreaRouteExecutor
     }
 
     /// <summary>回 true＝讓位中（這一幀不要送路徑）；放棄時把整條路線標成失敗。</summary>
-    private static bool TickManualSteer(RouteExecution execution, bool ownsPath)
+    private static bool TickManualSteer(RouteExecution execution)
     {
         execution.Steer ??= new ManualSteerYield($"路線「{execution.Route.Name}」");
-        switch (execution.Steer.Tick(ownsPath, busy: false, out var paused))
+        switch (execution.Steer.Tick(execution.NavOwned, busy: false, out var paused))
         {
             case ManualSteerYield.Result.Hold:
                 return true;
@@ -635,6 +636,10 @@ internal static unsafe class MultiAreaRouteExecutor
         public required MultiAreaRouteContext Context;
         public bool Failed;
         public required MultiAreaRoute Route;
+
+        /// <summary>vnavmesh 現在走的是路線移動步驟自己送的路徑：送路徑成功才設；vnavmesh 停了由 <see cref="TriadMapNavigation"/>.Tick 開頭清。</summary>
+        public bool NavOwned;
+
         public ManualSteerYield? Steer;
         public bool SteerResumed;
         public bool StepActionStarted;

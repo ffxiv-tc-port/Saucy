@@ -159,6 +159,19 @@ internal static class Vnavmesh
         return IsWithinHorizontalRange(destination, closeRange) && !IsMoving();
     }
 
+    /// <summary>同 <see cref="TickArrival"/>，但到達時只停 <paramref name="ownsPath"/> 標記為自己的路徑（停了就清掉）；
+    /// 別人的路徑不碰，等它停了才回報到達。</summary>
+    public static bool TickOwnArrival(Vector3 destination, float closeRange, ref bool ownsPath)
+    {
+        if (ownsPath && IsWithinHorizontalRange(destination, closeRange) && IsMoving())
+        {
+            ownsPath = false;
+            StopOwnPath();
+        }
+
+        return IsWithinHorizontalRange(destination, closeRange) && !IsMoving();
+    }
+
     public static bool IsWithinHorizontalRange(Vector3 destination, float range)
     {
         var delta = Player.Position - destination;

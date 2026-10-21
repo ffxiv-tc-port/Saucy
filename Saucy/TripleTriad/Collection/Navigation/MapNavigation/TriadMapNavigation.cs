@@ -118,10 +118,15 @@ internal static unsafe partial class TriadMapNavigation
             return;
         }
 
-        // 自己送的路徑跑完或被停了，之後 vnavmesh 上的路徑就不是自己的（每個階段都要清，不只送路徑的階段）。
-        if (pending.NavOwned && !Vnavmesh.IsMoving())
+        // 自己送的路徑跑完或被停了，之後 vnavmesh 上的路徑就不是自己的（每個階段都要清，不只送路徑的階段；多區路線的也在這裡清）。
+        var route = pending.RouteExecution;
+        if ((pending.NavOwned || route is { NavOwned: true }) && !Vnavmesh.IsMoving())
         {
             pending.NavOwned = false;
+            if (route != null)
+            {
+                route.NavOwned = false;
+            }
         }
 
         if (TriadUiState.IsAutomationFlowActive())
