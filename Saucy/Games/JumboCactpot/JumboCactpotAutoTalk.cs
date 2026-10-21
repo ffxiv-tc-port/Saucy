@@ -220,8 +220,13 @@ internal static unsafe class JumboCactpotAutoTalk
 
     private static void TickApproachAndInteract(Session s, DateTime now)
     {
+        if (s.NavOwned && !Vnavmesh.IsMoving())
+        {
+            s.NavOwned = false;
+        }
+
         // 使用者自己動了就讓位：不重送靠近路徑，停手 2 秒再接續一次；讓位太久就停下這一趟。
-        switch (s.Steer.Tick(ownsPath: s.Approaching, busy: false, out var paused))
+        switch (s.Steer.Tick(ownsPath: s.NavOwned, busy: false, out var paused))
         {
             case ManualSteerYield.Result.Hold:
                 s.Status = "Jumbo Cactpot: paused while you move on your own...".Loc();
@@ -260,14 +265,8 @@ internal static unsafe class JumboCactpotAutoTalk
             return;
         }
 
-        if (s.Approaching)
-        {
-            s.Approaching = false;
-            if (Vnavmesh.IsMoving())
-            {
-                Vnavmesh.StopPath();
-            }
-        }
+        s.Approaching = false;
+        StopOwnApproach(s);
 
         if (now - s.StartedUtc < ArrivalSettle ||
             !Player.Interactable || Player.IsAnimationLocked || Svc.Condition[ConditionFlag.OccupiedInQuestEvent])
@@ -323,7 +322,21 @@ internal static unsafe class JumboCactpotAutoTalk
 
         s.Approaching = true;
         Log("不在互動範圍內，往發放員靠近");
-        Vnavmesh.TryMoveTo(brokerPosition, false, ApproachRange);
+        s.NavOwned = Vnavmesh.TryMoveTo(brokerPosition, false, ApproachRange);
+    }
+
+    private static void StopOwnApproach(Session s)
+    {
+        if (!s.NavOwned)
+        {
+            return;
+        }
+
+        s.NavOwned = false;
+        if (Vnavmesh.IsMoving())
+        {
+            Vnavmesh.StopOwnPath();
+        }
     }
 
     /// <summary>請 YesAlready 暫停 SelectString 選項；確認它不會選，才記下「這段時間出現的選單歸 Saucy」。</summary>
@@ -471,10 +484,7 @@ internal static unsafe class JumboCactpotAutoTalk
             session = null;
         }
 
-        if (s.Approaching && Vnavmesh.IsMoving())
-        {
-            Vnavmesh.StopPath();
-        }
+        StopOwnApproach(s);
     }
 
     private static void Log(string message) => Svc.Log.Information($"[{LogTag}] {message}");
@@ -484,7 +494,11 @@ internal static unsafe class JumboCactpotAutoTalk
 
     private sealed class Session
     {
+        /// <summary>這一趟已經靠近過一次（只靠近一次的閘門）；路徑是不是自己的看 <see cref="NavOwned"/>。</summary>
         public bool Approaching;
+
+        /// <summary>vnavmesh 現在走的是這一趟自己送的靠近路徑：送路徑成功才設，vnavmesh 停了就清。</summary>
+        public bool NavOwned;
         public readonly ManualSteerYield Steer = new("仙人仙彩接手靠近發放員");
         public bool ClaimFailLogged;
         public bool Engaged;

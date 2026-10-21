@@ -354,8 +354,13 @@ internal static unsafe class MiniCactpotAutoPlay
 
     private static void TickApproachAndInteract(Session s, DateTime now)
     {
+        if (s.NavOwned && !Vnavmesh.IsMoving())
+        {
+            s.NavOwned = false;
+        }
+
         // 使用者自己動了就讓位：不重送靠近路徑，停手 2 秒再接續；讓位太久就停下這一趟。
-        switch (s.Steer.Tick(ownsPath: s.Approaching, busy: false, out var paused))
+        switch (s.Steer.Tick(ownsPath: s.NavOwned, busy: false, out var paused))
         {
             case ManualSteerYield.Result.Hold when s.Passive && s.Steer.Yielding:
                 Stop(s, "manual movement detected".Loc());
@@ -404,14 +409,7 @@ internal static unsafe class MiniCactpotAutoPlay
             return;
         }
 
-        if (s.Approaching)
-        {
-            s.Approaching = false;
-            if (Vnavmesh.IsMoving())
-            {
-                Vnavmesh.StopPath();
-            }
-        }
+        StopOwnApproach(s);
 
         if (now - s.StartedUtc < ArrivalSettle ||
             !Player.Interactable || Player.IsAnimationLocked || Svc.Condition[ConditionFlag.OccupiedInQuestEvent])
@@ -465,9 +463,22 @@ internal static unsafe class MiniCactpotAutoPlay
         }
 
         s.ApproachMoves++;
-        s.Approaching = true;
         Log($"不在互動範圍內，往發放員靠近（第 {s.ApproachMoves} 次）");
-        Vnavmesh.TryMoveTo(brokerPosition, false, ApproachRange);
+        s.NavOwned = Vnavmesh.TryMoveTo(brokerPosition, false, ApproachRange);
+    }
+
+    private static void StopOwnApproach(Session s)
+    {
+        if (!s.NavOwned)
+        {
+            return;
+        }
+
+        s.NavOwned = false;
+        if (Vnavmesh.IsMoving())
+        {
+            Vnavmesh.StopOwnPath();
+        }
     }
 
     /// <summary>互動前請 YesAlready 暫停清單選項；確認它不會選，才記下「這段時間出現的選單歸 Saucy」。</summary>
@@ -617,10 +628,7 @@ internal static unsafe class MiniCactpotAutoPlay
             session = null;
         }
 
-        if (s.Approaching && Vnavmesh.IsMoving())
-        {
-            Vnavmesh.StopPath();
-        }
+        StopOwnApproach(s);
     }
 
     private static string Shorten(string text)
@@ -639,7 +647,9 @@ internal static unsafe class MiniCactpotAutoPlay
         /// <summary>true＝站定觸發（不是導航抵達）：你一動或離開互動距離就停，不自己靠近。</summary>
         public bool Passive;
 
-        public bool Approaching;
+        /// <summary>vnavmesh 現在走的是這一趟自己送的靠近路徑：送路徑成功才設，vnavmesh 停了就清。</summary>
+        public bool NavOwned;
+
         public int ApproachMoves;
         public readonly ManualSteerYield Steer = new("仙人微彩接手靠近發放員");
         public bool ClaimFailLogged;
