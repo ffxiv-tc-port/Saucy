@@ -190,6 +190,14 @@ public unsafe class MiniCactpotModule : Module
                         OnTaskTimeout = OnPlayAgainTimedOut
                     };
                     TaskManager.Abort();
+                    var known = GoldSaucerEventTracker.TryGetMiniCactpotRemainingToday(out var remaining);
+                    if (!ShouldWaitForPlayAgain(known, remaining))
+                    {
+                        LastAction = "今日彩券已打完，不等「購買下一張」";
+                        Log("今日剩餘張數確定是 0，不等「購買下一張」確認框");
+                        break;
+                    }
+
                     playAgainArmedUntilUtc = DateTime.UtcNow.AddMilliseconds(PlayAgainWaitMs);
                     TaskManager.Enqueue(TryPressPlayAgainYes, "MiniCactpot.PlayAgain", playAgainTaskConfiguration);
                 }
@@ -779,6 +787,10 @@ public unsafe class MiniCactpotModule : Module
             $"claimed={((nint)yesno == playAgainClaimedYesno)}, " +
             $"仙人微彩面板={boardBack}");
     }
+
+    /// <summary>只有剩餘張數「確定是 0」才不等確認框；不知道（沒收到事件、換角色、跨過重置）一律照舊等。</summary>
+    internal static bool ShouldWaitForPlayAgain(bool remainingKnown, int remaining) =>
+        !(remainingKnown && remaining == 0);
 
     private void ResetPlayAgainState()
     {
