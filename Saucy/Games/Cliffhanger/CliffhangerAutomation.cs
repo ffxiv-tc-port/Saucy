@@ -686,7 +686,7 @@ internal static unsafe class CliffhangerAutomation
             // with it.
             ReleaseKeys();
 
-            if (Vnavmesh.TickArrival(target, ArrivalRange))
+            if (Vnavmesh.TickArrivalStoppingAnyPath(target, ArrivalRange))
             {
                 return;
             }

@@ -144,8 +144,9 @@ public static unsafe class ObjectHelper
         return Vnavmesh.TryMoveTo(obj.Position, false, closeRange);
     }
 
-    public static bool HasArrivedAt(IGameObject obj, float closeRange = Vnavmesh.NpcCloseRange) =>
-        Vnavmesh.TickArrival(obj.Position, closeRange);
+    /// <param name="ownsPath">vnavmesh 現在走的是不是呼叫端自己送的路徑；是才在到達時停它（停了就清）。</param>
+    public static bool HasArrivedAt(IGameObject obj, ref bool ownsPath, float closeRange = Vnavmesh.NpcCloseRange) =>
+        Vnavmesh.TickOwnArrival(obj.Position, closeRange, ref ownsPath);
 
     public static bool TryInteractWithBaseId(
         uint baseId,

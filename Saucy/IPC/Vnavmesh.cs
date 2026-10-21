@@ -149,7 +149,9 @@ internal static class Vnavmesh
         return IsMoving() || (closeRange > 0f && IsWithinHorizontalRange(destination, closeRange));
     }
 
-    public static bool TickArrival(Vector3 destination, float closeRange)
+    /// <summary>到達就停下 vnavmesh 目前在走的任何路徑（不分是誰送的，含全域取消算路）。
+    /// 只給 GATE 場內的小遊戲用：那裡的移動整段由 Saucy 掌控；其他地方一律用 <see cref="TickOwnArrival"/>。</summary>
+    public static bool TickArrivalStoppingAnyPath(Vector3 destination, float closeRange)
     {
         if (IsWithinHorizontalRange(destination, closeRange) && IsMoving())
         {
@@ -159,7 +161,7 @@ internal static class Vnavmesh
         return IsWithinHorizontalRange(destination, closeRange) && !IsMoving();
     }
 
-    /// <summary>同 <see cref="TickArrival"/>，但到達時只停 <paramref name="ownsPath"/> 標記為自己的路徑（停了就清掉）；
+    /// <summary>同 <see cref="TickArrivalStoppingAnyPath"/>，但到達時只停 <paramref name="ownsPath"/> 標記為自己的路徑（停了就清掉）；
     /// 別人的路徑不碰，等它停了才回報到達。</summary>
     public static bool TickOwnArrival(Vector3 destination, float closeRange, ref bool ownsPath)
     {

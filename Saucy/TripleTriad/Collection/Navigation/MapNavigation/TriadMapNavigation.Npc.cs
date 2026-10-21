@@ -111,7 +111,7 @@ internal static unsafe partial class TriadMapNavigation
 
         if (!withinInteractionRange)
         {
-            if (Vnavmesh.TickArrival(npcPos, NpcPathArrivalRange))
+            if (Vnavmesh.TickOwnArrival(npcPos, NpcPathArrivalRange, ref pending.NavOwned))
             {
                 return;
             }
