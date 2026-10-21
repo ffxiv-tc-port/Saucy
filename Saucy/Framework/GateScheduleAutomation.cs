@@ -42,6 +42,9 @@ internal static unsafe class GateScheduleAutomation
     private static readonly ManualSteerYield coordinatorSteer = new("活動解說員自動靠近");
     private static readonly ManualSteerYield joinSteer = new("GATE 報名自動靠近");
 
+    /// <summary>vnavmesh 現在走的是活動解說員那一段自己送的路徑：送路徑成功才設，vnavmesh 停了就清（<see cref="ForgetFinishedPaths"/>）。</summary>
+    private static bool coordinatorNavOwned;
+
     // Once the coordinator's actually been talked to for this window, the teleport it triggers may drop the player far from every OTHER recorded spot — re-running "nearest" every remaining tick of the same ~1-minute window would then immediately walk back toward whichever spot is nearest. Latch once handled and don't try again until the window itself resets.
     // Persisted to Configuration (not a plain static bool) — a plugin reload mid-window used to forget "already handled" and immediately repeat the search/walk, since a fresh in-memory flag defaults back to false.
     // the actual coordinator/registration teleport only takes ~5-10s. 30s is still comfortably longer than a real teleport takes (so a genuinely successful attempt won't immediately retry and interrupt itself), while letting a failed one recover well within the same ~1-minute window.
@@ -62,8 +65,20 @@ internal static unsafe class GateScheduleAutomation
         C.Save();
     }
 
+    // 自己送的路徑跑完或被停了，之後 vnavmesh 上的路徑就不是自己的：讓位與停止都只看這三個旗標。
+    private static void ForgetFinishedPaths()
+    {
+        if ((coordinatorNavOwned || joinNavOwned || afterGateNavOwned) && !Vnavmesh.IsMoving())
+        {
+            coordinatorNavOwned = false;
+            joinNavOwned = false;
+            afterGateNavOwned = false;
+        }
+    }
+
     public static void Tick()
     {
+        ForgetFinishedPaths();
         ObserveGateEnd();
 
         if (!GateDirector.InSaucer || GateDirector.IsPlayerOnStage())
@@ -175,9 +190,13 @@ internal static unsafe class GateScheduleAutomation
         manualJoinUntilUtc = null;
         coordinatorSteer.Reset();
         ReleaseJoinNavigation();
-        if (coordinatorWalking && Vnavmesh.IsMoving())
+        if (coordinatorWalking && coordinatorNavOwned)
         {
-            Vnavmesh.StopPath();
+            coordinatorNavOwned = false;
+            if (Vnavmesh.IsMoving())
+            {
+                Vnavmesh.StopOwnPath();
+            }
         }
 
         return hadManual;
@@ -420,7 +439,7 @@ internal static unsafe class GateScheduleAutomation
 
         if (afterGateNavOwned && Vnavmesh.IsInstalled && Vnavmesh.IsMoving())
         {
-            Vnavmesh.StopPath();
+            Vnavmesh.StopOwnPath();
         }
 
         afterGateTarget = null;
@@ -492,7 +511,7 @@ internal static unsafe class GateScheduleAutomation
             return interacted;
         }
 
-        switch (coordinatorSteer.Tick(ownsPath: true, busy: false, out _))
+        switch (coordinatorSteer.Tick(coordinatorNavOwned, busy: false, out _))
         {
             case ManualSteerYield.Result.Hold:
                 return false;
@@ -503,9 +522,9 @@ internal static unsafe class GateScheduleAutomation
                 return true;
         }
 
-        if (!Vnavmesh.IsMoving())
+        if (!Vnavmesh.IsMoving() && Vnavmesh.TryMoveTo(destination, false, GateNpcNavigation.CloseRange))
         {
-            Vnavmesh.TryMoveTo(destination, false, GateNpcNavigation.CloseRange);
+            coordinatorNavOwned = true;
         }
 
         return false;
@@ -667,11 +686,10 @@ internal static unsafe class GateScheduleAutomation
                 return;
         }
 
-        if (!Vnavmesh.IsMoving())
+        if (!Vnavmesh.IsMoving() && Vnavmesh.TryMoveTo(nearestNpc.Position, false, JoinInteractRange))
         {
-            Vnavmesh.TryMoveTo(nearestNpc.Position, false, JoinInteractRange);
+            joinNavOwned = true;
         }
-        joinNavOwned = true;
     }
 
     private static void ReleaseJoinNavigation()
@@ -683,7 +701,7 @@ internal static unsafe class GateScheduleAutomation
             joinNavOwned = false;
             if (Vnavmesh.IsInstalled)
             {
-                Vnavmesh.StopPath();
+                Vnavmesh.StopOwnPath();
             }
         }
     }

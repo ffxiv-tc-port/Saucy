@@ -34,7 +34,7 @@ internal sealed class ManualSteerYield(string label)
 
     public void Reset() => watch.Reset();
 
-    /// <param name="ownsPath">vnavmesh 現在走的路徑是不是自己送的；是才在使用者接手時停掉它。</param>
+    /// <param name="ownsPath">vnavmesh 現在走的路徑是不是自己送的（送路徑成功才算、vnavmesh 停了就不算）；是才在使用者接手時停掉它。</param>
     /// <param name="busy">呼叫端認定「使用者在做別的事、送路徑會打斷他」的狀態（例如詠唱）；自己流程造成的狀態不要算進來。</param>
     public Result Tick(bool ownsPath, bool busy, out TimeSpan pausedFor)
     {
@@ -47,7 +47,7 @@ internal sealed class ManualSteerYield(string label)
             case ManualSteerWatch.Step.Started:
                 if (navigating && ownsPath)
                 {
-                    Vnavmesh.StopPath();
+                    Vnavmesh.StopOwnPath();
                 }
 
                 yieldStartedUtc = DateTime.UtcNow;
