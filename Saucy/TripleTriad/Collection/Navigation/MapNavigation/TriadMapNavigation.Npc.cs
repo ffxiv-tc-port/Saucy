@@ -159,7 +159,7 @@ internal static unsafe partial class TriadMapNavigation
 
             if (!Vnavmesh.IsMoving())
             {
-                TryBackoffFromNpc(npcPos, pending.Fly);
+                TryBackoffFromNpc(pending, npcPos);
             }
 
             return;
@@ -287,7 +287,7 @@ internal static unsafe partial class TriadMapNavigation
 
         if (horizDistToNpc < NpcMinStandoffDistance)
         {
-            TryBackoffFromNpc(npcPos, pending.Fly);
+            TryBackoffFromNpc(pending, npcPos);
             return;
         }
 
@@ -314,7 +314,7 @@ internal static unsafe partial class TriadMapNavigation
         }
     }
 
-    private static bool TryBackoffFromNpc(Vector3 npcPos, bool fly)
+    private static bool TryBackoffFromNpc(PendingNavigation pending, Vector3 npcPos)
     {
         StopVnavIfRunning();
         if (Vnavmesh.IsMoving())
@@ -322,7 +322,13 @@ internal static unsafe partial class TriadMapNavigation
             return true;
         }
 
-        return TryPathToNpcBackoff(npcPos, fly);
+        if (!TryPathToNpcBackoff(npcPos, pending.Fly))
+        {
+            return false;
+        }
+
+        pending.NavOwned = true;
+        return true;
     }
 
     private static bool EnsureDismountedForNpcInteraction()

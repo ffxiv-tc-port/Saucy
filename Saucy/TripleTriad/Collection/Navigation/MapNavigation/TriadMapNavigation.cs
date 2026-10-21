@@ -387,7 +387,13 @@ internal static unsafe partial class TriadMapNavigation
             return false;
         }
 
-        switch (pending.Steer.Tick(ownsPath: true, busy: false, out var paused))
+        // 自己送的路徑跑完之後，vnavmesh 上若還有路徑就是別人的：讓位時只停自己的，絕不全域取消別人的尋路。
+        if (!Vnavmesh.IsMoving())
+        {
+            pending.NavOwned = false;
+        }
+
+        switch (pending.Steer.Tick(ownsPath: pending.NavOwned, busy: false, out var paused))
         {
             case ManualSteerYield.Result.Hold:
                 return true;
@@ -469,6 +475,8 @@ internal static unsafe partial class TriadMapNavigation
         public TriadNavigationGoal NavigationGoal;
         public bool NavMeshWaitAnnounced;
         public bool NavMeshWasReady;
+        /// <summary>vnavmesh 正在跑的路徑是這一趟自己送的（送成功時設、路徑停了就清）。</summary>
+        public bool NavOwned;
         public TriadNpc? Npc;
         public int NpcInteractionAttempts;
         public uint PendingAethernetShardId;

@@ -285,12 +285,14 @@ internal static partial class TriadMapNavigation
 
         if (Vnavmesh.TryPathfindAndMoveTo(destination, fly))
         {
+            pending.NavOwned = true;
             Svc.Chat.Print("[Saucy] " + "Moving to ??.".Loc(pending.Location.PlaceName));
             return true;
         }
 
         if (fly && Vnavmesh.TryPathfindAndMoveTo(destination))
         {
+            pending.NavOwned = true;
             pending.Fly = false;
             Svc.Chat.Print("[Saucy] " + "Moving to ??.".Loc(pending.Location.PlaceName));
             return true;
@@ -314,11 +316,13 @@ internal static partial class TriadMapNavigation
         var fly = ResolveNavFly(pending);
         if (Vnavmesh.TryMoveTo(npcPos, fly, NpcPathArrivalRange))
         {
+            pending.NavOwned = true;
             return true;
         }
 
         if (fly && Vnavmesh.TryMoveTo(npcPos, false, NpcPathArrivalRange))
         {
+            pending.NavOwned = true;
             pending.Fly = false;
             return true;
         }

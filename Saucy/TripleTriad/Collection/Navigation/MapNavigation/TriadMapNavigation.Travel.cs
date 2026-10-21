@@ -337,6 +337,7 @@ internal static partial class TriadMapNavigation
         if (Vnavmesh.TryMoveTo(hubPos.Value, useFly, AetheryteHelper.AethernetHubUseRange) ||
             (useFly && Vnavmesh.TryMoveTo(hubPos.Value, false, AetheryteHelper.AethernetHubUseRange)))
         {
+            pending.NavOwned = true;
             pending.Fly = false;
             return;
         }
