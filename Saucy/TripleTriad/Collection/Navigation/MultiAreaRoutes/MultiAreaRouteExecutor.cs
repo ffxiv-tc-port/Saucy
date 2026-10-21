@@ -370,6 +370,12 @@ internal static unsafe class MultiAreaRouteExecutor
 
             execution.SteerResumed = false;
             var approachPoint = TriadMapNavigation.ResolveNpcPathPoint(ResolveApproachPoint(step));
+            // 已在範圍內時 TryMoveTo 不送路徑就回 true，不能拿後面「vnav 沒在動」判失敗；別人的路徑還在動就等它停。
+            if (step.Range > 0f && Vnavmesh.IsWithinHorizontalRange(approachPoint, step.Range))
+            {
+                return !Vnavmesh.IsMoving() && TryCompleteMoveToStep(step);
+            }
+
             var fly = TravelMountHelper.ResolveUseFlying(step.Fly);
             if (!Vnavmesh.TryMoveTo(approachPoint, fly, step.Range) &&
                 fly &&
