@@ -26,6 +26,9 @@ internal static class YesAlready
     /// <summary>YesAlready 依文字規則按 SelectYesno「是」的那個功能（它的類別簡名）；它在確認框 PostSetup 當下就按。</summary>
     private const string SelectYesnoFeature = "SelectYesno";
 
+    /// <summary>YesAlready 依目標名稱規則翻 Talk 對話框的那個功能（它的類別簡名）；它在 Talk 的 PostUpdate 每幀判斷。</summary>
+    private const string TalkFeature = "Talk";
+
     private static bool pausedBySaucy;
 
     private static ICallGateSubscriber<string, int, bool>? pauseBotherSubscriber;
@@ -49,15 +52,24 @@ internal static class YesAlready
     public static bool TryPauseSelectYesno(int milliseconds) =>
         TryPauseFeature(SelectYesnoFeature, "是／否確認框", milliseconds);
 
+    /// <summary>同 <see cref="TryPauseListSelection"/>，對象換成 Talk 對話框；它每幀都判斷，所以要在按之前、而且持續續期。</summary>
+    /// <param name="logOutcome">false＝不寫結果 log（每幾百毫秒續期一次的呼叫端自己決定何時寫）。</param>
+    public static bool TryPauseTalk(int milliseconds, bool logOutcome) =>
+        TryPauseFeature(TalkFeature, " Talk 對話框", milliseconds, logOutcome);
+
     public static bool IsLoaded =>SubscriptionManager.IsLoaded(InternalName);
 
-    private static bool TryPauseFeature(string feature, string label, int milliseconds)
+    private static bool TryPauseFeature(string feature, string label, int milliseconds, bool logOutcome = true)
     {
         try
         {
             pauseBotherSubscriber ??= Svc.PluginInterface.GetIpcSubscriber<string, int, bool>(PauseBotherChannel);
             var paused = pauseBotherSubscriber.InvokeFunc(feature, milliseconds);
-            Svc.Log.Information($"[Saucy] 請 YesAlready 暫停{label} {milliseconds} 毫秒：{(paused ? "已暫停" : "該功能本來就沒啟用")}");
+            if (logOutcome)
+            {
+                Svc.Log.Information($"[Saucy] 請 YesAlready 暫停{label} {milliseconds} 毫秒：{(paused ? "已暫停" : "該功能本來就沒啟用")}");
+            }
+
             return true;
         }
         catch (IpcNotReadyError)
@@ -67,7 +79,11 @@ internal static class YesAlready
         }
         catch (Exception ex)
         {
-            Svc.Log.Information(ex, $"[Saucy] 無法請 YesAlready 暫停{label}功能");
+            if (logOutcome)
+            {
+                Svc.Log.Information(ex, $"[Saucy] 無法請 YesAlready 暫停{label}功能");
+            }
+
             return false;
         }
     }

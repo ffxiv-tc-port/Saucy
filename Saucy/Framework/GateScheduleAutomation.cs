@@ -495,7 +495,7 @@ internal static unsafe class GateScheduleAutomation
             // Talk dialogue with no SelectString menu at all, so requiring a menu to be visible before reporting "done"
             // would never mark those handled and keep walking back to re-interact after the teleport already happened.
             // Report done as soon as the interact itself actually fires.
-            TalkHelper.TryAdvance("Saucy.GateSchedule.CoordinatorTalk");
+            AdvanceTalkWithYesAlreadyPaused("Saucy.GateSchedule.CoordinatorTalk");
 
             if (GateNpcNavigation.IsInteractOnCooldown)
             {
@@ -658,7 +658,7 @@ internal static unsafe class GateScheduleAutomation
         {
             // a plain narration Talk window (before the eventual yes/no confirm another plugin like YesAlready handles) doesn't advance itself. Click through it every tick we're standing right at our own registration target — safe to do broadly here since we only reach this branch while actively trying to register for a GATE we're right next to, not some unrelated conversation.
             // Report "done" as soon as the interact itself actually fires (not just target-lock): some of these NPCs teleport right off a Talk window with no SelectString at all.
-            TalkHelper.TryAdvance("Saucy.GateSchedule.JoinTalk");
+            AdvanceTalkWithYesAlreadyPaused("Saucy.GateSchedule.JoinTalk");
 
             if (!IsRegisterOnCooldown && !GateNpcNavigation.IsInteractOnCooldown &&
                 ObjectHelper.TryInteractWithObject(nearestNpc, "Saucy.GateSchedule.Join"))
@@ -690,6 +690,78 @@ internal static unsafe class GateScheduleAutomation
         {
             joinNavOwned = true;
         }
+    }
+
+    // ── 替你翻 NPC 對話前先請 YesAlready 暫停 Talk ──
+    // YesAlready 的 Talk 在 PostUpdate 每幀判斷，兩邊同幀按同一扇＝攔不到的存取違規。
+    // 暫停要先連續生效 TalkClaimSettleMs 才按：暫停之前它按下的那一頁有時間關完。
+    // 暫停很短且只在站在 NPC 旁時續期，停手後它自己到期，不需要另外恢復。
+
+    private const int TalkClaimMs = 1_500;
+
+    private const long TalkClaimRenewMs = 500;
+
+    private const long TalkClaimSettleMs = 500;
+
+    /// <summary>這一段連續暫停的起點與到期（<see cref="Environment.TickCount64"/>）；到期或問不到之後再請到就是新的一段。</summary>
+    private static long talkClaimFrom;
+
+    private static long talkClaimUntil;
+
+    private static long talkClaimLastAttempt;
+
+    private static bool talkClaimFailLogged;
+
+    /// <summary>站在 NPC 旁每幀呼叫：YesAlready 沒載入就照舊翻；載入了就先確認它的 Talk 已讓開夠久才翻，問不到就不翻。</summary>
+    private static void AdvanceTalkWithYesAlreadyPaused(string throttleKey)
+    {
+        if (!YesAlready.IsLoaded)
+        {
+            talkClaimUntil = 0;
+            TalkHelper.TryAdvance(throttleKey);
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (!TickTalkClaim(now) || now - talkClaimFrom < TalkClaimSettleMs)
+        {
+            return;
+        }
+
+        TalkHelper.TryAdvance(throttleKey);
+    }
+
+    /// <summary>true＝YesAlready 的 Talk 現在確定暫停著（或它本來就沒開）。</summary>
+    private static bool TickTalkClaim(long now)
+    {
+        if (now - talkClaimLastAttempt < TalkClaimRenewMs)
+        {
+            return talkClaimUntil > now;
+        }
+
+        talkClaimLastAttempt = now;
+        var startingNewClaim = talkClaimUntil <= now;
+        if (!YesAlready.TryPauseTalk(TalkClaimMs, logOutcome: startingNewClaim && !talkClaimFailLogged))
+        {
+            // 問不到就當暫停已斷（它可能剛重新載入、舊的暫停已丟掉）：之後請到要重新等滿 TalkClaimSettleMs。
+            talkClaimUntil = 0;
+            if (!talkClaimFailLogged)
+            {
+                talkClaimFailLogged = true;
+                Svc.Log.Information("[Saucy] GATE：無法確認 YesAlready 不會按 NPC 對話框，Saucy 先不替你翻這段對話（交給 YesAlready 或你自己按）");
+            }
+
+            return false;
+        }
+
+        talkClaimFailLogged = false;
+        if (startingNewClaim)
+        {
+            talkClaimFrom = now;
+        }
+
+        talkClaimUntil = now + TalkClaimMs;
+        return true;
     }
 
     private static void ReleaseJoinNavigation()
