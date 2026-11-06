@@ -28,8 +28,8 @@ public class AirForceOne : Module
         GateNpcNavigation.Tick(GateType.AirForceOne, C.GoldSaucerGates.AirForceNpcSpot, C.GoldSaucerGates.AirForceNpcAutoNavigate);
     }
 
-    /// <summary>Draws the bomb avoid-radius circles and target lock circles used to tune
-    /// C.GoldSaucerGates.AirForceBombAvoidRadius visually instead of by trial and error.</summary>
+    /// <summary>Draws the bomb avoid circles and target circles used to tune
+    /// AirForceBombCircleRadius / AirForceTargetCircleRadius visually instead of by trial and error.</summary>
     private static void Draw()
     {
         if (!C.GoldSaucerGates.AirForceShowPredictionCircles)

@@ -227,7 +227,38 @@ public class GoldSaucerGateSettings
     public bool GateRewardWindowAutoClose { get; set; } = true;
 
     public bool CliffhangerAutoMovement { get; set; }
+    /// <summary>拆成炸彈避讓圈／目標標靶圈之前的共用半徑；現在只用來推兩個新欄位的初值，保留以相容舊設定檔。</summary>
     public float AirForceBombAvoidRadius { get; set; } = 134f;
+
+    /// <summary>炸彈避讓圈半徑（像素，距離 20 米時）；null＝舊設定檔沒有這一欄，載入時由舊共用半徑＋10 推出。</summary>
+    public float? AirForceBombCircleRadius { get; set; }
+
+    /// <summary>目標標靶圈半徑（像素，距離 20 米時）；null＝舊設定檔沒有這一欄，載入時由舊共用半徑－10 推出。</summary>
+    public float? AirForceTargetCircleRadius { get; set; }
+
+    public const float AirForceRadiusSplitOffset = 10f;
+    public const float AirForceBombCircleMin = 40f;
+    public const float AirForceTargetCircleMin = 20f;
+    public const float AirForceCircleMax = 500f;
+
+    public float BombCircleRadius() =>
+        AirForceBombCircleRadius ?? Math.Clamp(AirForceBombAvoidRadius + AirForceRadiusSplitOffset, AirForceBombCircleMin, AirForceCircleMax);
+
+    public float TargetCircleRadius() =>
+        AirForceTargetCircleRadius ?? Math.Clamp(AirForceBombAvoidRadius - AirForceRadiusSplitOffset, AirForceTargetCircleMin, AirForceCircleMax);
+
+    /// <summary>載入時呼叫：新欄位不存在就從使用者目前的共用半徑推一次並寫回。回傳有沒有補。</summary>
+    public bool MigrateAirForceCircleRadii()
+    {
+        if (AirForceBombCircleRadius != null && AirForceTargetCircleRadius != null)
+        {
+            return false;
+        }
+
+        AirForceBombCircleRadius ??= BombCircleRadius();
+        AirForceTargetCircleRadius ??= TargetCircleRadius();
+        return true;
+    }
     public float CliffhangerBombBlastRadiusGuess { get; set; } = 2.6f;
     public float CliffhangerBombDisplaySeconds { get; set; } = 2.3f;
 

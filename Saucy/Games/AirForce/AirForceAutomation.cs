@@ -112,12 +112,15 @@ public static unsafe class AirForceAutomation
             // that can't be a real target regardless of DataId match.
             const float MaxBelowPlayerY = 15f;
 
+            var bombCircleRadius = C.GoldSaucerGates.BombCircleRadius();
+            var targetCircleRadius = C.GoldSaucerGates.TargetCircleRadius();
+
             var bombs = Svc.Objects.OfType<IEventObj>()
                 .Where(x => x.BaseId == BombDataId && Player.Position.Y - x.Position.Y < MaxBelowPlayerY)
                 .Select(x => (Screen: Svc.GameGui.WorldToScreen(x.Position, out var s) ? s : (System.Numerics.Vector2?)null, Dist: Player.DistanceTo(x)))
                 .Where(b => b.Screen.HasValue)
                 .Select(b => (Screen: b.Screen!.Value, Dist: b.Dist, AvoidRadius: Math.Clamp(
-                    C.GoldSaucerGates.AirForceBombAvoidRadius * (ReferenceDistance / Math.Max(b.Dist, 1f)),
+                    bombCircleRadius * (ReferenceDistance / Math.Max(b.Dist, 1f)),
                     40f, 500f)))
                 .ToArray();
             LastBombCircles = bombs.Select(b => new BombCircle(b.Screen, b.AvoidRadius, BombDataId)).ToArray();
@@ -170,7 +173,7 @@ public static unsafe class AirForceAutomation
                     // still threatened.
                     var targetDist = Player.DistanceTo(x);
                     var targetRadius = Math.Clamp(
-                        C.GoldSaucerGates.AirForceBombAvoidRadius * (ReferenceDistance / Math.Max(targetDist, 1f)),
+                        targetCircleRadius * (ReferenceDistance / Math.Max(targetDist, 1f)),
                         40f, 500f);
 
                     var aimPoint = screen;

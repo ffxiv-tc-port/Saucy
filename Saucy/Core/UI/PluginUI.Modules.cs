@@ -146,10 +146,11 @@ public unsafe partial class PluginUI
         ImGui.TextWrapped("啟用後將自動執行，為你自動遊玩 Air Force One 射擊乘坐小遊戲。");
 
         ImGui.Dummy(new(0, 4));
-        var bombRadius = C.GoldSaucerGates.AirForceBombAvoidRadius;
-        if (ImGui.SliderFloat("炸彈避讓半徑（像素）##AirForceBombRadius", ref bombRadius, 40f, 400f, "%.0f"))
+        var bombRadius = C.GoldSaucerGates.BombCircleRadius();
+        if (ImGui.SliderFloat("炸彈避讓圈半徑（像素）##AirForceBombCircleRadius", ref bombRadius,
+                GoldSaucerGateSettings.AirForceBombCircleMin, GoldSaucerGateSettings.AirForceCircleMax, "%.0f"))
         {
-            C.GoldSaucerGates.AirForceBombAvoidRadius = bombRadius;
+            C.GoldSaucerGates.AirForceBombCircleRadius = bombRadius;
         }
         if (ImGui.IsItemDeactivatedAfterEdit())
         {
@@ -157,7 +158,22 @@ public unsafe partial class PluginUI
         }
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("目標畫面上跟炸彈距離小於這個值就會跳過不打，太常打到炸彈就調大，目標一直跳過不打就調小。");
+            ImGui.SetTooltip("炸彈周圍不開槍的範圍（紅圈）。太常打到炸彈就調大，目標一直因為炸彈跳過不打就調小。\n以 20 米遠為準，越近畫面上越大。");
+        }
+
+        var targetRadius = C.GoldSaucerGates.TargetCircleRadius();
+        if (ImGui.SliderFloat("目標標靶圈半徑（像素）##AirForceTargetCircleRadius", ref targetRadius,
+                GoldSaucerGateSettings.AirForceTargetCircleMin, GoldSaucerGateSettings.AirForceCircleMax, "%.0f"))
+        {
+            C.GoldSaucerGates.AirForceTargetCircleRadius = targetRadius;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("目標本身被當成多大（綠圈）：炸彈靠近時改瞄這個圈離炸彈最遠的邊。\n調大比較敢瞄邊緣、調小比較常整個跳過。以 20 米遠為準。");
         }
 
         var showCircles = C.GoldSaucerGates.AirForceShowPredictionCircles;

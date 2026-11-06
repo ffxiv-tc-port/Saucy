@@ -56,6 +56,11 @@ public sealed partial class Saucy : IDalamudPlugin
             Svc.Log.Information($"[Saucy] 對戰次數統計有 {renamedNpcKeys} 個 NPC 名是 7.25 前的舊中間點寫法，已改成新寫法（同一個 NPC 兩種寫法的次數已相加）");
         }
 
+        if (C.GoldSaucerGates.MigrateAirForceCircleRadii())
+        {
+            Svc.Log.Information($"[Saucy] 空軍裝甲駕駛員：原本共用的半徑 {C.GoldSaucerGates.AirForceBombAvoidRadius:0} 拆成炸彈避讓圈 {C.GoldSaucerGates.BombCircleRadius():0}、目標標靶圈 {C.GoldSaucerGates.TargetCircleRadius():0}");
+        }
+
         TriadRunSession.ModuleEnabled = false;
         TriadCardFarmSession.DeactivateSession(clearProgress: true);
         TriadRunSession.ResetRunModeForPluginLoad();
