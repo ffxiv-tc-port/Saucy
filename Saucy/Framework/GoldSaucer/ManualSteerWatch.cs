@@ -35,6 +35,9 @@ internal sealed class ManualSteerWatch
     /// <summary>超過這個速度當成傳送或瞬移，不是移動：清掉歷史。</summary>
     public const float TeleportSpeed = 50f;
 
+    /// <summary>時間窗外最近那一筆比這還舊＝中間有一段沒在觀察（呼叫端暫停判斷、被 NPC 傳送走），不拿它算速度：清掉歷史。</summary>
+    public const long StaleSampleMs = 1000;
+
     /// <summary>停手這麼久才接續：方向鍵點放、滑鼠放開重按之間的空檔都比這短，使用者還在操作時不會被搶回方向。</summary>
     public const long ResumeQuietMs = 2000;
 
@@ -145,16 +148,23 @@ internal sealed class ManualSteerWatch
         }
     }
 
-    // 記下這一筆，回傳到時間窗以前最近那一筆的水平速度；歷史不夠長回 -1。瞬移時清掉歷史、回 -1。
+    // 記下這一筆，回傳到時間窗以前最近那一筆的水平速度；歷史不夠長回 -1。瞬移或歷史過舊時清掉歷史、回 -1。
     private float Push(Vector3 player, long now)
     {
         var result = -1f;
+        var stale = false;
         for (var i = 0; i < count; i++)
         {
             var index = (head - 1 - i + Capacity) % Capacity;
             if (now - times[index] < WindowMs)
             {
                 continue;
+            }
+
+            if (now - times[index] > StaleSampleMs)
+            {
+                stale = true;
+                break;
             }
 
             var seconds = (now - times[index]) / 1000f;
@@ -164,7 +174,7 @@ internal sealed class ManualSteerWatch
             break;
         }
 
-        if (result > TeleportSpeed)
+        if (stale || result > TeleportSpeed)
         {
             count = 0;
             result = -1f;
