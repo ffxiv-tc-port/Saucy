@@ -362,6 +362,9 @@ public class GoldSaucerGateSettings
     // Persisted (not just an in-memory static flag) so a plugin reload mid-window doesn't forget
     // "already handled this window" and immediately search for/walk to the same NPC again.
     public long LastCoordinatorHandledUtcTicks { get; set; }
+
+    /// <summary>跟活動解說員對話後確定被傳送走的時刻；落在目前的 :55／:15／:35 時段內＝這個時段不再找活動解說員。</summary>
+    public long LastCoordinatorTeleportUtcTicks { get; set; }
     public long LastJoinHandledUtcTicks { get; set; }
 }
 

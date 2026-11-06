@@ -53,6 +53,40 @@ internal static unsafe class GateScheduleAutomation
     private static bool HasHandledRecently(long utcTicks) =>
         utcTicks != 0 && DateTime.UtcNow - new DateTime(utcTicks, DateTimeKind.Utc) < HandledLatchWindow;
 
+    // 對話後離對話位置這麼遠（水平）＝被 NPC 傳送走了；解說員之間、解說員與各會場都遠大於這個值。
+    private const float CoordinatorTeleportMeters = 20f;
+
+    /// <summary>最近一次真的跟活動解說員互動到時站的位置；null＝這個時段還沒互動到，或已判定過。</summary>
+    private static Vector3? coordinatorTalkPosition;
+
+    private static bool IsCoordinatorWindowLocked() =>
+        IsInSameWindowMinute(C.GoldSaucerGates.LastCoordinatorTeleportUtcTicks, DateTime.UtcNow.Ticks);
+
+    /// <summary>時段以整分鐘為界（:55／:15／:35 那一分鐘），UTC 與本地時間的分鐘邊界相同。<paramref name="markUtcTicks"/> 為 0＝沒有標記。</summary>
+    internal static bool IsInSameWindowMinute(long markUtcTicks, long nowUtcTicks) =>
+        markUtcTicks != 0 && markUtcTicks <= nowUtcTicks && markUtcTicks >= nowUtcTicks - (nowUtcTicks % TimeSpan.TicksPerMinute);
+
+    // 被傳送後鎖到時段結束：30 秒鎖存到期後不再走回最近的活動解說員再傳一次。
+    private static void ObserveCoordinatorTeleport()
+    {
+        if (coordinatorTalkPosition is not { } talkedAt || !Player.Available || IsCoordinatorWindowLocked())
+        {
+            return;
+        }
+
+        var delta = Player.Position - talkedAt;
+        var distance = MathF.Sqrt((delta.X * delta.X) + (delta.Z * delta.Z));
+        if (distance <= CoordinatorTeleportMeters)
+        {
+            return;
+        }
+
+        coordinatorTalkPosition = null;
+        C.GoldSaucerGates.LastCoordinatorTeleportUtcTicks = DateTime.UtcNow.Ticks;
+        C.Save();
+        Svc.Log.Information($"[Saucy] 活動解說員：對話後已被傳送（離對話位置 {distance:F0} 米），這個時段（到 {DateTime.Now:HH:mm}:59）不再走去活動解說員");
+    }
+
     private static void MarkCoordinatorHandled()
     {
         C.GoldSaucerGates.LastCoordinatorHandledUtcTicks = DateTime.UtcNow.Ticks;
@@ -111,6 +145,7 @@ internal static unsafe class GateScheduleAutomation
         else if (IsCoordinatorWindow)
         {
             CancelAfterGateReturn("活動解說員時段開始，交給排程");
+            ObserveCoordinatorTeleport();
             if (GateEmergencyHold.IsHeld)
             {
                 if (C.GoldSaucerGates.EventCoordinatorAutoNavigate)
@@ -120,6 +155,7 @@ internal static unsafe class GateScheduleAutomation
             }
             else if (C.GoldSaucerGates.EventCoordinatorAutoNavigate &&
                 !HasHandledRecently(C.GoldSaucerGates.LastCoordinatorHandledUtcTicks) &&
+                !IsCoordinatorWindowLocked() &&
                 NavigateToNearestCoordinator())
             {
                 MarkCoordinatorHandled();
@@ -128,6 +164,7 @@ internal static unsafe class GateScheduleAutomation
         else
         {
             coordinatorSteer.Reset();
+            coordinatorTalkPosition = null;
             TickAfterGateReturn();
         }
 
@@ -506,6 +543,7 @@ internal static unsafe class GateScheduleAutomation
             if (interacted)
             {
                 GateNpcNavigation.MarkInteracted();
+                coordinatorTalkPosition = Player.Position;
             }
 
             return interacted;
