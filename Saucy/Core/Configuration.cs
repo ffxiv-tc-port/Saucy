@@ -222,6 +222,10 @@ public class GoldSaucerGateSettings
     public int LeapOfFaithQuickExitDelaySeconds { get; set; } = 10;
 
     public const int LeapOfFaithQuickExitMaxDelaySeconds = 60;
+
+    /// <summary>登高跳跳樂與 Air Force One 副本結束（含提早退出）後的金碟幣結算視窗，出現 2 秒後替你關閉；只在對應模組啟用時生效。</summary>
+    public bool GateRewardWindowAutoClose { get; set; } = true;
+
     public bool CliffhangerAutoMovement { get; set; }
     public float AirForceBombAvoidRadius { get; set; } = 134f;
     public float CliffhangerBombBlastRadiusGuess { get; set; } = 2.6f;

@@ -47,7 +47,7 @@ internal static unsafe class LeapOfFaithQuickExit
 
     private const long ExitLimitMs = 60_000;
 
-    // 代按「是」之後退出可能被遊戲或其他插件延後一分鐘以上：從按下起另算時限，不套 ExitLimitMs。
+    // 代按「是」之後遊戲先在副本裡顯示金碟幣結算視窗，約 60 秒後才送出副本：從按下起另算時限，不套 ExitLimitMs。
     private const long LeaveAfterYesLimitMs = 120_000;
 
     private const long SlowLeaveNoteMs = 10_000;
@@ -115,6 +115,8 @@ internal static unsafe class LeapOfFaithQuickExit
     {
         Phase.Waiting when waitStart == 0 => "目前：已入場，等角色出現後開始倒數",
         Phase.Waiting => $"目前：{Math.Max(0, delaySeconds - ((Environment.TickCount64 - waitStart) / 1000))} 秒後退出任務",
+        Phase.Exiting when yesPressedAt != 0 && GoldSaucerRewardDismiss.IsShown => $"目前：已退出，結算視窗開著（{GoldSaucerRewardDismiss.ShownForMs / 1000} 秒），等它結束後離開副本",
+        Phase.Exiting when yesPressedAt != 0 => $"目前：已按退出（{(Environment.TickCount64 - yesPressedAt) / 1000} 秒前），等結算視窗結束後離開副本",
         Phase.Exiting => "目前：正在退出任務",
         _ => "目前：沒有在倒數"
     };
@@ -421,7 +423,8 @@ internal static unsafe class LeapOfFaithQuickExit
         if (!slowLeaveNoted && waited > SlowLeaveNoteMs)
         {
             slowLeaveNoted = true;
-            Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：按了「是」{SlowLeaveNoteMs / 1000} 秒還在副本裡，退出被延後了（遊戲或其他插件），繼續等到按下後第 {LeaveAfterYesLimitMs / 1000} 秒");
+            var reward = GoldSaucerRewardDismiss.IsShown ? $"結算視窗開著（{GoldSaucerRewardDismiss.ShownForMs / 1000.0:0.0} 秒）" : "沒看到結算視窗";
+            Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：按了「是」{SlowLeaveNoteMs / 1000} 秒還在副本裡（{reward}），在等結算視窗結束，繼續等到按下後第 {LeaveAfterYesLimitMs / 1000} 秒");
         }
     }
 

@@ -170,6 +170,24 @@ public unsafe partial class PluginUI
         {
             ImGui.SetTooltip("關閉可提升畫面幀數，僅影響顯示，不影響自動避讓/鎖定邏輯。");
         }
+
+        DrawGateRewardAutoClose("AirForce");
+    }
+
+    // 登高跳跳樂與 Air Force One 共用同一個設定，兩個頁面各放一份。
+    private static void DrawGateRewardAutoClose(string idSuffix)
+    {
+        var autoClose = C.GoldSaucerGates.GateRewardWindowAutoClose;
+        if (ImGui.Checkbox($"副本結束後自動關閉金碟幣結算視窗##GateRewardAutoClose{idSuffix}", ref autoClose))
+        {
+            C.GoldSaucerGates.GateRewardWindowAutoClose = autoClose;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("結算視窗出現 2 秒後替你按關閉（Air Force One 會先等 Saucy 記下這場的金碟幣）。\n" +
+                             "結算視窗開著時遊戲大約 60 秒後才送你出副本；關掉後能不能早點離開，看 log 裡「金碟幣結算視窗」那幾行。");
+        }
     }
 
     private static void DrawLeapOfFaithPanel()
@@ -222,6 +240,8 @@ public unsafe partial class PluginUI
                 SaucyTheme.TextMuted("用副本選單的「退出任務」退出；確認框由 Saucy 按（先請 YesAlready 讓開，請不動就不按）。");
                 SaucyTheme.TextMuted(LeapOfFaithQuickExit.StatusText);
             }
+
+            DrawGateRewardAutoClose("LeapOfFaith");
         }
 
         ImGui.Dummy(new(0, 4));

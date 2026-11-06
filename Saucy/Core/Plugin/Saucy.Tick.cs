@@ -16,6 +16,7 @@ public sealed partial class Saucy
             SubscriptionManager.Subscribe();
             GateNpcNavigation.TickManualInteract();
             Framework.GoldSaucer.GoldSaucerNavigator.Tick();
+            Framework.GoldSaucer.GoldSaucerRewardDismiss.Tick();
             global::Saucy.MiniCactpot.MiniCactpotAutoPlay.Tick();
             global::Saucy.JumboCactpot.JumboCactpotAutoTalk.Tick();
             UpdateGateAutoOpen();
