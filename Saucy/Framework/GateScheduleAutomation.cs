@@ -117,7 +117,12 @@ internal static unsafe class GateScheduleAutomation
 
         if (!GateDirector.InSaucer || GateDirector.IsPlayerOnStage())
         {
-            CancelAfterGateReturn(null);
+            var walkOffStage = GateDirector.InSaucer && IsCliffhangerWalkOffStage();
+            if (!walkOffStage)
+            {
+                CancelAfterGateReturn(null);
+            }
+
             ReleaseJoinNavigation();
             manualCoordinatorTarget = null;
             manualJoinUntilUtc = null;
@@ -129,7 +134,20 @@ internal static unsafe class GateScheduleAutomation
             if (GateDirector.IsPlayerOnStage())
             {
                 MarkJoinHandled();
+                if (!walkOffStage && afterJoinArmedAt != 0)
+                {
+                    Svc.Log.Information($"[Saucy] {AfterJoinLabel}：報名後已在場上、而且開著自動移動，改成這場 GATE 結束後再走回");
+                }
             }
+
+            if (walkOffStage)
+            {
+                TickAfterJoinReturn();
+                TickAfterGateReturn();
+                return;
+            }
+
+            afterJoinArmedAt = 0;
 
             return;
         }
@@ -165,6 +183,7 @@ internal static unsafe class GateScheduleAutomation
         {
             coordinatorSteer.Reset();
             coordinatorTalkPosition = null;
+            TickAfterJoinReturn();
             TickAfterGateReturn();
         }
 
@@ -239,7 +258,7 @@ internal static unsafe class GateScheduleAutomation
         return hadManual;
     }
 
-    // ── GATE 結束後走回活動解說員（暴風倖存者、必中一閃快刀斬魔） ──
+    // ── GATE 結束後走回活動解說員（暴風倖存者、必中一閃快刀斬魔、搶救小雛鳥大作戰） ──
     // 「結束」＝看過自己在場上，之後不在場上、而且這場 GATE 本身也停了（導演不見、IsFinished、或換成別的 GATE）；
     // 被淘汰但 GATE 還在跑時先等它結束，再過 AfterGateSettleMs 才動。只走過去、不對話：對話與選目的地照舊交給 :55 時段的排程。
 
@@ -250,6 +269,9 @@ internal static unsafe class GateScheduleAutomation
     private const long AfterGateRetryMs = 1_000;
 
     private static readonly ManualSteerYield afterGateSteer = new("GATE 結束後走回活動解說員");
+
+    /// <summary>這一趟走回是誰起的頭（log 前綴）。</summary>
+    private static string returnLabel = "GATE 結束後走回";
 
     /// <summary>有開這個選項、目前（或剛剛）在場上的 GATE；None＝沒在等結束。</summary>
     private static Module.GateType afterGateWatch;
@@ -280,6 +302,8 @@ internal static unsafe class GateScheduleAutomation
             C.GoldSaucerGates.WindBlowsReturnToCoordinatorAfterGate && C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows),
         Module.GateType.SliceIsRight =>
             C.GoldSaucerGates.SliceIsRightReturnToCoordinatorAfterGate && C.IsModuleEnabled(ModuleNames.SliceIsRight),
+        Module.GateType.Cliffhanger =>
+            C.GoldSaucerGates.CliffhangerReturnToCoordinator && C.IsModuleEnabled(ModuleNames.Cliffhanger),
         _ => false
     };
 
@@ -348,10 +372,16 @@ internal static unsafe class GateScheduleAutomation
             return;
         }
 
+        StartReturnToCoordinator("GATE 結束後走回", $"{ended} 結束，離開場地", now);
+    }
+
+    private static void StartReturnToCoordinator(string label, string why, long now)
+    {
+        returnLabel = label;
         var nearest = NearestRecordedCoordinator();
         if (nearest == null)
         {
-            Svc.Log.Information("[Saucy] GATE 結束後走回：沒有已記錄的活動解說員位置，不移動");
+            Svc.Log.Information($"[Saucy] {label}：沒有已記錄的活動解說員位置，不移動");
             return;
         }
 
@@ -360,7 +390,79 @@ internal static unsafe class GateScheduleAutomation
         afterGateNextTryAt = 0;
         afterGateNavOwned = false;
         afterGateSteer.Reset();
-        Svc.Log.Information($"[Saucy] GATE 結束後走回：{ended} 結束，離開場地走向活動解說員（{nearest.X:F1}, {nearest.Y:F1}, {nearest.Z:F1}）");
+        Svc.Log.Information($"[Saucy] {label}：{why}走向活動解說員（{nearest.X:F1}, {nearest.Y:F1}, {nearest.Z:F1}）");
+    }
+
+    // ── 搶救小雛鳥大作戰報名後走回活動解說員等下一場 ──
+    // 報名互動送出後等對話結束才走。報名後即使已算在場上也照走（使用者確認報名完就能離開）；
+    // 只有開著自動移動、要讓 Saucy 代玩時不走，改由上面的「GATE 結束後走回」在這場結束後接手。
+
+    private const string AfterJoinLabel = "搶救小雛鳥大作戰報名後走回";
+
+    private static bool IsCliffhangerWalkOffStage() =>
+        !C.GoldSaucerGates.CliffhangerAutoMovement && GateDirector.GetCurrentGate() == Module.GateType.Cliffhanger &&
+        (afterJoinArmedAt != 0 || (afterGateTarget != null && returnLabel == AfterJoinLabel));
+
+    internal enum AfterJoinDecision
+    {
+        Wait,
+        Start,
+        GiveUp
+    }
+
+    private const long AfterJoinSettleMs = 5_000;
+
+    private const long AfterJoinGiveUpMs = 90_000;
+
+    /// <summary>報名互動送出的時刻（<see cref="Environment.TickCount64"/>）；0＝沒在等。</summary>
+    private static long afterJoinArmedAt;
+
+    private static bool ReturnsAfterJoin(Module.GateType gate) =>
+        gate == Module.GateType.Cliffhanger && C.GoldSaucerGates.CliffhangerReturnToCoordinator && C.IsModuleEnabled(ModuleNames.Cliffhanger);
+
+    /// <summary>報名後每幀的決策（純函式）：確認框與對話要先結束；GATE 報名時段交給排程；太久沒空就不走。</summary>
+    internal static AfterJoinDecision AfterJoinStep(long sinceArmedMs, bool occupied, bool joinWindow)
+    {
+        if (sinceArmedMs > AfterJoinGiveUpMs)
+        {
+            return AfterJoinDecision.GiveUp;
+        }
+
+        return sinceArmedMs < AfterJoinSettleMs || occupied || joinWindow ? AfterJoinDecision.Wait : AfterJoinDecision.Start;
+    }
+
+    private static void TickAfterJoinReturn()
+    {
+        if (afterJoinArmedAt == 0)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (!ReturnsAfterJoin(Module.GateType.Cliffhanger) || afterGateTarget != null)
+        {
+            afterJoinArmedAt = 0;
+            return;
+        }
+
+        if (GateEmergencyHold.IsHeld)
+        {
+            afterJoinArmedAt = 0;
+            GateEmergencyHold.NoteSkipped("報名後走回活動解說員");
+            return;
+        }
+
+        switch (AfterJoinStep(now - afterJoinArmedAt, GateNpcNavigation.IsOccupied(), IsJoinWindow || manualJoinUntilUtc != null))
+        {
+            case AfterJoinDecision.GiveUp:
+                afterJoinArmedAt = 0;
+                Svc.Log.Information($"[Saucy] {AfterJoinLabel}：{AfterJoinGiveUpMs / 1000} 秒內一直在對話或報名時段中，不走回");
+                return;
+            case AfterJoinDecision.Start:
+                afterJoinArmedAt = 0;
+                StartReturnToCoordinator(AfterJoinLabel, "報名完成、對話結束，", now);
+                return;
+        }
     }
 
     private static void ForgetGateEndWatch()
@@ -424,7 +526,7 @@ internal static unsafe class GateScheduleAutomation
                 // 使用者還在自己走：不停他的移動，只結束這一趟。
                 afterGateNavOwned = false;
                 CancelAfterGateReturn("你自己移動太久，不再接續");
-                Svc.Chat.Print($"[Saucy] 已停止 GATE 結束後走回活動解說員：你自己移動超過 {ManualSteerWatch.MaxYieldMs / 1000} 秒。");
+                Svc.Chat.Print($"[Saucy] 已停止{returnLabel}活動解說員：你自己移動超過 {ManualSteerWatch.MaxYieldMs / 1000} 秒。");
                 return;
             case ManualSteerYield.Result.Resumed:
                 afterGateStartedAt += (long)pausedFor.TotalMilliseconds;
@@ -453,7 +555,7 @@ internal static unsafe class GateScheduleAutomation
     public static bool CancelAfterGateReturn(string? reason)
     {
         var onStageWatch = afterGateWatch != Module.GateType.None && afterGateOffStageSince == 0;
-        var active = IsReturningAfterGate || (reason != null && onStageWatch);
+        var active = IsReturningAfterGate || (reason != null && (onStageWatch || afterJoinArmedAt != 0));
         if (reason != null && onStageWatch)
         {
             afterGateStoppedThisGate = true;
@@ -462,6 +564,7 @@ internal static unsafe class GateScheduleAutomation
         if (reason != null)
         {
             ForgetGateEndWatch();
+            afterJoinArmedAt = 0;
         }
 
         if (afterGateTarget == null)
@@ -484,7 +587,7 @@ internal static unsafe class GateScheduleAutomation
         afterGateSteer.Reset();
         if (reason != null)
         {
-            Svc.Log.Information($"[Saucy] GATE 結束後走回：結束（{reason}）");
+            Svc.Log.Information($"[Saucy] {returnLabel}：結束（{reason}）");
         }
 
         return true;
@@ -617,7 +720,15 @@ internal static unsafe class GateScheduleAutomation
     // WindBlows, LeapOfFaith/AirForce), not just TryJoinNearestSupportedNpc below — so those call sites record
     // the join here too; otherwise IsWithinPostJoinSettle never becomes true for the normal per-GATE
     // auto-navigate path and the settle guard in each module's OnUpdate never engages.
-    public static void MarkJoined(Module.GateType gate) => lastJoinedUtc[gate] = DateTime.UtcNow;
+    public static void MarkJoined(Module.GateType gate)
+    {
+        lastJoinedUtc[gate] = DateTime.UtcNow;
+        if (ReturnsAfterJoin(gate))
+        {
+            afterJoinArmedAt = Environment.TickCount64;
+            Svc.Log.Information($"[Saucy] {AfterJoinLabel}：已跟報名 NPC 互動，對話結束、至少 {AfterJoinSettleMs / 1000} 秒後走回最近的活動解說員等下一場");
+        }
+    }
 
     private const float JoinInteractRange = 5f;
 
@@ -703,7 +814,7 @@ internal static unsafe class GateScheduleAutomation
             {
                 GateNpcNavigation.MarkInteracted();
                 MarkJoinHandled();
-                lastJoinedUtc[nearestGate] = DateTime.UtcNow;
+                MarkJoined(nearestGate);
                 lastRegisterUtc = DateTime.UtcNow;
             }
 

@@ -345,7 +345,7 @@ internal static class GateNpcNavigation
         _ => "你在活動解說員旁，不出發"
     };
 
-    private static bool IsOccupied()
+    internal static bool IsOccupied()
     {
         foreach (var flag in OccupiedFlags)
         {

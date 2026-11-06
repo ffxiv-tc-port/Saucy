@@ -359,6 +359,10 @@ public class GoldSaucerGateSettings
     /// <inheritdoc cref="WindBlowsReturnToCoordinatorAfterGate"/>
     public bool SliceIsRightReturnToCoordinatorAfterGate { get; set; } = true;
 
+    /// <summary>搶救小雛鳥大作戰：自動報名互動之後（對話結束）就走回最近的已記錄活動解說員等下一場；
+    /// 開著搶救小雛鳥大作戰自動移動（讓 Saucy 代玩）時改成這場結束後走回。只走過去、不對話；只在該模組啟用時生效。</summary>
+    public bool CliffhangerReturnToCoordinator { get; set; } = true;
+
     // Persisted (not just an in-memory static flag) so a plugin reload mid-window doesn't forget
     // "already handled this window" and immediately search for/walk to the same NPC again.
     public long LastCoordinatorHandledUtcTicks { get; set; }

@@ -604,6 +604,19 @@ public unsafe partial class PluginUI : Window
                              "只走過去、不對話；:55/:15/:35 時段一到由上面的排程照常互動。\n" +
                              "走的途中自己移動會先讓位，停手 2 秒後接續；/saucy stop 或急停會取消。");
         }
+        ImGui.SameLine();
+        var cliffhangerReturn = C.GoldSaucerGates.CliffhangerReturnToCoordinator;
+        if (ImGui.Checkbox("搶救小雛鳥大作戰（報名完就走）##CliffhangerReturnToCoordinator", ref cliffhangerReturn))
+        {
+            C.GoldSaucerGates.CliffhangerReturnToCoordinator = cliffhangerReturn;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Saucy 替你跟報名 NPC 互動之後，等對話結束就走回最近的活動解說員等下一場；\n" +
+                             "開著搶救小雛鳥大作戰的自動移動（讓 Saucy 代玩）時，改成這場結束後才走。只在該模組啟用時生效。\n" +
+                             "只走過去、不對話；自己移動會先讓位，/saucy stop 或急停會取消。");
+        }
         if (GateScheduleAutomation.IsReturningAfterGate)
         {
             ImGui.SameLine();
