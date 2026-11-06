@@ -47,6 +47,11 @@ internal static unsafe class LeapOfFaithQuickExit
 
     private const long ExitLimitMs = 60_000;
 
+    // 代按「是」之後退出可能被遊戲或其他插件延後一分鐘以上：從按下起另算時限，不套 ExitLimitMs。
+    private const long LeaveAfterYesLimitMs = 120_000;
+
+    private const long SlowLeaveNoteMs = 10_000;
+
     private static readonly ManualSteerWatch steer = new();
 
     private static Phase phase;
@@ -91,6 +96,11 @@ internal static unsafe class LeapOfFaithQuickExit
 
     private static long claimDeadline;
 
+    /// <summary>自己代按退出確認「是」的時刻；0＝還沒按到。</summary>
+    private static long yesPressedAt;
+
+    private static bool slowLeaveNoted;
+
     private static bool textsLoaded;
 
     private static string? leavePrompt;
@@ -123,7 +133,8 @@ internal static unsafe class LeapOfFaithQuickExit
         {
             if (phase == Phase.Exiting)
             {
-                Svc.Log.Information("[Saucy] 登高跳跳樂提早退出：已離開副本");
+                var after = yesPressedAt != 0 ? $"（按「是」後 {(Environment.TickCount64 - yesPressedAt) / 1000.0:0.0} 秒）" : string.Empty;
+                Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：已離開副本{after}");
             }
             else if (phase == Phase.Waiting)
             {
@@ -188,6 +199,8 @@ internal static unsafe class LeapOfFaithQuickExit
         lastVerdict = ContentsFinderMenuGate.Verdict.Press;
         lastRefusal = null;
         claimedYesno = 0;
+        yesPressedAt = 0;
+        slowLeaveNoted = false;
         steer.Reset();
     }
 
@@ -260,7 +273,7 @@ internal static unsafe class LeapOfFaithQuickExit
 
         phase = Phase.Exiting;
         phaseSince = now;
-        Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：等滿 {delaySeconds} 秒，開始退出（副本選單「退出」→ 確認框；{ExitLimitMs / 1000} 秒內沒離開就放棄）");
+        Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：等滿 {delaySeconds} 秒，開始退出（副本選單「退出」→ 確認框；{ExitLimitMs / 1000} 秒內沒按到「是」、或按下後 {LeaveAfterYesLimitMs / 1000} 秒內沒離開就放棄）");
     }
 
     private static void TickExiting(long now)
@@ -268,6 +281,12 @@ internal static unsafe class LeapOfFaithQuickExit
         if (GateEmergencyHold.IsHeld)
         {
             Cancel("急停");
+            return;
+        }
+
+        if (yesPressedAt != 0)
+        {
+            TickLeavePending(now);
             return;
         }
 
@@ -387,6 +406,23 @@ internal static unsafe class LeapOfFaithQuickExit
         pressedAt = now;
         DumpMenu(menu, $"按「退出」（callback {ContentsFinderMenuGate.LeaveCallbackValue}）");
         Callback.Fire(menu, true, ContentsFinderMenuGate.LeaveCallbackValue);
+    }
+
+    // 「是」已經按到：只等離開，不再碰選單或確認框。
+    private static void TickLeavePending(long now)
+    {
+        var waited = now - yesPressedAt;
+        if (waited > LeaveAfterYesLimitMs)
+        {
+            Fail($"按了退出確認「是」{LeaveAfterYesLimitMs / 1000} 秒都沒離開");
+            return;
+        }
+
+        if (!slowLeaveNoted && waited > SlowLeaveNoteMs)
+        {
+            slowLeaveNoted = true;
+            Svc.Log.Information($"[Saucy] 登高跳跳樂提早退出：按了「是」{SlowLeaveNoteMs / 1000} 秒還在副本裡，退出被延後了（遊戲或其他插件），繼續等到按下後第 {LeaveAfterYesLimitMs / 1000} 秒");
+        }
     }
 
     // 只關自己叫出來、當幀照名字重找到而且就緒的那一扇；按窗守衛擋住（例如正在關閉）就不送。
@@ -546,6 +582,7 @@ internal static unsafe class LeapOfFaithQuickExit
         if (SelectYesnoHelper.PressYes(yesno))
         {
             claimedYesno = 0;
+            yesPressedAt = now;
             Svc.Log.Information("[Saucy] 登高跳跳樂提早退出：已代按退出確認框「是」");
         }
     }
