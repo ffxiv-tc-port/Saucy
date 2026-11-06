@@ -99,6 +99,29 @@ internal static unsafe class GateScheduleAutomation
         C.Save();
     }
 
+    /// <summary>這一段在場上已經存過檔；離開場上時再存一次，存的是最後在場上的時刻。</summary>
+    private static bool onStageLatchSaved;
+
+    // 在場上每幀都更新鎖存時間（記憶體），但只在上場與下場各存一次檔：每幀存檔＝每幀序列化整份設定並同步寫檔。
+    private static void LatchJoinWhileOnStage()
+    {
+        C.GoldSaucerGates.LastJoinHandledUtcTicks = DateTime.UtcNow.Ticks;
+        if (!onStageLatchSaved)
+        {
+            onStageLatchSaved = true;
+            C.Save();
+        }
+    }
+
+    private static void SaveLatchWhenLeftStage()
+    {
+        if (onStageLatchSaved && !GateDirector.IsPlayerOnStage())
+        {
+            onStageLatchSaved = false;
+            C.Save();
+        }
+    }
+
     // 自己送的路徑跑完或被停了，之後 vnavmesh 上的路徑就不是自己的：讓位與停止都只看這三個旗標。
     private static void ForgetFinishedPaths()
     {
@@ -114,6 +137,7 @@ internal static unsafe class GateScheduleAutomation
     {
         ForgetFinishedPaths();
         ObserveGateEnd();
+        SaveLatchWhenLeftStage();
 
         if (!GateDirector.InSaucer || GateDirector.IsPlayerOnStage())
         {
@@ -133,7 +157,7 @@ internal static unsafe class GateScheduleAutomation
             // NPC search from scratch.
             if (GateDirector.IsPlayerOnStage())
             {
-                MarkJoinHandled();
+                LatchJoinWhileOnStage();
                 if (!walkOffStage && afterJoinArmedAt != 0)
                 {
                     Svc.Log.Information($"[Saucy] {AfterJoinLabel}：報名後已在場上、而且開著自動移動，改成這場 GATE 結束後再走回");
