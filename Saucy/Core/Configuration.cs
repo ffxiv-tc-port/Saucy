@@ -236,6 +236,12 @@ public class GoldSaucerGateSettings
     /// <summary>目標標靶圈半徑（像素，距離 20 米時）；null＝舊設定檔沒有這一欄，載入時由舊共用半徑－10 推出。</summary>
     public float? AirForceTargetCircleRadius { get; set; }
 
+    /// <summary>同一個畫面點（40 像素內）兩次開槍的最短間隔（毫秒），夾在 100～2000。</summary>
+    public int AirForceSamePointShotIntervalMs { get; set; } = 500;
+
+    public const int AirForceSamePointShotIntervalMinMs = 100;
+    public const int AirForceSamePointShotIntervalMaxMs = 2000;
+
     public const float AirForceRadiusSplitOffset = 10f;
     public const float AirForceBombCircleMin = 40f;
     public const float AirForceTargetCircleMin = 20f;

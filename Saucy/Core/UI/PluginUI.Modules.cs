@@ -176,6 +176,22 @@ public unsafe partial class PluginUI
             ImGui.SetTooltip("目標本身被當成多大（綠圈）：炸彈靠近時改瞄這個圈離炸彈最遠的邊。\n調大比較敢瞄邊緣、調小比較常整個跳過。以 20 米遠為準。");
         }
 
+        var samePointMs = C.GoldSaucerGates.AirForceSamePointShotIntervalMs;
+        if (ImGui.SliderInt("同一點開槍最短間隔（毫秒）##AirForceSamePointShotInterval", ref samePointMs,
+                GoldSaucerGateSettings.AirForceSamePointShotIntervalMinMs, GoldSaucerGateSettings.AirForceSamePointShotIntervalMaxMs))
+        {
+            C.GoldSaucerGates.AirForceSamePointShotIntervalMs = samePointMs;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("槍的射速有限：瞄點跟剛開過槍的位置相距 40 像素內、又還沒過這麼久，就先打別的目標。\n" +
+                             "同一個目標原本就有 250 毫秒不重打；這個值管的是「同一個位置」，不管是不是同一個物件。");
+        }
+
         var showCircles = C.GoldSaucerGates.AirForceShowPredictionCircles;
         if (ImGui.Checkbox("顯示炸彈/目標預測圈##AirForceShowCircles", ref showCircles))
         {

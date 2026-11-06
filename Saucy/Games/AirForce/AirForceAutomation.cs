@@ -37,6 +37,10 @@ public static unsafe class AirForceAutomation
     private static readonly System.Collections.Generic.Dictionary<ulong, DateTime> recentlyFiredAtUtc = [];
     private const int RecentlyFiredCooldownMs = 250;
 
+    // 不論是哪個物件（重疊、同位置重生、同一個靶的多個 DataId），瞄點落在這個半徑內就算同一點；取目標圈的最小夾值。
+    private const float SamePointRadiusPx = 40f;
+    private static readonly SamePointShotLimiter samePointShots = new();
+
     // Ground truth confirmed by the user via direct eyes-on-screen observation of point values
     // (not a diagnostic-dump guess, which had gotten this wrong twice before):
     //   2009676 = 1-star target (50pts)   2009677 = 2-star target (100pts)
@@ -114,6 +118,9 @@ public static unsafe class AirForceAutomation
 
             var bombCircleRadius = C.GoldSaucerGates.BombCircleRadius();
             var targetCircleRadius = C.GoldSaucerGates.TargetCircleRadius();
+            var nowMs = Environment.TickCount64;
+            var samePointIntervalMs = Math.Clamp(C.GoldSaucerGates.AirForceSamePointShotIntervalMs,
+                GoldSaucerGateSettings.AirForceSamePointShotIntervalMinMs, GoldSaucerGateSettings.AirForceSamePointShotIntervalMaxMs);
 
             var bombs = Svc.Objects.OfType<IEventObj>()
                 .Where(x => x.BaseId == BombDataId && Player.Position.Y - x.Position.Y < MaxBelowPlayerY)
@@ -214,6 +221,12 @@ public static unsafe class AirForceAutomation
                         continue;
                     }
 
+                    // 槍有射速上限：同一點剛開過槍就換下一個目標，連瞄都不瞄（游標不在同一點來回抖）。
+                    if (samePointShots.IsTooSoon(aimPoint, nowMs, samePointIntervalMs, SamePointRadiusPx))
+                    {
+                        continue;
+                    }
+
                     // Defer re-selecting the exact same target fired at last cycle — keep scanning
                     // for a different eligible one first, only falling back to this one if it turns
                     // out to be the sole option this pass.
@@ -252,6 +265,7 @@ public static unsafe class AirForceAutomation
                 if (lockedFor >= currentLockDelayMs && EzThrottler.Throttle("Shoot", 60))
                 {
                     recentlyFiredAtUtc[targetObj.GameObjectId] = DateTime.UtcNow;
+                    samePointShots.Record(aim, nowMs);
                     lastFiredTargetId = targetObj.GameObjectId;
                     Svc.Framework.RunOnTick(() => RideShootingAim.FireClick(aim), delayTicks: 1);
                 }
@@ -265,6 +279,7 @@ public static unsafe class AirForceAutomation
         {
             wasInDuty = false;
             rewardWindowUntilUtc = DateTime.UtcNow.AddMinutes(2);
+            samePointShots.Reset();
         }
     }
 
