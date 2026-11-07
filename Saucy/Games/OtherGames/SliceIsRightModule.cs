@@ -28,6 +28,9 @@ public class SliceIsRight : Module
     private bool _navigatedThisEntry;
     private bool _wasInGate;
 
+    // 此刻 vnavmesh 在走的路徑是不是 TickMoveToStartSpot 自己送的；Disable 只停自己的，不停別的插件的。
+    private bool _ownsNav;
+
     // Right after interacting with the
     // registration NPC, the actual teleport onto the arena hasn't happened yet; starting to steer
     // toward the recorded start spot immediately (even once IsInGate reads true) can aim at a
@@ -44,14 +47,20 @@ public class SliceIsRight : Module
         Svc.Framework.Update -= OnUpdate;
         GateNpcNavigation.ReleaseIfOwned(GateType.SliceIsRight);
         PreciseMovement.SetDesiredDirection(null);
-        if (Vnavmesh.IsInstalled)
+        if (_ownsNav)
         {
-            Vnavmesh.StopPath();
+            _ownsNav = false;
+            Vnavmesh.StopOwnPath();
         }
     }
 
     private void OnUpdate(IFramework _)
     {
+        if (_ownsNav && !Vnavmesh.IsMoving())
+        {
+            _ownsNav = false;
+        }
+
         var inGate = IsInGate(GateType.SliceIsRight);
         if (inGate && !_wasInGate)
         {
@@ -112,6 +121,7 @@ public class SliceIsRight : Module
             {
                 Vnavmesh.StopPath();
             }
+            _ownsNav = false;
             _navigatedThisEntry = true;
             return;
         }
@@ -123,6 +133,7 @@ public class SliceIsRight : Module
                 Vnavmesh.StopPath();
             }
 
+            _ownsNav = false;
             var toTarget = destination - Player.Position;
             toTarget.Y = 0;
             PreciseMovement.SetDesiredDirection(toTarget.LengthSquared() < 0.0001f ? null : toTarget);
@@ -131,7 +142,7 @@ public class SliceIsRight : Module
 
         if (!Vnavmesh.IsMoving())
         {
-            Vnavmesh.TryMoveTo(destination, false, StartSpotArrivalRange);
+            _ownsNav = Vnavmesh.TryMoveTo(destination, false, StartSpotArrivalRange);
         }
     }
 }
