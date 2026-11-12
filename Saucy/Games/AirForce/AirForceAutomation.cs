@@ -83,6 +83,20 @@ public static unsafe class AirForceAutomation
 
     public static void ConsumeRewardTracking() => rewardWindowUntilUtc = null;
 
+    // 失焦跳過瞄準：每次失焦只寫一行（回到前景、真的瞄了一次才重新計）。
+    private static bool focusSkipLogged;
+
+    private static void NoteSkippedForFocus()
+    {
+        if (focusSkipLogged)
+        {
+            return;
+        }
+
+        focusSkipLogged = true;
+        Svc.Log.Information("[AirForceOne] 遊戲視窗不在前景：自動瞄準會移動你的滑鼠游標，先暫停瞄準與開槍，切回遊戲視窗就繼續。");
+    }
+
     public static void OnUpdate()
     {
         if (!C.IsModuleEnabled(ModuleNames.AirForceOne))
@@ -252,6 +266,14 @@ public static unsafe class AirForceAutomation
 
             void AimAndFire(IGameObject targetObj, System.Numerics.Vector2 aim)
             {
+                // 瞄準是移動 OS 的真實游標：遊戲不在前景時會把使用者在別的視窗的游標拉走，所以這一次不瞄也不開槍。
+                if (!global::Saucy.Framework.GameKeyInput.IsGameForeground())
+                {
+                    NoteSkippedForFocus();
+                    return;
+                }
+
+                focusSkipLogged = false;
                 RideShootingAim.TrySetScreenAim(aim);
 
                 if (targetObj.GameObjectId != lockedTargetId)

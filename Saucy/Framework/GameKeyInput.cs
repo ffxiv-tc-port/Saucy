@@ -143,7 +143,8 @@ internal static class GameKeyInput
         SendInput(1, [input], Marshal.SizeOf<INPUT>());
     }
 
-    private static bool IsGameForeground()
+    /// <summary>遊戲視窗（本行程的 FFXIVGAME）現在是不是 OS 的前景視窗。</summary>
+    internal static bool IsGameForeground()
     {
         var fg = GetForegroundWindow();
         return fg != nint.Zero && TryFindGameWindow(out var gameHwnd) && fg == gameHwnd;
