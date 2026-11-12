@@ -264,6 +264,9 @@ public unsafe partial class PluginUI
                 if (ImGui.SliderInt("等待秒數##LeapOfFaithQuickExitDelay", ref delay, 0, GoldSaucerGateSettings.LeapOfFaithQuickExitMaxDelaySeconds))
                 {
                     C.GoldSaucerGates.LeapOfFaithQuickExitDelaySeconds = delay;
+                }
+                if (ImGui.IsItemDeactivatedAfterEdit())
+                {
                     C.Save();
                 }
 
@@ -637,6 +640,9 @@ public unsafe partial class PluginUI
                     Configuration.MiniCactpotMinClickIntervalMs, Configuration.MiniCactpotMaxClickIntervalMs))
             {
                 C.MiniCactpotClickIntervalMs = clickInterval;
+            }
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
                 C.Save();
             }
             if (ImGui.IsItemHovered())
@@ -652,6 +658,9 @@ public unsafe partial class PluginUI
                     0, Configuration.MiniCactpotMaxCloseDelayMs))
             {
                 C.MiniCactpotCloseDelayMs = closeDelay;
+            }
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
                 C.Save();
             }
             if (ImGui.IsItemHovered())
@@ -685,6 +694,9 @@ public unsafe partial class PluginUI
                         Configuration.MiniCactpotJackpotMaxThresholdMgp))
                 {
                     C.MiniCactpotJackpotThresholdMgp = threshold;
+                }
+                if (ImGui.IsItemDeactivatedAfterEdit())
+                {
                     C.Save();
                 }
                 if (ImGui.IsItemHovered())
@@ -927,6 +939,9 @@ public unsafe partial class PluginUI
             if (ImGui.SliderInt("容許誤差##LimbTolerance", ref tolerance, 1, 4))
             {
                 C.OutOnALimb.Tolerance = Math.Clamp(tolerance, 1, 4);
+            }
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
                 C.Save();
             }
 
@@ -967,6 +982,9 @@ public unsafe partial class PluginUI
                 if (ImGui.DragInt("剩餘秒數低於此值就收工##LimbStopAt", ref stopAt, 0.5f, 0, 60))
                 {
                     C.OutOnALimb.StopAtSecondsRemaining = Math.Clamp(stopAt, 0, 60);
+                }
+                if (ImGui.IsItemDeactivatedAfterEdit())
+                {
                     C.Save();
                 }
             }
@@ -1039,6 +1057,9 @@ public unsafe partial class PluginUI
         if (ImGui.SliderInt("最多自動幾局##LimbReplayCap", ref maxGames, 1, 20))
         {
             C.OutOnALimb.AutoReplayMaxGames = Math.Clamp(maxGames, 1, 20);
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
             C.Save();
         }
         if (ImGui.IsItemHovered())
@@ -1117,6 +1138,9 @@ public unsafe partial class PluginUI
             if (ImGui.SliderInt("每種卡至少保留##SellCardsKeepAtLeast", ref keep, 0, Configuration.SellCardsMaxKeepAtLeast))
             {
                 C.SellCardsKeepAtLeast = Math.Clamp(keep, 0, Configuration.SellCardsMaxKeepAtLeast);
+            }
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
                 C.Save();
             }
             if (ImGui.IsItemHovered())
