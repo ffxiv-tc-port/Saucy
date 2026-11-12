@@ -11,6 +11,12 @@ internal static unsafe class TriadDialogueSkip
 
     private static bool talkListenerRegistered;
 
+    private static bool talkSetupListenerRegistered;
+
+    /// <summary>幻卡流程（對戰、刷卡、NPC 導航、多區路線）翻 Talk 一律走這一份：先請 YesAlready 暫停 Talk、問不到就不翻。</summary>
+    internal static readonly YesAlreadyTalkClaim TalkClaim =
+        new("[Saucy] 九宮幻卡：無法確認 YesAlready 不會按 NPC 對話框，Saucy 先不替你翻這段對話（交給 YesAlready 或你自己按）");
+
     public static void EnsureTalkListener()
     {
         if (talkListenerRegistered)
@@ -20,6 +26,43 @@ internal static unsafe class TriadDialogueSkip
 
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Talk", OnTalkUpdate);
         talkListenerRegistered = true;
+    }
+
+    /// <summary>載入時呼叫一次：Talk 一建立、還沒被 YesAlready 判斷前，若幻卡流程正在跑就先請它暫停。</summary>
+    public static void RegisterTalkSetupClaim()
+    {
+        if (talkSetupListenerRegistered)
+        {
+            return;
+        }
+
+        Svc.AddonLifecycle.RegisterListener(AddonEvent.PreSetup, TalkHelper.AddonName, OnTalkPreSetup);
+        talkSetupListenerRegistered = true;
+    }
+
+    /// <summary>卸載時呼叫：拆掉本檔掛的 Talk 監聽器。</summary>
+    public static void RemoveTalkListeners()
+    {
+        if (talkSetupListenerRegistered)
+        {
+            Svc.AddonLifecycle.UnregisterListener(AddonEvent.PreSetup, TalkHelper.AddonName, OnTalkPreSetup);
+            talkSetupListenerRegistered = false;
+        }
+
+        if (talkListenerRegistered)
+        {
+            Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Talk", OnTalkUpdate);
+            talkListenerRegistered = false;
+        }
+    }
+
+    // 只在幻卡流程可能替你翻這扇窗時才請暫停：其他時候的 Talk 照常交給 YesAlready。
+    private static void OnTalkPreSetup(AddonEvent type, AddonArgs args)
+    {
+        if (TriadMapNavigation.IsNavigationActive || TriadRunSession.ModuleEnabled || TriadCardFarmSession.SessionActive)
+        {
+            TalkClaim.ClaimAtSetup();
+        }
     }
 
     public static bool ShouldRun()
@@ -176,7 +219,7 @@ internal static unsafe class TriadDialogueSkip
             return;
         }
 
-        if (TalkHelper.TryAdvance(TalkThrottleKey))
+        if (TalkClaim.TryAdvance(TalkThrottleKey))
         {
             TriadNpcGate.MarkDialogueFlow();
         }

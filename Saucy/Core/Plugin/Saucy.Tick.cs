@@ -11,6 +11,7 @@ public sealed partial class Saucy
         try
         {
             _stopAllIpc?.ProcessPending();
+            Lifestream.TickOwnership();
             TriadLogoutAfterRun.Tick();
             GateEmergencyHold.Tick();
             SubscriptionManager.Subscribe();
@@ -75,7 +76,7 @@ public sealed partial class Saucy
 
                         if (TriadDialogueSkip.IsBlockingTriadSessionEnd())
                         {
-                            TalkHelper.TryAdvance("Saucy.TriadTalk");
+                            TriadDialogueSkip.TalkClaim.TryAdvance("Saucy.TriadTalk");
                         }
                         else
                         {

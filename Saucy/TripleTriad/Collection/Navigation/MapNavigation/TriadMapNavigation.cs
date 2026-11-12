@@ -106,7 +106,7 @@ internal static unsafe partial class TriadMapNavigation
         }
 
         StopVnavIfRunning();
-        Lifestream.TryAbort();
+        Lifestream.TryAbortOwned(Lifestream.OwnerTriadNavigation);
         ClearPending();
     }
 
@@ -343,7 +343,7 @@ internal static unsafe partial class TriadMapNavigation
                 return true;
             }
 
-            if (TalkHelper.TryAdvance("SaucyNavTalk"))
+            if (TriadDialogueSkip.TalkClaim.TryAdvance("SaucyNavTalk"))
             {
                 TriadNpcGate.MarkDialogueFlow();
                 return true;

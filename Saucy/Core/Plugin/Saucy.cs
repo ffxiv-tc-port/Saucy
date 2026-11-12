@@ -115,6 +115,7 @@ public sealed partial class Saucy : IDalamudPlugin
         SubscriptionManager.Prepare();
         SubscriptionManager.Subscribe();
         Svc.Framework.Update += RunBot;
+        TriadDialogueSkip.RegisterTalkSetupClaim();
         Svc.PluginInterface.UiBuilder.Draw += ObjectDebugOverlay.Draw;
         PreciseMovement.Init();
         _stopAllIpc = new();
@@ -146,16 +147,40 @@ public sealed partial class Saucy : IDalamudPlugin
         // 不留任何指向本組件的委派。
         AddonPressGuard.ForceTeardown();
         PreciseMovement.Shutdown();
+        TriadDialogueSkip.RemoveTalkListeners();
+
+        // 先收自己發起的移動、停模組，再釋放 IPC 訂閱：釋放之後 vnavmesh／Lifestream 包裝全變 no-op，停不到自己的路徑。
+        // 卸載期（遊戲關閉）Dispose 可能就地跑在別的執行緒：那時不呼叫別的插件，維持先釋放、模組停用時的 IPC 全是 no-op。
+        var canReachOtherPlugins = !Svc.Framework.IsFrameworkUnloading && Svc.Framework.IsInFrameworkUpdateThread;
+        if (!canReachOtherPlugins)
+        {
+            SubscriptionManager.DisposeAll();
+        }
+
         PrepareTriadSessionForPluginUnload();
+        StopOwnMovementForUnload();
+        ModuleManager.Dispose();
         _triadCollectionHost?.Dispose();
         YesAlready.ResumeIfPausedBySaucy();
-        SubscriptionManager.DisposeAll();
-        TriadMapNavigation.CancelActiveNavigation();
+        if (canReachOtherPlugins)
+        {
+            SubscriptionManager.DisposeAll();
+        }
+
         _triadCollectionHost = null;
         lock (_lockObj) { DisposeAudio(); }
-        ModuleManager.Dispose();
         ECommonsMain.Dispose();
         P = null!;
+    }
+
+    /// <summary>卸載時收回自己發起、還在跑的移動與流程（只停自己的；每個停止點各自 try，一個失敗不擋其他）。</summary>
+    private static void StopOwnMovementForUnload()
+    {
+        ECommons.GenericHelpers.Safe(TriadMapNavigation.CancelActiveNavigation);
+        ECommons.GenericHelpers.Safe(() => global::Saucy.Framework.GoldSaucer.GoldSaucerNavigator.Cancel(announce: false, reason: "插件卸載"));
+        ECommons.GenericHelpers.Safe(() => global::Saucy.MiniCactpot.MiniCactpotAutoPlay.Cancel(announce: false));
+        ECommons.GenericHelpers.Safe(() => global::Saucy.JumboCactpot.JumboCactpotAutoTalk.Cancel(announce: false));
+        ECommons.GenericHelpers.Safe(GateScheduleAutomation.ReleaseOwnNavigation);
     }
 
     private void OnChange(object? sender, NotifyCollectionChangedEventArgs e)
@@ -186,7 +211,14 @@ public sealed partial class Saucy : IDalamudPlugin
         var args = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (args.Length >= 1 && args[0].Equals("stop", StringComparison.OrdinalIgnoreCase))
         {
-            TriadRunSession.StopAllAutomation();
+            // 與 IPC Saucy.StopAll 同一份停止清單，也同樣壓住目前的 GATE 時段：不壓的話，定時流程下一幀就把剛停的路又走起來。
+            var holdUntil = StopAllIpc.StopNow("/saucy stop");
+            Svc.Chat.Print("[Saucy] " + "Stopped navigation, travel, and triad automation.".Loc());
+            if (holdUntil is { } until)
+            {
+                Svc.Chat.Print("[Saucy] " + "GATE schedule and GATE modules are paused until ??. Press a start button to resume earlier.".Loc(until.ToString("HH:mm")));
+            }
+
             return;
         }
 

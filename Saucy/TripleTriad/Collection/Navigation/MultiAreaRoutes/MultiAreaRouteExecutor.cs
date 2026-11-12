@@ -113,7 +113,7 @@ internal static unsafe class MultiAreaRouteExecutor
                 return true;
             }
 
-            if (!Lifestream.TryTeleport(aetheryteId))
+            if (!Lifestream.TryTeleport(Lifestream.OwnerTriadNavigation, aetheryteId))
             {
                 Svc.Chat.PrintError("[Saucy] " + "Lifestream could not teleport for ??.".Loc(route.Name));
                 return false;
@@ -253,7 +253,7 @@ internal static unsafe class MultiAreaRouteExecutor
             }
 
             var shardName = step.AethernetShardName ?? AetheryteHelper.GetAethernetShardName(shardId);
-            if (!Lifestream.TryAethernetViaLiCommand(shardName))
+            if (!Lifestream.TryAethernetViaLiCommand(Lifestream.OwnerTriadNavigation, shardName))
             {
                 Svc.Chat.PrintError("[Saucy] " + "Lifestream could not aethernet for ??.".Loc(execution.Route.Name));
                 execution.Failed = true;
@@ -587,7 +587,7 @@ internal static unsafe class MultiAreaRouteExecutor
             return false;
         }
 
-        if (TalkHelper.TryAdvance("SaucyRouteTalk"))
+        if (TriadDialogueSkip.TalkClaim.TryAdvance("SaucyRouteTalk"))
         {
             return false;
         }

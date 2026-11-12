@@ -107,7 +107,8 @@ internal static class GoldSaucerNavigator
         });
     }
 
-    public static void Cancel(bool announce = true)
+    /// <param name="reason">寫進 log 的原因；null＝依 <paramref name="announce"/> 判斷（取消／被新的導航取代）。</param>
+    public static void Cancel(bool announce = true, string? reason = null)
     {
         if (journey == null)
         {
@@ -116,10 +117,10 @@ internal static class GoldSaucerNavigator
 
         var active = journey;
         journey = null;
-        Log(active.Label, announce ? "已取消" : "被新的導航取代");
+        Log(active.Label, reason ?? (announce ? "已取消" : "被新的導航取代"));
 
         StopOwnPath(active);
-        Lifestream.TryAbort();
+        Lifestream.TryAbortOwned(Lifestream.OwnerGoldSaucerNavigator);
 
         if (announce)
         {
@@ -191,7 +192,7 @@ internal static class GoldSaucerNavigator
             return false;
         }
 
-        if (!Lifestream.TryTeleport(GoldSaucerVenue.AetheryteId))
+        if (!Lifestream.TryTeleport(Lifestream.OwnerGoldSaucerNavigator, GoldSaucerVenue.AetheryteId))
         {
             Svc.Chat.PrintError("[Saucy] " + "Lifestream could not start the teleport.".Loc());
             return false;
@@ -277,7 +278,7 @@ internal static class GoldSaucerNavigator
         // sometimes cancel — Lifestream's own movement.
         StopOwnPath(active);
 
-        if (!Lifestream.TryAethernetViaLiCommand(stop.Name))
+        if (!Lifestream.TryAethernetViaLiCommand(Lifestream.OwnerGoldSaucerNavigator, stop.Name))
         {
             if (active.AethernetOnly)
             {
@@ -665,13 +666,13 @@ internal static class GoldSaucerNavigator
         if (releaseMovement)
         {
             StopOwnPath(active);
-            Lifestream.TryAbort();
+            Lifestream.TryAbortOwned(Lifestream.OwnerGoldSaucerNavigator);
         }
 
         Svc.Chat.PrintError("[Saucy] " + message);
     }
 
-    /// <summary>只停這一趟自己送的步行路徑；別的插件的路徑不碰。Lifestream 的移動由 <see cref="Lifestream.TryAbort"/> 自己收。</summary>
+    /// <summary>只停這一趟自己送的步行路徑；別的插件的路徑不碰。Lifestream 的移動由 <see cref="Lifestream.TryAbortOwned"/> 自己收（也只收自己送的）。</summary>
     private static void StopOwnPath(Journey active)
     {
         if (!active.NavOwned)

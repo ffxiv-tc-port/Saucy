@@ -9,7 +9,8 @@ namespace Saucy.Framework;
 /// <remarks>
 /// 本檔契約：只在 framework 執行緒呼叫；不改、不存設定，插件重新載入就清掉。
 /// 時段＝以 GATE 開始時刻 T（:00／:20／:40）為中心的 [T−10 分, T+10 分)，邊界在 :10／:30／:50（本機時間，與 GATE 排程同一個時鐘）；
-/// 涵蓋 T−5 的活動解說員、T 的報名與 GATE 本身。時段結束時人還在 GATE 場上就壓到離場為止。
+/// 涵蓋 T−5 的活動解說員、T 的報名與 GATE 本身。時段結束時人還在 GATE 場上（或副本型 GATE 裡）就壓到離開為止。
+/// 金碟本區與副本型 GATE（空軍、登高）裡都暫停 GATE 模組：副本裡的自動瞄準開槍／跳躍也要停得住。只停不開。
 /// 手動開始（GATE 的手動移動／報名／互動按鈕、啟用 GATE 模組）＝解除。
 /// </remarks>
 internal static class GateEmergencyHold
@@ -33,7 +34,7 @@ internal static class GateEmergencyHold
             skipLogged = false;
         }
 
-        if (GateDirector.InSaucer)
+        if (InPausableArea)
         {
             PauseGateModules();
         }
@@ -49,7 +50,7 @@ internal static class GateEmergencyHold
         return hourStart.AddMinutes(10 + (20 * n));
     }
 
-    /// <summary>每幀呼叫：到期（且不在 GATE 場上）就解除；在金碟遊樂場裡就暫停已啟用的 GATE 模組。</summary>
+    /// <summary>每幀呼叫：到期（且不在 GATE 場上、不在副本型 GATE 裡）就解除；在金碟遊樂場或副本型 GATE 裡就暫停已啟用的 GATE 模組。</summary>
     public static void Tick()
     {
         if (holdUntil is not { } until)
@@ -57,13 +58,13 @@ internal static class GateEmergencyHold
             return;
         }
 
-        if (DateTime.Now >= until && !GateDirector.IsPlayerOnStage())
+        if (DateTime.Now >= until && !GateDirector.IsPlayerOnStage() && !GateDirector.InGateDuty)
         {
             Release("時段結束");
             return;
         }
 
-        if (GateDirector.InSaucer)
+        if (InPausableArea)
         {
             var names = PauseGateModules();
             if (names.Count > 0)
@@ -127,6 +128,8 @@ internal static class GateEmergencyHold
             Release("手動啟用模組");
         }
     }
+
+    private static bool InPausableArea => GateDirector.InSaucer || GateDirector.InGateDuty;
 
     private static List<string> PauseGateModules()
     {

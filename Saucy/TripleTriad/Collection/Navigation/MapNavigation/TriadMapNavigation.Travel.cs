@@ -62,7 +62,7 @@ internal static partial class TriadMapNavigation
                     AetheryteHelper.GetAetheryteTerritoryId(directAetheryte) == DomanEnclaveRoute.DomanEnclaveTerritoryId)
                 {
                     if (!AetheryteHelper.IsPlayerInAetheryteTerritory(directAetheryte) &&
-                        !Lifestream.TryTeleport(directAetheryte))
+                        !Lifestream.TryTeleport(Lifestream.OwnerTriadNavigation, directAetheryte))
                     {
                         Svc.Chat.PrintError("[Saucy] " + "Lifestream could not start teleport.".Loc());
                         return false;
@@ -136,7 +136,7 @@ internal static partial class TriadMapNavigation
         var skipTeleport = AetheryteHelper.IsPlayerInAetheryteTerritory(travelPlan.TeleportAetheryteId);
         if (!skipTeleport)
         {
-            if (!Lifestream.TryTeleport(travelPlan.TeleportAetheryteId))
+            if (!Lifestream.TryTeleport(Lifestream.OwnerTriadNavigation, travelPlan.TeleportAetheryteId))
             {
                 Svc.Chat.PrintError("[Saucy] " + "Lifestream could not start teleport.".Loc());
                 return false;
@@ -367,7 +367,7 @@ internal static partial class TriadMapNavigation
         }
 
         if (!Lifestream.TryAethernetViaLiCommand(
-            travelPlan.AethernetShardName ?? AetheryteHelper.GetAethernetShardName(travelPlan.AethernetShardId)))
+            Lifestream.OwnerTriadNavigation, travelPlan.AethernetShardName ?? AetheryteHelper.GetAethernetShardName(travelPlan.AethernetShardId)))
         {
             Svc.Chat.Print(
                 "[Saucy] " + "Lifestream could not start aethernet to ??. Walking instead.".Loc(travelPlan.AethernetShardName));
@@ -406,7 +406,7 @@ internal static partial class TriadMapNavigation
             pending.HubAetheryteId = hubId;
         }
 
-        if (Lifestream.TryAethernetViaLiCommand(shardName ?? AetheryteHelper.GetAethernetShardName(shardId)))
+        if (Lifestream.TryAethernetViaLiCommand(Lifestream.OwnerTriadNavigation, shardName ?? AetheryteHelper.GetAethernetShardName(shardId)))
         {
             pending.PendingAethernetShardId = 0;
             pending.PendingAethernetShardName = null;
