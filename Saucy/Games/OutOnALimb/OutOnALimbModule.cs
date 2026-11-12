@@ -218,7 +218,7 @@ public unsafe class OutOnALimbModule : Module
 
     public override void Enable()
     {
-        Svc.Framework.Update += OnUpdate;
+        SubscribeUpdate(OnUpdate);
         Svc.Chat.ChatMessageHandled += OnChatMessage;
         Svc.Chat.ChatMessageUnhandled += OnChatMessage;
         gaugeLooksPerSwing = true;
@@ -229,7 +229,7 @@ public unsafe class OutOnALimbModule : Module
 
     public override void Disable()
     {
-        Svc.Framework.Update -= OnUpdate;
+        UnsubscribeUpdate();
         Svc.Chat.ChatMessageHandled -= OnChatMessage;
         Svc.Chat.ChatMessageUnhandled -= OnChatMessage;
         ResetRoundState();

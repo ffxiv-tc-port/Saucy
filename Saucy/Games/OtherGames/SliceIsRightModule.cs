@@ -40,11 +40,11 @@ public class SliceIsRight : Module
 
     public override string Name => "Slice is Right";
 
-    public override void Enable() => Svc.Framework.Update += OnUpdate;
+    public override void Enable() => SubscribeUpdate(OnUpdate);
 
     public override void Disable()
     {
-        Svc.Framework.Update -= OnUpdate;
+        UnsubscribeUpdate();
         GateNpcNavigation.ReleaseIfOwned(GateType.SliceIsRight);
         PreciseMovement.SetDesiredDirection(null);
         if (_ownsNav)

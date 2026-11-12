@@ -12,13 +12,13 @@ public class Cliffhanger : Module
 
     public override void Enable()
     {
-        Svc.Framework.Update += OnUpdate;
+        SubscribeUpdate(OnUpdate);
         Svc.PluginInterface.UiBuilder.Draw += Draw;
     }
 
     public override void Disable()
     {
-        Svc.Framework.Update -= OnUpdate;
+        UnsubscribeUpdate();
         Svc.PluginInterface.UiBuilder.Draw -= Draw;
         PreciseMovement.SetDesiredDirection(null);
         GateNpcNavigation.ReleaseIfOwned(GateType.Cliffhanger);

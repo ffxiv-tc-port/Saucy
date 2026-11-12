@@ -10,13 +10,13 @@ public class AirForceOne : Module
 
     public override void Enable()
     {
-        Svc.Framework.Update += OnFrameworkUpdate;
+        SubscribeUpdate(OnFrameworkUpdate);
         Svc.PluginInterface.UiBuilder.Draw += Draw;
     }
 
     public override void Disable()
     {
-        Svc.Framework.Update -= OnFrameworkUpdate;
+        UnsubscribeUpdate();
         Svc.PluginInterface.UiBuilder.Draw -= Draw;
         AirForceAutomation.ClearRewardTracking();
         GateNpcNavigation.ReleaseIfOwned(GateType.AirForceOne);

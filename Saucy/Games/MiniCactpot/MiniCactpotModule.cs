@@ -165,14 +165,14 @@ public unsafe class MiniCactpotModule : Module
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, AddonName, OnAddonEvent);
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, AddonName, OnAddonEvent);
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PreSetup, SelectYesnoHelper.AddonName, OnYesnoPreSetup);
-        Svc.Framework.Update += OnUpdate;
+        SubscribeUpdate(OnUpdate);
         GoldSaucerEventTracker.Acquire(InternalName);
     }
 
     public override void Disable()
     {
         GoldSaucerEventTracker.Release(InternalName);
-        Svc.Framework.Update -= OnUpdate;
+        UnsubscribeUpdate();
         Svc.AddonLifecycle.UnregisterListener(OnAddonEvent);
         Svc.AddonLifecycle.UnregisterListener(OnYesnoPreSetup);
         TaskManager.Abort();

@@ -16,14 +16,14 @@ public class LeapOfFaith : Module
 
     public override void Enable()
     {
-        Svc.Framework.Update += OnUpdate;
+        SubscribeUpdate(OnUpdate);
         Svc.PluginInterface.UiBuilder.Draw += Draw;
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PreSetup, SelectYesnoHelper.AddonName, LeapOfFaithQuickExit.OnYesnoPreSetup);
     }
 
     public override void Disable()
     {
-        Svc.Framework.Update -= OnUpdate;
+        UnsubscribeUpdate();
         Svc.PluginInterface.UiBuilder.Draw -= Draw;
         Svc.AddonLifecycle.UnregisterListener(AddonEvent.PreSetup, SelectYesnoHelper.AddonName, LeapOfFaithQuickExit.OnYesnoPreSetup);
         LeapOfFaithQuickExit.Reset();

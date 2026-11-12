@@ -106,6 +106,55 @@ public abstract partial class Module
 
 public abstract partial class Module
 {
+    // 同一插件的 Framework.Update 處理器共用 Dalamud 的一個 try/catch：任一模組擲例外，
+    // 之後訂閱的處理器（含 RunBot 與急停的 ProcessPending）那一幀全被跳過。所以每個模組各自包一層。
+    private IFramework.OnUpdateDelegate? updateBody;
+    private IFramework.OnUpdateDelegate? guardedUpdate;
+    private readonly UpdateFailureDedup updateFailures = new();
+
+    /// <summary>訂閱每幀更新（包一層 try）。重複呼叫只會留一份訂閱。只在 framework 執行緒呼叫。</summary>
+    protected void SubscribeUpdate(IFramework.OnUpdateDelegate body)
+    {
+        guardedUpdate ??= GuardedUpdate;
+        updateBody = body;
+        Svc.Framework.Update -= guardedUpdate;
+        Svc.Framework.Update += guardedUpdate;
+    }
+
+    protected void UnsubscribeUpdate()
+    {
+        if (guardedUpdate != null)
+        {
+            Svc.Framework.Update -= guardedUpdate;
+        }
+
+        updateBody = null;
+    }
+
+    private void GuardedUpdate(IFramework framework)
+    {
+        var body = updateBody;
+        if (body == null)
+        {
+            return;
+        }
+
+        try
+        {
+            body(framework);
+        }
+        catch (Exception ex)
+        {
+            if (updateFailures.ShouldReport(ex))
+            {
+                Svc.Log.Error(ex, $"[{InternalName}] 每幀更新擲例外（同一種錯誤只記這一次；本模組下一幀照常重試，其他模組與急停不受影響）");
+            }
+        }
+    }
+}
+
+public abstract partial class Module
+{
     public void Log(string message) => PluginLog.Information($"[{InternalName}] {message}");
     public void LogDebug(string message) => PluginLog.Debug($"[{InternalName}] {message}");
     public void LogVerbose(string message) => PluginLog.Verbose($"[{InternalName}] {message}");
