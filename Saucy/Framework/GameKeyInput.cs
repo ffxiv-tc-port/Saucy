@@ -7,7 +7,7 @@ namespace Saucy.Framework;
 /// <summary>
 /// Confirmed live: jumping (Space) worked via SendMessage(WM_KEYDOWN/UP) to the FFXIVGAME window, but held movement (W/A/D) never actually moved the character — only spun/jumped in place.
 /// This points to FFXIV reading discrete actions (jump) through the window message queue but continuous movement through real keyboard hardware state (GetAsyncKeyState / raw input), which SendMessage/PostMessage never touches since they only enqueue a message rather than updating the OS's actual key-state table.
-/// As a safety measure (this simulates real global keyboard state, not a message to a specific window), key sends are skipped unless the FFXIVGAME window is currently the OS foreground window.
+/// As a safety measure (this simulates real global keyboard state, not a message to a specific window), key sends are skipped unless the FFXIVGAME window is currently the OS foreground window — except the keyUp for a key this class pressed, which is always sent.
 /// </summary>
 internal static class GameKeyInput
 {
@@ -126,11 +126,21 @@ internal static class GameKeyInput
         SendKey(vk, keyUp: true);
     }
 
+    /// <summary>送出過 keyDown、還沒送 keyUp 的鍵。</summary>
+    private static readonly HashSet<int> injectedDown = [];
+
     private static void SendKey(int vk, bool keyUp)
     {
-        if (!IsGameForeground())
+        // 自己按下的鍵切到背景也要放開，否則 OS 的按鍵狀態停在按下、影響前景的程式；沒按下過的鍵照舊只在前景送。
+        var releaseOwnKey = keyUp && injectedDown.Remove(vk);
+        if (!releaseOwnKey && !IsGameForeground())
         {
             return;
+        }
+
+        if (!keyUp)
+        {
+            injectedDown.Add(vk);
         }
 
         var scanCode = (ushort)MapVirtualKey((uint)vk, MAPVK_VK_TO_VSC);
