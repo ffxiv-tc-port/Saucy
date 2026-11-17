@@ -1,8 +1,8 @@
 [submodule "PunishLib"]
 	path = PunishLib
 	url = https://github.com/ffxiv-tc-port/PunishLib
-	branch = tc-net9-async-httptimeout
+	branch = tc-7.30
 [submodule "ECommons"]
 	path = ECommons
 	url = https://github.com/ffxiv-tc-port/ECommons.git
-	branch = pin-wrathcombo-tc-api13
+	branch = tc-7.30
