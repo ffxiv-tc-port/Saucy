@@ -1,0 +1,573 @@
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
+using ECommons.GameHelpers;
+using ECommons.ImGuiMethods;
+using ECommons.LanguageHelpers;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using Saucy.AirForce;
+using Saucy.Cliffhanger;
+using Saucy.Framework;
+using Saucy.IPC;
+using Saucy.LeapOfFaith;
+using Saucy.OtherGames;
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using JumboNumberPlan = Saucy.JumboCactpot.JumboCactpotNumberPlan;
+namespace Saucy;
+
+public unsafe partial class PluginUI
+{
+    private static void DrawWindBlowsPanel()
+    {
+        DrawPanelHeader("Wind Blows".Loc(), "Statistical safe spot".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.AnyWayTheWindBlows);
+        if (ImGui.Checkbox("啟用##Wind", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.AnyWayTheWindBlows, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("在 GATE 期間顯示統計上的安全站位點。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var autoMove = C.GoldSaucerGates.WindBlowsAutoMovement;
+            if (ImGui.Checkbox("自動移動（vnavmesh）##WindAuto", ref autoMove))
+            {
+                C.GoldSaucerGates.WindBlowsAutoMovement = autoMove;
+                C.Save();
+            }
+
+            if (autoMove)
+            {
+                SaucyTheme.TextMuted("當你不在安全點上時，會自動導航你移動到安全點。");
+            }
+
+            if (ImGui.Button("強制移動測試（忽略 GATE/安全點判定）##WindForceMove"))
+            {
+                AnyWayTheWindBlows.TriggerForceMove();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("暴風倖存者還是沒自動移動時用這個測試——按一下觸發一次移動嘗試，跳過 GATE/安全點判定。");
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        var expectedGateType = global::Saucy.Framework.Module.GateType.AnyWayTheWindBlows;
+        var currentGate = GateDirector.InSaucer && GateDirector.IsPlayerOnStage()
+            ? GateDirector.GetCurrentGate()
+            : global::Saucy.Framework.Module.GateType.None;
+        SaucyTheme.TextMuted($"目前偵測到的 GateType：{currentGate}（本模組認定的暴風倖存者值：{expectedGateType}）");
+        SaucyTheme.TextMuted($"vnavmesh 已安裝：{Vnavmesh.IsInstalled}　導航就緒：{Vnavmesh.IsNavReady()}　移動中：{Vnavmesh.IsMoving()}");
+        SaucyTheme.TextMuted($"在安全點上：{AnyWayTheWindBlows.Stage.SafeSpot.On}　靠近安全點：{AnyWayTheWindBlows.Stage.SafeSpot.Near}");
+        if (Player.Available)
+        {
+            SaucyTheme.TextMuted($"IsOnPlatform 判定：{WindBlowsGateMovement.DebugIsOnPlatform(Player.Position)}　" +
+                                  $"與安全點距離：{Vector3.Distance(Player.Position, AnyWayTheWindBlows.Stage.SafeSpot.Position):F2}");
+        }
+        if (Vnavmesh.IsInstalled && Player.Available)
+        {
+            var floorHere = Vnavmesh.TryGetPointOnFloor(Player.Position, allowUnlandable: false, halfExtentXz: 1.5f);
+            var floorText = floorHere is { } f ? $"有 (Y={f.Y:F1}，玩家 Y={Player.Position.Y:F1})" : "沒有（會改用玩家實際 Y 判斷）";
+            SaucyTheme.TextMuted($"vnavmesh 在玩家目前位置查得到地板：{floorText}");
+        }
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.DrawCard("相依項目", "選用整合功能", GoldSaucerGateDependenciesUi.DrawWindBlows);
+    }
+
+    /// <summary>
+    /// Shared "walk to the registration NPC beforehand" controls, called from the unified 「活動解說員排程」page (see PluginUI.cs DrawGateSchedulePanel) rather than from each GATE's own panel.
+    /// Deliberately stops at recording the NPC's position + navigating near it — targeting/talking/ confirming registration stays manual by design, and the position is never hardcoded/guessed, only ever whatever the user personally had targeted when they hit the record button.
+    /// </summary>
+    internal static void DrawGateNpcNavigationControls(string label, string idSuffix, GateNpcSpot spot, Func<bool> getAutoNav, Action<bool> setAutoNav)
+    {
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted($"{label}　報名 NPC 自動導航（走到附近後會自動互動，確認參加交給其他插件處理）：");
+        ImGui.TextWrapped(spot.Recorded
+            ? $"已記錄：{spot.NpcName}（{spot.X:F1}, {spot.Y:F1}, {spot.Z:F1}）"
+            : "尚未記錄 NPC 位置——請先在遊戲中鎖定該 NPC。");
+
+        if (ImGui.Button($"記錄目前鎖定的 NPC 位置##{idSuffix}"))
+        {
+            if (GateNpcNavigation.TryRecordCurrentTarget(spot, out var message))
+            {
+                Svc.Chat.Print($"[Saucy] {message}");
+            }
+            else
+            {
+                Svc.Chat.PrintError($"[Saucy] {message}");
+            }
+        }
+
+        using var disabled = ImRaii.Disabled(!spot.Recorded);
+        var autoNav = getAutoNav();
+        if (ImGui.Checkbox($"自動導航至報名點##{idSuffix}", ref autoNav))
+        {
+            setAutoNav(autoNav);
+            C.Save();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button($"立即互動##{idSuffix}"))
+        {
+            GateNpcNavigation.TryInteractNow(spot);
+        }
+
+        // Goes through the navigator rather than a one-shot Vnavmesh.TryMoveTo: it waits for the mesh, reports
+        // success/failure, and can be stopped from the Navigation panel.
+        DrawRecordedSpotNavigationRow(spot, idSuffix);
+    }
+
+    private static void DrawAirForcePanel()
+    {
+        DrawPanelHeader("Air Force One".Loc(), "Rail shooter minigame".Loc());
+        ImGuiEx.EzTabBar("###AirForce",
+            ("Main".Loc(), DrawAirForceMain, null, false),
+            ("Debug".Loc(), AirForceAutomation.DrawDebug, null, false));
+    }
+
+    private static void DrawAirForceMain()
+    {
+        var enabled = C.IsModuleEnabled(ModuleNames.AirForceOne);
+        if (ImGui.Checkbox("啟用##AirForce", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.AirForceOne, enabled);
+            if (!enabled)
+            {
+                AirForceAutomation.ClearRewardTracking();
+            }
+
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後將自動執行，為你自動遊玩 Air Force One 射擊乘坐小遊戲。");
+
+        ImGui.Dummy(new(0, 4));
+        var bombRadius = C.GoldSaucerGates.BombCircleRadius();
+        if (ImGui.SliderFloat("炸彈避讓圈半徑（像素）##AirForceBombCircleRadius", ref bombRadius,
+                GoldSaucerGateSettings.AirForceBombCircleMin, GoldSaucerGateSettings.AirForceCircleMax, "%.0f"))
+        {
+            C.GoldSaucerGates.AirForceBombCircleRadius = bombRadius;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("炸彈周圍不開槍的範圍（紅圈）。太常打到炸彈就調大，目標一直因為炸彈跳過不打就調小。\n以 20 米遠為準，越近畫面上越大。");
+        }
+
+        var targetRadius = C.GoldSaucerGates.TargetCircleRadius();
+        if (ImGui.SliderFloat("目標標靶圈半徑（像素）##AirForceTargetCircleRadius", ref targetRadius,
+                GoldSaucerGateSettings.AirForceTargetCircleMin, GoldSaucerGateSettings.AirForceCircleMax, "%.0f"))
+        {
+            C.GoldSaucerGates.AirForceTargetCircleRadius = targetRadius;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("目標本身被當成多大（綠圈）：炸彈靠近時改瞄這個圈離炸彈最遠的邊。\n調大比較敢瞄邊緣、調小比較常整個跳過。以 20 米遠為準。");
+        }
+
+        var samePointMs = C.GoldSaucerGates.AirForceSamePointShotIntervalMs;
+        if (ImGui.SliderInt("同一點開槍最短間隔（毫秒）##AirForceSamePointShotInterval", ref samePointMs,
+                GoldSaucerGateSettings.AirForceSamePointShotIntervalMinMs, GoldSaucerGateSettings.AirForceSamePointShotIntervalMaxMs))
+        {
+            C.GoldSaucerGates.AirForceSamePointShotIntervalMs = samePointMs;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("槍的射速有限：瞄點跟剛開過槍的位置相距 40 像素內、又還沒過這麼久，就先打別的目標。\n" +
+                             "同一個目標原本就有 250 毫秒不重打；這個值管的是「同一個位置」，不管是不是同一個物件。");
+        }
+
+        var showCircles = C.GoldSaucerGates.AirForceShowPredictionCircles;
+        if (ImGui.Checkbox("顯示炸彈/目標預測圈##AirForceShowCircles", ref showCircles))
+        {
+            C.GoldSaucerGates.AirForceShowPredictionCircles = showCircles;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("關閉可提升畫面幀數，僅影響顯示，不影響自動避讓/鎖定邏輯。");
+        }
+
+        DrawGateRewardAutoClose("AirForce");
+    }
+
+    // 登高跳跳樂與 Air Force One 共用同一個設定，兩個頁面各放一份。
+    private static void DrawGateRewardAutoClose(string idSuffix)
+    {
+        var autoClose = C.GoldSaucerGates.GateRewardWindowAutoClose;
+        if (ImGui.Checkbox($"副本結束後自動關閉金碟幣結算視窗##GateRewardAutoClose{idSuffix}", ref autoClose))
+        {
+            C.GoldSaucerGates.GateRewardWindowAutoClose = autoClose;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("結算視窗出現 2 秒後替你按關閉（Air Force One 會先等 Saucy 記下這場的金碟幣）。\n" +
+                             "結算視窗開著時遊戲大約 60 秒後才送你出副本；關掉後能不能早點離開，看 log 裡「金碟幣結算視窗」那幾行。");
+        }
+    }
+
+    private static void DrawLeapOfFaithPanel()
+    {
+        DrawPanelHeader("Leap of Faith".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.LeapOfFaith);
+        if (ImGui.Checkbox("啟用##LeapOfFaith", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.LeapOfFaith, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("開啟後會在畫面上標出目前偵測到的終點或仙人掌盃位置與距離。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var autoMove = C.GoldSaucerGates.LeapOfFaithAutoMovement;
+            if (ImGui.Checkbox("自動移動＋跳躍（實驗性）##LeapOfFaithAuto", ref autoMove))
+            {
+                C.GoldSaucerGates.LeapOfFaithAutoMovement = autoMove;
+                C.Save();
+            }
+
+            if (autoMove)
+            {
+                SaucyTheme.TextMuted("沒有跳台碰撞偵測，只會朝目標方向移動並定時跳躍，可能會摔落，請留意。");
+                SaucyTheme.TextMuted("跳躍時機改為觀察已記錄的藍色軌道自動判斷，不再是固定間隔。");
+            }
+
+            var quickExit = C.GoldSaucerGates.LeapOfFaithQuickExit;
+            if (ImGui.Checkbox("入場後等一段時間直接退出任務（拿最低獎勵）##LeapOfFaithQuickExit", ref quickExit))
+            {
+                C.GoldSaucerGates.LeapOfFaithQuickExit = quickExit;
+                C.Save();
+            }
+
+            if (quickExit)
+            {
+                var delay = C.GoldSaucerGates.LeapOfFaithQuickExitDelaySeconds;
+                ImGui.SetNextItemWidth(220);
+                if (ImGui.SliderInt("等待秒數##LeapOfFaithQuickExitDelay", ref delay, 0, GoldSaucerGateSettings.LeapOfFaithQuickExitMaxDelaySeconds))
+                {
+                    C.GoldSaucerGates.LeapOfFaithQuickExitDelaySeconds = delay;
+                }
+                if (ImGui.IsItemDeactivatedAfterEdit())
+                {
+                    C.Save();
+                }
+
+                SaucyTheme.TextMuted("從入場、角色出現後開始算；等待期間自動移動＋跳躍會停手。");
+                SaucyTheme.TextMuted("等待期間自己移動或 /saucy stop 就取消這一場的退出。");
+                SaucyTheme.TextMuted("用副本選單的「退出任務」退出；確認框由 Saucy 按（先請 YesAlready 讓開，請不動就不按）。");
+                SaucyTheme.TextMuted(LeapOfFaithQuickExit.StatusText);
+            }
+
+            DrawGateRewardAutoClose("LeapOfFaith");
+        }
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("路徑繪製選項（畫太多會讓幀數大幅下降，可依需要關閉）：");
+        var showPlatforms = C.GoldSaucerGates.LeapOfFaithShowPlatformMarkers;
+        if (ImGui.Checkbox("顯示平台推測標記##LeapOfFaithShowPlatforms", ref showPlatforms))
+        {
+            C.GoldSaucerGates.LeapOfFaithShowPlatformMarkers = showPlatforms;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("點數量多時最耗效能的一項，優先關閉這個。");
+        }
+
+        var showOwnTrail = C.GoldSaucerGates.LeapOfFaithShowOwnTrail;
+        if (ImGui.Checkbox("顯示自己的路徑##LeapOfFaithShowOwnTrail", ref showOwnTrail))
+        {
+            C.GoldSaucerGates.LeapOfFaithShowOwnTrail = showOwnTrail;
+            C.Save();
+        }
+
+        var showOtherTrails = C.GoldSaucerGates.LeapOfFaithShowOtherPlayerTrails;
+        if (ImGui.Checkbox("顯示其他玩家路徑##LeapOfFaithShowOtherTrails", ref showOtherTrails))
+        {
+            C.GoldSaucerGates.LeapOfFaithShowOtherPlayerTrails = showOtherTrails;
+            C.Save();
+        }
+
+        var showPointer = C.GoldSaucerGates.LeapOfFaithShowTargetPointer;
+        if (ImGui.Checkbox("顯示目標指標##LeapOfFaithShowPointer", ref showPointer))
+        {
+            C.GoldSaucerGates.LeapOfFaithShowTargetPointer = showPointer;
+            C.Save();
+        }
+
+        ImGui.Dummy(new(0, 4));
+        var expectedGateType = global::Saucy.Framework.Module.GateType.LeapOfFaith;
+        SaucyTheme.TextMuted($"偵測到的 GateType：{LeapOfFaith.LeapOfFaithAutomation.LastObservedGateType}" +
+                              $"（本模組認定的 Leap of Faith 值：{expectedGateType}）");
+        SaucyTheme.TextMuted($"已記錄平台點數：{LeapOfFaith.LeapOfFaithPlatformObserver.ObservedPlatforms.Count}");
+        if (ImGui.Button("清除已記錄平台點##LeapOfFaithClearPlatforms"))
+        {
+            LeapOfFaith.LeapOfFaithPlatformObserver.Clear();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("清掉舊版偵測邏輯留下的雜訊點（例如深淵/半空中的點），之後會用新邏輯重新累積。");
+        }
+
+        // Checks live whether vnavmesh's navmesh actually has floor data over Leap of Faith's platforms
+        // (its navmesh is baked from static collision and these platforms may be dynamic/instance-only).
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted($"vnavmesh 已安裝：{Vnavmesh.IsInstalled}　導航就緒：{Vnavmesh.IsNavReady()}");
+        if (Vnavmesh.IsInstalled && Player.Available)
+        {
+            var floorHere = Vnavmesh.TryGetPointOnFloor(Player.Position, allowUnlandable: false, halfExtentXz: 2f);
+            var floorText = floorHere is { } f ? $"有 (Y={f.Y:F1}，玩家 Y={Player.Position.Y:F1})" : "沒有";
+            SaucyTheme.TextMuted($"vnavmesh 在玩家目前位置查得到地板：{floorText}");
+        }
+    }
+
+    private static void DrawCliffhangerPanel()
+    {
+        DrawPanelHeader("Cliffhanger".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.Cliffhanger);
+        if (ImGui.Checkbox("啟用##Cliffhanger", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.Cliffhanger, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("啟用後會朝最近的迷路陸行鳥雛鳥移動，並在炸彈太靠近時嘗試遠離。");
+
+        if (enabled)
+        {
+            using var indent = ImRaii.PushIndent();
+            var autoMove = C.GoldSaucerGates.CliffhangerAutoMovement;
+            if (ImGui.Checkbox("自動移動（實驗性）##CliffhangerAuto", ref autoMove))
+            {
+                C.GoldSaucerGates.CliffhangerAutoMovement = autoMove;
+                C.Save();
+            }
+
+            if (autoMove)
+            {
+                SaucyTheme.TextMuted("沒有跳躍/碰撞偵測，只會朝雛鳥方向移動並嘗試遠離炸彈，請留意安全。");
+
+                if (ImGui.Button("啟動移動（從路線第一點開始跑）##CliffhangerStartTestRun"))
+                {
+                    CliffhangerAutomation.StartTestRun();
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("不等 GATE 實際開始，直接在目前位置從已錄製路線的第一個點開始跑；按一次就會重新從頭開始。");
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("停止測試##CliffhangerStopTestRun"))
+                {
+                    CliffhangerAutomation.TestRunActive = false;
+                }
+                ImGui.SameLine();
+                SaucyTheme.TextMuted(CliffhangerAutomation.TestRunActive ? "測試中" : "未在測試");
+
+                DrawCliffhangerSparseRoute();
+
+                SaucyTheme.TextMuted($"診斷：vnavmesh 已安裝={Vnavmesh.IsInstalled}　導航就緒={Vnavmesh.IsNavReady()}　" +
+                                      $"移動中={Vnavmesh.IsMoving()}　目前路點索引={CliffhangerAutomation.RouteIndex}/{C.GoldSaucerGates.CliffhangerRoute.Count}");
+
+                var route = C.GoldSaucerGates.CliffhangerRoute;
+                var idx = CliffhangerAutomation.RouteIndex;
+                if (Player.Available && idx >= 0 && idx < route.Count)
+                {
+                    var wp = route[idx];
+                    var dest = new Vector3(wp.X, wp.Y, wp.Z);
+                    var dist = Vector3.Distance(Player.Position, dest);
+                    SaucyTheme.TextMuted($"目前路點：{wp.Label}（跳躍點={wp.IsJumpPoint}）　" +
+                                          $"跟玩家距離={dist:F2}m　炸彈阻擋中={CliffhangerAutomation.IsBlockedByBomb}");
+                }
+            }
+        }
+
+        ImGui.Dummy(new(0, 4));
+        var blastRadius = C.GoldSaucerGates.CliffhangerBombBlastRadiusGuess;
+        if (ImGui.SliderFloat("炸彈波及範圍猜測（公尺）##CliffhangerBlastRadius", ref blastRadius, 1f, 15f, "%.1f"))
+        {
+            C.GoldSaucerGates.CliffhangerBombBlastRadiusGuess = blastRadius;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("實際爆炸範圍未知，這只是畫面上紅色圓圈的猜測值，可依實際遊玩觀察調整。");
+        }
+
+        var bombDisplaySeconds = C.GoldSaucerGates.CliffhangerBombDisplaySeconds;
+        if (ImGui.SliderFloat("炸彈標示顯示時間（秒）##CliffhangerBombDisplay", ref bombDisplaySeconds, 0.5f, 10f, "%.1f"))
+        {
+            C.GoldSaucerGates.CliffhangerBombDisplaySeconds = bombDisplaySeconds;
+        }
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("炸彈出現後標記/範圍圈只顯示這麼久就自動消失（閃避邏輯本身不受影響，一直到炸彈消失都會避開）。");
+        }
+
+        var showOwnTrail = C.GoldSaucerGates.CliffhangerShowOwnTrail;
+        if (ImGui.Checkbox("顯示自己的路徑##CliffhangerShowOwnTrail", ref showOwnTrail))
+        {
+            C.GoldSaucerGates.CliffhangerShowOwnTrail = showOwnTrail;
+            C.Save();
+        }
+
+        var showBlast = C.GoldSaucerGates.CliffhangerShowBombBlastCircles;
+        if (ImGui.Checkbox("顯示炸彈範圍圈##CliffhangerShowBlast", ref showBlast))
+        {
+            C.GoldSaucerGates.CliffhangerShowBombBlastCircles = showBlast;
+            C.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("關閉可提升畫面幀數，僅影響顯示，不影響炸彈閃避邏輯。");
+        }
+
+        ImGui.Dummy(new(0, 4));
+        ImGui.TextWrapped("路線固定但有炸彈障礙物。若要重新確認目標/炸彈 DataId，可到「除錯」分頁用" +
+                           "「搶救小鳥大作戰 路徑記錄」再錄一次手動遊玩紀錄。");
+
+        var expectedGateType = global::Saucy.Framework.Module.GateType.Cliffhanger;
+        SaucyTheme.TextMuted($"目前偵測到的 GateType：{CliffhangerAutomation.LastObservedGateType}" +
+                              $"（本模組認定的 Cliffhanger 值：{expectedGateType}）");
+    }
+
+    /// <summary>
+    /// Sparse, user-marked route (start / jump points / end)
+    /// — takes priority over the dense
+    /// auto-recorded replay when set up. Order in the list IS the walking order; add points one at
+    /// a time by standing at each spot and clicking "新增目前位置".
+    /// </summary>
+    private static void DrawCliffhangerSparseRoute()
+    {
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("手動標記路線（起點/跳躍點/終點，依清單順序走）：");
+
+        var route = C.GoldSaucerGates.CliffhangerRoute;
+        SaucyTheme.TextMuted("只要清單裡有路點，「自動移動」開啟時就會強制優先使用這條路線（取代自動錄製重播），不需要另外開關。");
+
+        for (var i = 0; i < route.Count; i++)
+        {
+            var wp = route[i];
+            ImGui.PushID(i);
+            ImGui.TextUnformatted($"{i + 1}. {wp.Label}（{wp.X:F1}, {wp.Y:F1}, {wp.Z:F1}）");
+
+            var isJumpPoint = wp.IsJumpPoint;
+            if (ImGui.Checkbox("跳躍點##IsJumpPoint", ref isJumpPoint))
+            {
+                wp.IsJumpPoint = isJumpPoint;
+                C.Save();
+            }
+
+            if (wp.IsJumpPoint)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("移動到跳躍點並跳躍##CliffhangerRouteJump"))
+                {
+                    // Without forcing these on, OnUpdate's `inGate` check (real
+                    // GATE state OR TestRunActive) can be false while just testing the route outside
+                    // an actual run, so it exits before ever reaching the manual-move logic at all.
+                    CliffhangerAutomation.TestRunActive = true;
+                    C.SetModuleEnabled(ModuleNames.Cliffhanger, true);
+                    CliffhangerAutomation.TryMoveNowToAndJump(new(wp.X, wp.Y, wp.Z));
+                }
+            }
+            else
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("立即移動##CliffhangerRouteMove"))
+                {
+                    CliffhangerAutomation.TestRunActive = true;
+                    C.SetModuleEnabled(ModuleNames.Cliffhanger, true);
+                    CliffhangerAutomation.TryMoveNowTo(new(wp.X, wp.Y, wp.Z));
+                }
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("刪除"))
+            {
+                route.RemoveAt(i);
+                C.Save();
+                ImGui.PopID();
+                break;
+            }
+
+            ImGui.PopID();
+        }
+
+        if (ImGui.Button("新增目前位置到路線結尾##AddCliffhangerRoutePoint"))
+        {
+            if (Player.Available)
+            {
+                route.Add(new()
+                {
+                    X = Player.Position.X, Y = Player.Position.Y, Z = Player.Position.Z,
+                    Label = route.Count == 0 ? "起點" : $"路點 {route.Count + 1}"
+                });
+                C.Save();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("清空路線##ClearCliffhangerRoute"))
+        {
+            route.Clear();
+            C.Save();
+        }
+    }
+
+    private static void DrawSliceIsRightPanel()
+    {
+        DrawPanelHeader("Slice is Right".Loc());
+        var enabled = C.IsModuleEnabled(ModuleNames.SliceIsRight);
+        if (ImGui.Checkbox("啟用##SliceIsRight", ref enabled))
+        {
+            C.SetModuleEnabled(ModuleNames.SliceIsRight, enabled);
+            C.Save();
+        }
+
+        ImGui.TextWrapped("這關的實際機制由 BossModReborn 接管，這裡只負責啟用/停用；報名 NPC 導航設定已統一移到「活動解說員排程」頁面。");
+
+        ImGui.Dummy(new(0, 4));
+        SaucyTheme.TextMuted("進入 GATE 後先移動到場地邊界，再讓 BossModReborn 接管（不會再碰移動）：");
+        var startSpot = C.GoldSaucerGates.SliceIsRightStartSpot;
+        ImGui.TextWrapped(startSpot.Recorded
+            ? $"已記錄：{startSpot.NpcName}（{startSpot.X:F1}, {startSpot.Y:F1}, {startSpot.Z:F1}）"
+            : "尚未記錄場地邊界位置——請先進入 GATE 站到你要的位置。");
+
+        if (ImGui.Button("記錄目前站立位置##SliceIsRightStartSpot"))
+        {
+            GateNpcNavigation.RecordCurrentPosition(startSpot, "場地邊界");
+        }
+
+        using var disabled = ImRaii.Disabled(!startSpot.Recorded);
+        var startAutoNav = C.GoldSaucerGates.SliceIsRightStartAutoNavigate;
+        if (ImGui.Checkbox("進入 GATE 後自動移動至此##SliceIsRightStartAutoNavigate", ref startAutoNav))
+        {
+            C.GoldSaucerGates.SliceIsRightStartAutoNavigate = startAutoNav;
+            C.Save();
+        }
+    }
+}
