@@ -5,10 +5,8 @@ namespace Saucy.IPC;
 internal static class IPCNames
 {
     public const string Lifestream = "Lifestream";
-    public const string BossMod = "BossModReborn";
     public const string Vnavmesh = "vnavmesh";
     public const string Questionable = "Questionable";
-    public const string AutoRetainer = "AutoRetainer";
 }
 
 [AttributeUsage(AttributeTargets.Class)]

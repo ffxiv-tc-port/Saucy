@@ -59,45 +59,6 @@ public static unsafe class SelectStringHelper
     public static bool IsLotteryWeeklyYesnoMenu(AddonSelectString* menu) =>
         IsAgentYesnoMenu(menu, SelectYesnoHelper.IsLotteryWeeklyAddon);
 
-    public static bool TrySelectEntryContaining(AddonSelectString* menu, string textFragment)
-    {
-        if (menu == null || !IsAddonReady(&menu->AtkUnitBase) || !menu->AtkUnitBase.IsVisible)
-        {
-            return false;
-        }
-
-        try
-        {
-            var select = new AddonMaster.SelectString(menu);
-            for (var i = 0; i < select.Entries.Length; i++)
-            {
-                var text = select.Entries[i].Text;
-                if (AddonPressGuard.LooksCorrupted(text))
-                {
-                    // 選項文字讀到 U+FFFD＝窗記憶體正在變動，該幀不碰。
-                    return false;
-                }
-
-                if (text.Contains(textFragment, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!AddonPressGuard.TryBeginPress(SelectStringAddonName, &menu->AtkUnitBase, PressKey(i)))
-                    {
-                        return false;
-                    }
-
-                    select.Entries[i].Select();
-                    return true;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Verbose(ex, $"[SelectString] Entry containing \"{textFragment}\" select failed");
-        }
-
-        return false;
-    }
-
     public static bool TrySelectYesEntry(AddonSelectString* menu) => TrySelectEntry(menu, YesEntryIndex);
 
     public static bool TrySelectNoEntry(AddonSelectString* menu) => TrySelectEntry(menu, NoEntryIndex);

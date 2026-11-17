@@ -161,7 +161,6 @@ public sealed partial class Saucy : IDalamudPlugin
         StopOwnMovementForUnload();
         ModuleManager.Dispose();
         _triadCollectionHost?.Dispose();
-        YesAlready.ResumeIfPausedBySaucy();
         if (canReachOtherPlugins)
         {
             SubscriptionManager.DisposeAll();

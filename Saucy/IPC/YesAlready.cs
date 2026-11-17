@@ -1,14 +1,10 @@
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Ipc.Exceptions;
-using ECommons.EzSharedDataManager;
 using System;
-using System.Collections.Generic;
 namespace Saucy.IPC;
 
 internal static class YesAlready
 {
-    private const string StopRequestsKey = "YesAlready.StopRequests";
-
     private const string InternalName = "YesAlready";
 
     /// <summary><c>Func&lt;string, int, bool&gt;</c>：把 YesAlready 的單一個功能暫停幾毫秒，時間到它自己恢復。</summary>
@@ -28,8 +24,6 @@ internal static class YesAlready
 
     /// <summary>YesAlready 依目標名稱規則翻 Talk 對話框的那個功能（它的類別簡名）；它在 Talk 的 PostUpdate 每幀判斷。</summary>
     private const string TalkFeature = "Talk";
-
-    private static bool pausedBySaucy;
 
     private static ICallGateSubscriber<string, int, bool>? pauseBotherSubscriber;
 
@@ -85,49 +79,6 @@ internal static class YesAlready
             }
 
             return false;
-        }
-    }
-
-    public static void SyncForGameActivity(bool gamePlaying)
-    {
-        if (gamePlaying)
-        {
-            if (!pausedBySaucy)
-            {
-                Lock();
-                pausedBySaucy = true;
-            }
-
-            return;
-        }
-
-        ResumeIfPausedBySaucy();
-    }
-
-    public static void ResumeIfPausedBySaucy()
-    {
-        if (!pausedBySaucy)
-        {
-            return;
-        }
-
-        pausedBySaucy = false;
-        Unlock();
-    }
-
-    private static void Lock()
-    {
-        if (EzSharedData.TryGet<HashSet<string>>(StopRequestsKey, out var data))
-        {
-            data.Add(Svc.PluginInterface.Manifest.InternalName);
-        }
-    }
-
-    private static void Unlock()
-    {
-        if (EzSharedData.TryGet<HashSet<string>>(StopRequestsKey, out var data))
-        {
-            data.Remove(Svc.PluginInterface.Manifest.InternalName);
         }
     }
 }

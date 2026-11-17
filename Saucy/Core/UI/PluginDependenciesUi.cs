@@ -27,15 +27,6 @@ internal static class PluginDependenciesUi
             [],
             () => IPC.Vnavmesh.IsInstalled);
 
-    public static DependencyEntry BossModPlugin(string description) =>
-        new(
-            "Bossmod Reborn",
-            IPCNames.BossMod,
-            description,
-            TcRepositoryUrl,
-            [],
-            () => BossMod.IsInstalled);
-
     public static DependencyEntry LifestreamPlugin(string description) =>
         new(
             "Lifestream",
