@@ -131,6 +131,7 @@ internal static unsafe class LeapOfFaithQuickExit
         var inside = IsInside();
         var entered = inside && wasInside == false;
         wasInside = inside;
+        LeapOfFaithLeaveDiag.Tick(inside);
         if (!inside)
         {
             if (phase == Phase.Exiting)
@@ -182,6 +183,7 @@ internal static unsafe class LeapOfFaithQuickExit
     public static void Reset()
     {
         ClearRun();
+        LeapOfFaithLeaveDiag.Stop();
         wasInside = null;
     }
 
@@ -586,6 +588,7 @@ internal static unsafe class LeapOfFaithQuickExit
         {
             claimedYesno = 0;
             yesPressedAt = now;
+            LeapOfFaithLeaveDiag.Begin(now);
             Svc.Log.Information("[Saucy] 登高跳跳樂提早退出：已代按退出確認框「是」");
         }
     }

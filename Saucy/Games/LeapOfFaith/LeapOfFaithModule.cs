@@ -19,6 +19,10 @@ public class LeapOfFaith : Module
         SubscribeUpdate(OnUpdate);
         Svc.PluginInterface.UiBuilder.Draw += Draw;
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PreSetup, SelectYesnoHelper.AddonName, LeapOfFaithQuickExit.OnYesnoPreSetup);
+        Svc.Condition.ConditionChange -= LeapOfFaithLeaveDiag.OnConditionChange;
+        Svc.Condition.ConditionChange += LeapOfFaithLeaveDiag.OnConditionChange;
+        Svc.Chat.ChatMessage -= LeapOfFaithLeaveDiag.OnChatMessage;
+        Svc.Chat.ChatMessage += LeapOfFaithLeaveDiag.OnChatMessage;
     }
 
     public override void Disable()
@@ -26,6 +30,8 @@ public class LeapOfFaith : Module
         UnsubscribeUpdate();
         Svc.PluginInterface.UiBuilder.Draw -= Draw;
         Svc.AddonLifecycle.UnregisterListener(AddonEvent.PreSetup, SelectYesnoHelper.AddonName, LeapOfFaithQuickExit.OnYesnoPreSetup);
+        Svc.Condition.ConditionChange -= LeapOfFaithLeaveDiag.OnConditionChange;
+        Svc.Chat.ChatMessage -= LeapOfFaithLeaveDiag.OnChatMessage;
         LeapOfFaithQuickExit.Reset();
         GameKeyInput.ReleaseHeldKey();
         GateNpcNavigation.ReleaseIfOwned(GateType.LeapOfFaith);
