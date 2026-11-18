@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 namespace Saucy.TripleTriad.Data;
 
 public enum GameCardCollectionFilter
@@ -41,6 +42,12 @@ public class GameCardDB
     private int maxGridPageIndex;
 
     public List<int> ownedCardIds = [];
+
+    private readonly List<int> scannedOwnedIds = [];
+    private int dataGeneration;
+    private int appliedDataGeneration = -1;
+    private int appliedCardCount = -1;
+    private int appliedMapCount = -1;
 
     public static int MaxGridPages => Math.Max(instance.maxGridPageIndex + 1, MinGridPages);
 
@@ -140,7 +147,7 @@ public class GameCardDB
         {
             if (a.Item1.Rarity != b.Item1.Rarity)
             {
-                return a.Item1.Rarity.CompareTo(b.Item1.Rarity);
+                return ((int)a.Item1.Rarity).CompareTo((int)b.Item1.Rarity);
             }
 
             if (a.Item2.SortKey != b.Item2.SortKey)
@@ -170,27 +177,53 @@ public class GameCardDB
                 maxCardId = kvp.Key;
             }
         }
+
+        Interlocked.Increment(ref dataGeneration);
     }
 
     public void Refresh()
     {
-        ownedCardIds.Clear();
-        maxGridPageIndex = 0;
-
         if (!TriadMemoryReads.IsAvailable || maxCardId <= 0)
         {
+            ownedCardIds.Clear();
+            maxGridPageIndex = 0;
+            appliedDataGeneration = -1;
             return;
         }
 
+        scannedOwnedIds.Clear();
         for (var id = 1; id <= maxCardId; id++)
         {
             if (TriadMemoryReads.TryIsCardOwned(id))
             {
-                ownedCardIds.Add(id);
+                scannedOwnedIds.Add(id);
             }
         }
 
+        ApplyOwnedCardIds(scannedOwnedIds);
+    }
+
+    /// <summary>
+    ///     Rest of <see cref="Refresh" /> after the ownership scan. Everything it rebuilds is a pure function of
+    ///     the owned ids and the loaded card data, and nothing else writes those outputs, so an unchanged scan
+    ///     on unchanged data keeps the previous result instead of rebuilding it.
+    /// </summary>
+    internal void ApplyOwnedCardIds(List<int> ownedIds)
+    {
         var cardDB = TriadCardDB.Get();
+        var generation = Volatile.Read(ref dataGeneration);
+        if (appliedDataGeneration == generation &&
+            appliedCardCount == cardDB.cards.Count &&
+            appliedMapCount == mapCards.Count &&
+            IsSameIdSequence(ownedCardIds, ownedIds))
+        {
+            return;
+        }
+
+        ownedCardIds.Clear();
+        ownedCardIds.AddRange(ownedIds);
+        maxGridPageIndex = 0;
+
         var settingsDB = PlayerSettingsDB.Get();
 
         settingsDB.ownedCards.Clear();
@@ -209,6 +242,28 @@ public class GameCardDB
 
         RebuildCollectionPages();
         RebuildDeckEditPages();
+
+        appliedDataGeneration = generation;
+        appliedCardCount = cardDB.cards.Count;
+        appliedMapCount = mapCards.Count;
+    }
+
+    private static bool IsSameIdSequence(List<int> a, List<int> b)
+    {
+        if (a.Count != b.Count)
+        {
+            return false;
+        }
+
+        for (var idx = 0; idx < a.Count; idx++)
+        {
+            if (a[idx] != b[idx])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private void RebuildCollectionPages()
@@ -310,7 +365,7 @@ public class GameCardDB
         {
             if (a.Item1.Rarity != b.Item1.Rarity)
             {
-                return a.Item1.Rarity.CompareTo(b.Item1.Rarity);
+                return ((int)a.Item1.Rarity).CompareTo((int)b.Item1.Rarity);
             }
 
             if (a.Item2.SortKey != b.Item2.SortKey)

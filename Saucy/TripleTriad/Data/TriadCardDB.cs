@@ -51,8 +51,11 @@ public class TriadCardDB
             return knownCard;
         }
 
-        return cards.Find(x => (x != null) && x.Id == cardId);
+        return FindByIdScan(cardId);
     }
+
+    // Own method so the lambda's closure is only allocated on this slow path, not on every FindById call.
+    private TriadCard? FindByIdScan(int cardId) => cards.Find(x => (x != null) && x.Id == cardId);
 
     public TriadCard? FindBySortOrder(int sortOrder) =>
         cards.Find(x => x != null && x.SortOrder == sortOrder);
