@@ -65,6 +65,7 @@ public class TriadGameAgentDerpyCarlo : TriadGameAgentGraphExplorer
         using var threadSolvers = new ThreadLocal<TriadGameSolver>(() => solver.CreateWorkerCopy());
         using var threadAgents = new ThreadLocal<TriadGameAgentRandom>(() =>
             new(null, sessionSeed + Environment.CurrentManagedThreadId));
+        using var threadStates = new ThreadLocal<TriadRecycledSimulationState>(() => new());
 
         while (completedWorkers < maxWorkers)
         {
@@ -74,7 +75,8 @@ public class TriadGameAgentDerpyCarlo : TriadGameAgentGraphExplorer
 
             void RunWorkerRollout(int workerIdx)
             {
-                var gameStateCopy = new TriadGameSimulationState(gameState);
+                var gameStateCopy = threadStates.Value!;
+                gameStateCopy.CopyFrom(gameState);
                 var rolloutAgent = threadAgents.Value!;
                 rolloutAgent.Initialize(threadSolvers.Value, sessionSeed + workerIdx);
                 threadSolvers.Value.RunSimulation(gameStateCopy, rolloutAgent, rolloutAgent);

@@ -327,7 +327,10 @@ public abstract class TriadDeckInstance
 
 public class TriadDeckInstanceManual : TriadDeckInstance
 {
-    public TriadDeckInstanceManual(TriadDeck deck)
+    public TriadDeckInstanceManual(TriadDeck deck) => Reinitialize(deck);
+
+    /// <summary>Leaves the instance in the same state as <c>new TriadDeckInstanceManual(deck)</c>.</summary>
+    internal void Reinitialize(TriadDeck deck)
     {
         this.deck = deck;
         numUnknownPlaced = 0;
@@ -335,7 +338,10 @@ public class TriadDeckInstanceManual : TriadDeckInstance
         availableCardMask = (1 << (deck.knownCards.Count + deck.unknownCardPool.Count)) - 1;
     }
 
-    public TriadDeckInstanceManual(TriadDeckInstanceManual copyFrom)
+    public TriadDeckInstanceManual(TriadDeckInstanceManual copyFrom) => CopyFrom(copyFrom);
+
+    /// <summary>Leaves the instance in the same state as <c>new TriadDeckInstanceManual(copyFrom)</c>.</summary>
+    internal void CopyFrom(TriadDeckInstanceManual copyFrom)
     {
         deck = copyFrom.deck;
         numUnknownPlaced = copyFrom.numUnknownPlaced;
@@ -442,6 +448,17 @@ public class TriadDeckInstanceScreen : TriadDeckInstance
     public TriadDeckInstanceScreen(TriadDeckInstanceScreen copyFrom)
     {
         cards = new TriadCard[copyFrom.cards.Length];
+        CopyFrom(copyFrom);
+    }
+
+    /// <summary>Leaves the instance in the same state as <c>new TriadDeckInstanceScreen(copyFrom)</c>.</summary>
+    internal void CopyFrom(TriadDeckInstanceScreen copyFrom)
+    {
+        if (cards == null || cards.Length != copyFrom.cards.Length)
+        {
+            cards = new TriadCard[copyFrom.cards.Length];
+        }
+
         for (var Idx = 0; Idx < copyFrom.cards.Length; Idx++)
         {
             cards[Idx] = copyFrom.cards[Idx];

@@ -16,6 +16,7 @@ public class TriadGameSimulationState
 {
     public const int boardSize = 3;
     public const int boardSizeSq = boardSize * boardSize;
+    private static readonly int CardTypeCount = Enum.GetNames(typeof(ETriadCardType)).Length;
     public bool bDebugRules;
     public TriadCardInstance[] board;
     public TriadDeckInstance deckBlue;
@@ -30,7 +31,7 @@ public class TriadGameSimulationState
     public TriadGameSimulationState()
     {
         board = new TriadCardInstance[boardSizeSq];
-        typeMods = new int[Enum.GetNames(typeof(ETriadCardType)).Length];
+        typeMods = new int[CardTypeCount];
         state = ETriadGameState.InProgressBlue;
         resolvedSpecial = ETriadGameSpecialMod.None;
         numCardsPlaced = 0;
@@ -69,6 +70,130 @@ public class TriadGameSimulationState
     }
 }
 
+/// <summary>
+///     A state that is reset in place for many consecutive games on one thread, instead of allocating a new
+///     state, two deck instances and a card instance per placement for every game.
+///     Contract: once <see cref="Reinitialize" /> or <see cref="CopyFrom" /> runs, nothing may still use the previous
+///     game's board instances or deck instances. Copies made with the base copy constructor never share these.
+/// </summary>
+public sealed class TriadRecycledSimulationState : TriadGameSimulationState
+{
+    private TriadCardInstance[] cardSlots = new TriadCardInstance[boardSizeSq];
+    private TriadDeckInstanceManual recycledDeckBlue;
+    private TriadDeckInstanceManual recycledDeckRed;
+    private TriadDeckInstanceScreen recycledScreenBlue;
+    private TriadDeckInstanceScreen recycledScreenRed;
+    private List<int> comboScratch;
+    private List<int> nextComboScratch;
+
+    /// <summary>Same field values as <c>new TriadGameSimulationState { state, deckBlue = new(blue), deckRed = new(red) }</c>.</summary>
+    internal void Reinitialize(ETriadGameState newState, TriadDeck blue, TriadDeck red)
+    {
+        Array.Clear(board);
+        Array.Clear(typeMods);
+        state = newState;
+        resolvedSpecial = ETriadGameSpecialMod.None;
+        numCardsPlaced = 0;
+        numRestarts = 0;
+        forcedCardIdx = -1;
+        bDebugRules = false;
+
+        if (recycledDeckBlue == null) { recycledDeckBlue = new(blue); } else { recycledDeckBlue.Reinitialize(blue); }
+        if (recycledDeckRed == null) { recycledDeckRed = new(red); } else { recycledDeckRed.Reinitialize(red); }
+        deckBlue = recycledDeckBlue;
+        deckRed = recycledDeckRed;
+    }
+
+    /// <summary>Same field values as <c>new TriadGameSimulationState(copyFrom)</c>.</summary>
+    internal void CopyFrom(TriadGameSimulationState copyFrom)
+    {
+        if (board.Length != copyFrom.board.Length)
+        {
+            board = new TriadCardInstance[copyFrom.board.Length];
+            cardSlots = new TriadCardInstance[copyFrom.board.Length];
+        }
+
+        for (var idx = 0; idx < board.Length; idx++)
+        {
+            var source = copyFrom.board[idx];
+            if (source == null)
+            {
+                board[idx] = null;
+                continue;
+            }
+
+            var copy = RentCardInstance(idx, source.card, source.owner);
+            copy.scoreModifier = source.scoreModifier;
+            board[idx] = copy;
+        }
+
+        if (typeMods.Length != copyFrom.typeMods.Length)
+        {
+            typeMods = new int[copyFrom.typeMods.Length];
+        }
+
+        Array.Copy(copyFrom.typeMods, typeMods, typeMods.Length);
+
+        deckBlue = CopyDeck(copyFrom.deckBlue, ref recycledDeckBlue, ref recycledScreenBlue);
+        deckRed = CopyDeck(copyFrom.deckRed, ref recycledDeckRed, ref recycledScreenRed);
+        state = copyFrom.state;
+        numCardsPlaced = copyFrom.numCardsPlaced;
+        numRestarts = copyFrom.numRestarts;
+        resolvedSpecial = copyFrom.resolvedSpecial;
+        forcedCardIdx = copyFrom.forcedCardIdx;
+        bDebugRules = copyFrom.bDebugRules;
+    }
+
+    private static TriadDeckInstance CopyDeck(TriadDeckInstance source, ref TriadDeckInstanceManual manual, ref TriadDeckInstanceScreen screen)
+    {
+        switch (source)
+        {
+            case TriadDeckInstanceManual sourceManual:
+                manual ??= new(sourceManual);
+                manual.CopyFrom(sourceManual);
+                return manual;
+            case TriadDeckInstanceScreen sourceScreen:
+                screen ??= new();
+                screen.CopyFrom(sourceScreen);
+                return screen;
+            default:
+                return source.CreateCopy();
+        }
+    }
+
+    // Only live inside one PlaceCard call; the capture rules add to these lists and never keep them.
+    internal List<int> RentComboList()
+    {
+        comboScratch ??= [];
+        comboScratch.Clear();
+        return comboScratch;
+    }
+
+    internal List<int> RentNextComboList()
+    {
+        nextComboScratch ??= [];
+        nextComboScratch.Clear();
+        return nextComboScratch;
+    }
+
+    // Board position -> instance: a position is only ever filled while it is empty, so its slot is never on the board twice.
+    internal TriadCardInstance RentCardInstance(int boardPos, TriadCard card, ETriadCardOwner owner)
+    {
+        var slot = cardSlots[boardPos];
+        if (slot == null)
+        {
+            slot = new(card, owner);
+            cardSlots[boardPos] = slot;
+        }
+        else
+        {
+            slot.Reinitialize(card, owner);
+        }
+
+        return slot;
+    }
+}
+
 public class TriadGameSimulation
 {
     public static int[][] cachedNeis = new int[9][];
@@ -87,6 +212,18 @@ public class TriadGameSimulation
         {
             state = state, deckBlue = new TriadDeckInstanceManual(deckBlue), deckRed = new TriadDeckInstanceManual(deckRed)
         };
+    }
+
+    /// <summary>Same as <see cref="StartGame" />, but restarts <paramref name="reuse" /> in place.</summary>
+    public TriadGameSimulationState RestartGame(TriadRecycledSimulationState reuse, TriadDeck deckBlue, TriadDeck deckRed, ETriadGameState state)
+    {
+        foreach (var mod in modifiers)
+        {
+            mod.OnMatchInit();
+        }
+
+        reuse.Reinitialize(state, deckBlue, deckRed);
+        return reuse;
     }
 
     public void Initialize(IEnumerable<TriadGameModifier> modsA, IEnumerable<TriadGameModifier> modsB = null)
@@ -165,7 +302,10 @@ public class TriadGameSimulation
         if (bIsAllowedOwner && (boardPos >= 0) && (boardPos < TriadGameSimulationState.boardSizeSq) &&
             (gameState.board[boardPos] == null) && (card != null))
         {
-            gameState.board[boardPos] = new(card, owner);
+            var recycled = gameState as TriadRecycledSimulationState;
+            gameState.board[boardPos] = (recycled != null)
+                ? recycled.RentCardInstance(boardPos, card, owner)
+                : new(card, owner);
             gameState.numCardsPlaced++;
 
             if (owner == ETriadCardOwner.Blue)
@@ -191,22 +331,28 @@ public class TriadGameSimulation
                 }
             }
 
-            List<int> comboList = [];
+            // Only CaptureNei rules fill the first combo list (later steps only add what earlier steps captured),
+            // so without them the list would stay empty and the combo loop could not run.
+            var comboList = ((modFeatures & TriadGameModifier.EFeature.CaptureNei) != 0)
+                ? (recycled?.RentComboList() ?? new List<int>())
+                : null;
             var comboCounter = 0;
             CheckCaptures(gameState, boardPos, comboList, comboCounter);
 
-            while (bAllowCombo && comboList.Count > 0)
+            List<int> nextCombo = null;
+            while (bAllowCombo && comboList != null && comboList.Count > 0)
             {
                 if (gameState.bDebugRules) { Logger.WriteLine(">> combo step: {0}", string.Join(",", comboList)); }
 
-                List<int> nextCombo = [];
+                nextCombo ??= recycled?.RentNextComboList() ?? [];
+                nextCombo.Clear();
                 comboCounter++;
                 foreach (var pos in comboList)
                 {
                     CheckCaptures(gameState, pos, nextCombo, comboCounter);
                 }
 
-                comboList = nextCombo;
+                (comboList, nextCombo) = (nextCombo, comboList);
             }
 
             if ((modFeatures & TriadGameModifier.EFeature.PostCapture) != 0)

@@ -103,11 +103,20 @@ public class TriadCard : IEquatable<TriadCard>
 
 public class TriadCardInstance
 {
-    public readonly TriadCard card;
+    // Only Reinitialize writes this after construction, and only for instances owned by a TriadRecycledSimulationState.
+    public TriadCard card;
     public ETriadCardOwner owner;
     public int scoreModifier;
 
     public TriadCardInstance(TriadCard card, ETriadCardOwner owner)
+    {
+        this.card = card;
+        this.owner = owner;
+        scoreModifier = 0;
+    }
+
+    /// <summary>Leaves the instance in the same state as <c>new TriadCardInstance(card, owner)</c>.</summary>
+    internal void Reinitialize(TriadCard card, ETriadCardOwner owner)
     {
         this.card = card;
         this.owner = owner;

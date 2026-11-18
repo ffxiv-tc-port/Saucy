@@ -219,6 +219,7 @@ public partial class TriadDeckOptimizer
         }
 
         var agentRandom = new TriadGameAgentRandom(solver, randomSeed);
+        var recycledState = new TriadRecycledSimulationState();
         var deckScore = 0;
         var maxGames = (numGamesToPlay / numGamesDiv) / 2;
 
@@ -229,7 +230,7 @@ public partial class TriadDeckOptimizer
                 break;
             }
 
-            var gameStateR = solver.StartSimulation(testDeck, npcRedDeck, ETriadGameState.InProgressRed);
+            var gameStateR = solver.RestartSimulation(recycledState, testDeck, npcRedDeck, ETriadGameState.InProgressRed);
             solver.RunSimulation(gameStateR, agentRandom, agentRandom);
             deckScore += gameStateR.state == ETriadGameState.BlueWins ? 2 :
                 gameStateR.state == ETriadGameState.BlueDraw ? 1 : 0;
@@ -239,7 +240,7 @@ public partial class TriadDeckOptimizer
                 break;
             }
 
-            var gameStateB = solver.StartSimulation(testDeck, npcRedDeck, ETriadGameState.InProgressBlue);
+            var gameStateB = solver.RestartSimulation(recycledState, testDeck, npcRedDeck, ETriadGameState.InProgressBlue);
             solver.RunSimulation(gameStateB, agentRandom, agentRandom);
             deckScore += gameStateB.state == ETriadGameState.BlueWins ? 2 :
                 gameStateB.state == ETriadGameState.BlueDraw ? 1 : 0;

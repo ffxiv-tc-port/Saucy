@@ -79,6 +79,13 @@ public class TriadGameSolver
         return simulation.StartGame(deckBlue, deckRed, state);
     }
 
+    /// <summary>Same as <see cref="StartSimulation" />, but restarts <paramref name="reuse" /> in place.</summary>
+    public TriadGameSimulationState RestartSimulation(TriadRecycledSimulationState reuse, TriadDeck deckBlue, TriadDeck deckRed, ETriadGameState state)
+    {
+        agent.OnSimulationStart();
+        return simulation.RestartGame(reuse, deckBlue, deckRed, state);
+    }
+
     public bool FindNextMove(TriadGameSimulationState gameState, out int cardIdx, out int boardPos, out SolverResult solverResult) => agent.FindNextMove(this, gameState, out cardIdx, out boardPos, out solverResult);
 
     public void RunSimulation(TriadGameSimulationState gameState, TriadGameAgent agentBlue, TriadGameAgent agentRed)

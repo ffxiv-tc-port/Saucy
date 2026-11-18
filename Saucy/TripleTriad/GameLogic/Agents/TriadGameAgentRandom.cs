@@ -4,11 +4,16 @@ namespace Saucy.TripleTriad.GameLogic;
 
 public class TriadGameAgentRandom : TriadGameAgent
 {
-    private Random randGen;
+    private TriadSeededRandom randGen;
 
     public TriadGameAgentRandom(TriadGameSolver solver, int sessionSeed) => Initialize(solver, sessionSeed);
 
-    public override void Initialize(TriadGameSolver solver, int sessionSeed) => randGen = new(sessionSeed);
+    // Rollouts re-seed the same agent once per game; reseeding in place keeps that from allocating a generator each time.
+    public override void Initialize(TriadGameSolver solver, int sessionSeed)
+    {
+        randGen ??= new();
+        randGen.Reseed(sessionSeed);
+    }
 
     public override bool IsInitialized() => randGen != null;
 
