@@ -50,20 +50,54 @@ internal static class Lifestream
         return true;
     }
 
-    private static void TryAbort()
+    private static readonly LifestreamForeignAbort foreignAbort = new();
+
+    /// <summary>Saucy 要自己用 vnavmesh 開走前呼叫（framework 執行緒）：Lifestream 正在跑別人（使用者或別的插件）開的流程時請它整條停下。
+    /// 沒載入、問不到或中止失敗都不擋呼叫端，照舊開走。回傳有沒有送出中止。</summary>
+    public static bool TryAbortForeignBeforeOwnMove(string requester)
+    {
+        if (!IsInstalled || !TryIsBusy(out var busy) ||
+            !foreignAbort.ShouldAbort(busy, ownership.Owner != null, Environment.TickCount64))
+        {
+            return false;
+        }
+
+        var sent = TryAbort();
+        var after = !sent ? "中止沒送出去（IPC 失敗）" : TryIsBusy(out var stillBusy) && stillBusy ? "已請它停下，但它仍在忙" : "已請它停下";
+        Svc.Log.Information($"[Saucy] {requester}：Lifestream 正在跑別的流程（你或別的插件開的），{after}；Saucy 照舊用 vnavmesh 走過去，免得它看到 vnavmesh 在動而自行中止");
+        return sent;
+    }
+
+    private static bool TryIsBusy(out bool busy)
+    {
+        try
+        {
+            busy = IsBusy();
+            return true;
+        }
+        catch
+        {
+            busy = false;
+            return false;
+        }
+    }
+
+    private static bool TryAbort()
     {
         if (!IsInstalled)
         {
-            return;
+            return false;
         }
 
         try
         {
             Abort();
+            return true;
         }
         catch
         {
             // Lifestream not loaded or IPC unavailable.
+            return false;
         }
     }
 

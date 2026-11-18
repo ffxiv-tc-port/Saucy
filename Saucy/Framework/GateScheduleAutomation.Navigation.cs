@@ -81,9 +81,13 @@ internal static unsafe partial class GateScheduleAutomation
                 return true;
         }
 
-        if (!Vnavmesh.IsMoving() && Vnavmesh.TryMoveTo(destination, false, GateNpcNavigation.CloseRange))
+        if (!Vnavmesh.IsMoving())
         {
-            coordinatorNavOwned = true;
+            Lifestream.TryAbortForeignBeforeOwnMove("活動解說員自動靠近");
+            if (Vnavmesh.TryMoveTo(destination, false, GateNpcNavigation.CloseRange))
+            {
+                coordinatorNavOwned = true;
+            }
         }
 
         return false;
