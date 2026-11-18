@@ -1,11 +1,27 @@
 #nullable disable
 using System;
+using System.Collections.Generic;
 namespace Saucy.TripleTriad.GameLogic;
 
 public abstract class TriadGameAgentGraphExplorer : TriadGameAgent
 {
     private Random failsafeRandStream;
     protected int sessionSeed;
+
+    // One recycled branch state per search level and thread: a level's copy is dead before that level's next
+    // placement, and the recursion below it uses the next level's state, so no two live branches share one.
+    [ThreadStatic] private static List<TriadRecycledSimulationState> branchStates;
+
+    private static TriadRecycledSimulationState BranchState(int searchLevel)
+    {
+        var states = branchStates ??= [];
+        while (states.Count <= searchLevel)
+        {
+            states.Add(new());
+        }
+
+        return states[searchLevel];
+    }
 
     public override void Initialize(TriadGameSolver solver, int sessionSeed) => this.sessionSeed = sessionSeed;
 
@@ -76,7 +92,8 @@ public abstract class TriadGameAgentGraphExplorer : TriadGameAgent
                         continue;
                     }
 
-                    var gameStateCopy = new TriadGameSimulationState(gameState);
+                    var gameStateCopy = BranchState(searchLevel);
+                    gameStateCopy.CopyFrom(gameState);
                     var useDeck = (gameStateCopy.state == ETriadGameState.InProgressBlue) ? gameStateCopy.deckBlue : gameStateCopy.deckRed;
 
                     var isPlaced = solver.simulation.PlaceCard(gameStateCopy, cardIdx, useDeck, turnOwner, boardIdx);
