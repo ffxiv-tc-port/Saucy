@@ -1,6 +1,8 @@
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
+using System.Runtime.InteropServices;
+using System.Text;
 namespace Saucy.TripleTriad.UI;
 
 internal enum TurnState : byte
@@ -66,14 +68,15 @@ internal static class TriadTurnState
             return false;
         }
 
-        if ((int)node->Type == (int)NodeType.Text && IsTurnBannerText(GUINodeUtils.GetNodeText(node)))
+        if ((int)node->Type == (int)NodeType.Text && IsTurnBannerNodeText(node))
         {
             return true;
         }
 
-        foreach (var child in GUINodeUtils.GetImmediateChildNodes(node) ?? [])
+        using var children = GUINodeUtils.BorrowImmediateChildNodes(node);
+        for (var idx = 0; idx < children.Count; idx++)
         {
-            if (HasTurnBannerText(child))
+            if (HasTurnBannerText(children[idx]))
             {
                 return true;
             }
@@ -82,9 +85,31 @@ internal static class TriadTurnState
         return false;
     }
 
-    private static bool IsTurnBannerText(string? text)
+    // Decodes the text exactly like GUINodeUtils.GetNodeText (UTF-8, same replacement rules) but into a stack
+    // buffer: a node text longer than the 96-char limit can never be a banner, so it is never materialized.
+    private static unsafe bool IsTurnBannerNodeText(AtkResNode* node)
     {
-        if (string.IsNullOrWhiteSpace(text) || text.Length > 96)
+        var textPtr = (byte*)new nint(((AtkTextNode*)node)->NodeText.StringPtr);
+        if (textPtr == null)
+        {
+            return false;
+        }
+
+        var bytes = MemoryMarshal.CreateReadOnlySpanFromNullTerminated(textPtr);
+        if (Encoding.UTF8.GetCharCount(bytes) > MaxTurnBannerLength)
+        {
+            return false;
+        }
+
+        Span<char> chars = stackalloc char[MaxTurnBannerLength];
+        return IsTurnBannerText(chars[..Encoding.UTF8.GetChars(bytes, chars)]);
+    }
+
+    private const int MaxTurnBannerLength = 96;
+
+    private static bool IsTurnBannerText(ReadOnlySpan<char> text)
+    {
+        if (text.IsWhiteSpace())
         {
             return false;
         }

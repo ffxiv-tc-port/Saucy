@@ -1,11 +1,16 @@
 ﻿using FFXIVClientStructs.FFXIV.Component.GUI;
-using System.Collections.Generic;
+using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 namespace Saucy.TripleTriad.Utils;
 
 public class GUINodeUtils
 {
+    // 節點位址只在單次走訪內暫放：每段用完就把那段歸零截掉，不留任何一幀讀到的位址給下一次用。
+    [ThreadStatic] private static NodeAddrBuffer? addrScratch;
+
+    private static NodeAddrBuffer AddrScratch => addrScratch ??= new();
+
     public static unsafe bool IsNodeVisible(AtkResNode* node) =>
         node != null && node->IsVisible();
 
@@ -35,40 +40,56 @@ public class GUINodeUtils
 
     public static unsafe AtkResNode*[]? GetImmediateChildNodes(AtkResNode* node)
     {
-        var listAddr = new List<ulong>();
-        if (node != null && node->ChildNode != null)
-        {
-            listAddr.Add((ulong)node->ChildNode);
-
-            node = node->ChildNode;
-            while (node->PrevSiblingNode != null)
-            {
-                listAddr.Add((ulong)node->PrevSiblingNode);
-                node = node->PrevSiblingNode;
-            }
-        }
-
-        return ConvertToNodeArr(listAddr);
+        using var nodes = BorrowImmediateChildNodes(node);
+        return nodes.ToArray();
     }
 
     public static unsafe AtkResNode*[]? GetAllChildNodes(AtkResNode* node)
     {
         if (node != null)
         {
-            var list = new List<ulong>();
-            RecursiveAppendChildNodes(node, list);
-
-            return ConvertToNodeArr(list);
+            using var nodes = BorrowAllChildNodes(node);
+            return nodes.ToArray();
         }
 
         return null;
     }
 
-    private static unsafe void RecursiveAppendChildNodes(AtkResNode* node, List<ulong> listAddr)
+    /// <summary>Same nodes, same order and same reads as <see cref="GetImmediateChildNodes" />, without the array.</summary>
+    /// <remarks>Only valid until disposed; nested borrows must be disposed innermost first (<c>using var</c> does that).</remarks>
+    public static unsafe BorrowedNodes BorrowImmediateChildNodes(AtkResNode* node)
+    {
+        var buffer = AddrScratch;
+        var start = buffer.Count;
+        if (node != null && node->ChildNode != null)
+        {
+            buffer.Add((nint)node->ChildNode);
+
+            node = node->ChildNode;
+            while (node->PrevSiblingNode != null)
+            {
+                buffer.Add((nint)node->PrevSiblingNode);
+                node = node->PrevSiblingNode;
+            }
+        }
+
+        return new(buffer, start);
+    }
+
+    /// <summary>Same nodes, same order and same reads as <see cref="GetAllChildNodes" />, without the array.</summary>
+    public static unsafe BorrowedNodes BorrowAllChildNodes(AtkResNode* node)
+    {
+        var buffer = AddrScratch;
+        var start = buffer.Count;
+        RecursiveAppendChildNodes(node, buffer);
+        return new(buffer, start);
+    }
+
+    private static unsafe void RecursiveAppendChildNodes(AtkResNode* node, NodeAddrBuffer listAddr)
     {
         if (node != null)
         {
-            listAddr.Add((ulong)node);
+            listAddr.Add((nint)node);
 
             if (node->ChildNode != null)
             {
@@ -84,25 +105,81 @@ public class GUINodeUtils
         }
     }
 
-    private static unsafe AtkResNode*[]? ConvertToNodeArr(List<ulong> listAddr)
+    public readonly unsafe ref struct BorrowedNodes
     {
-        if (listAddr.Count > 0)
-        {
-            var typedArr = new AtkResNode*[listAddr.Count];
-            for (var idx = 0; idx < listAddr.Count; idx++)
-            {
-                typedArr[idx] = (AtkResNode*)listAddr[idx];
-            }
+        private readonly NodeAddrBuffer buffer;
+        private readonly int start;
+        private readonly int end;
 
-            return typedArr;
+        internal BorrowedNodes(NodeAddrBuffer buffer, int start)
+        {
+            this.buffer = buffer;
+            this.start = start;
+            end = buffer.Count;
         }
 
-        return null;
+        public int Count => end - start;
+
+        public AtkResNode* this[int idx] => (uint)idx < (uint)Count ? (AtkResNode*)buffer.Items[start + idx] : throw new IndexOutOfRangeException();
+
+        public AtkResNode*[]? ToArray()
+        {
+            if (Count > 0)
+            {
+                var typedArr = new AtkResNode*[Count];
+                for (var idx = 0; idx < typedArr.Length; idx++)
+                {
+                    typedArr[idx] = (AtkResNode*)buffer.Items[start + idx];
+                }
+
+                return typedArr;
+            }
+
+            return null;
+        }
+
+        public void Dispose() => buffer.Truncate(start);
+    }
+
+    internal sealed class NodeAddrBuffer
+    {
+        public nint[] Items = new nint[64];
+        public int Count;
+
+        public void Add(nint addr)
+        {
+            if (Count == Items.Length)
+            {
+                Array.Resize(ref Items, Items.Length * 2);
+            }
+
+            Items[Count++] = addr;
+        }
+
+        public void Truncate(int newCount)
+        {
+            if (newCount < Count)
+            {
+                Array.Clear(Items, newCount, Count - newCount);
+                Count = newCount;
+            }
+        }
     }
 
     public static unsafe AtkResNode* PickNode(AtkResNode*[]? nodes, int nodeIdx, int expectedNumNodes)
     {
         if (nodes != null && nodes.Length == expectedNumNodes && nodeIdx < expectedNumNodes)
+        {
+            return nodes[nodeIdx];
+        }
+
+        return null;
+    }
+
+    /// <summary>Same answer as the array overload for the same nodes.</summary>
+    public static unsafe AtkResNode* PickNode(in BorrowedNodes nodes, int nodeIdx, int expectedNumNodes)
+    {
+        if (nodes.Count > 0 && nodes.Count == expectedNumNodes && nodeIdx < expectedNumNodes)
         {
             return nodes[nodeIdx];
         }

@@ -90,7 +90,7 @@ public class UIReaderTriadGame : IUIReader
             isPlayerTurn = TriadTurnState.ReadIsPlayerTurn(&addon->AtkUnitBase), move = (byte)addon->TurnState, turnBannerVisible = TriadTurnState.IsTurnBannerVisible(&addon->AtkUnitBase)
         };
 
-        var nodeArrL0 = GUINodeUtils.GetImmediateChildNodes(addon->AtkUnitBase.RootNode);
+        using var nodeArrL0 = GUINodeUtils.BorrowImmediateChildNodes(addon->AtkUnitBase.RootNode);
         newState.redPlayerDesc = GetUIDescriptionRedPlayer(nodeArrL0);
         if (newState.redPlayerDesc.Count == 0)
         {
@@ -150,19 +150,20 @@ public class UIReaderTriadGame : IUIReader
         }
     }
 
-    private unsafe List<string> GetUIDescriptionRedPlayer(AtkResNode*[]? level0)
+    private unsafe List<string> GetUIDescriptionRedPlayer(in GUINodeUtils.BorrowedNodes level0)
     {
         var listRedDesc = new List<string>();
 
         var nodeName0 = GUINodeUtils.PickNode(level0, 6, 12);
-        var nodeArrNameL1 = GUINodeUtils.GetImmediateChildNodes(nodeName0);
+        using var nodeArrNameL1 = GUINodeUtils.BorrowImmediateChildNodes(nodeName0);
         var nodeNameL1 = GUINodeUtils.PickNode(nodeArrNameL1, 0, 5);
-        var nodeArrNameL2 = GUINodeUtils.GetAllChildNodes(nodeNameL1);
+        using var nodeArrNameL2 = GUINodeUtils.BorrowAllChildNodes(nodeNameL1);
         var numParsed = 0;
-        if (nodeArrNameL2 != null)
+        if (nodeArrNameL2.Count > 0)
         {
-            foreach (var testNode in nodeArrNameL2)
+            for (var nodeIdx = 0; nodeIdx < nodeArrNameL2.Count; nodeIdx++)
             {
+                var testNode = nodeArrNameL2[nodeIdx];
                 var isVisible = (testNode != null) && (testNode->NodeFlags & NodeFlags.Visible) == NodeFlags.Visible;
                 if (isVisible)
                 {
@@ -202,19 +203,20 @@ public class UIReaderTriadGame : IUIReader
             }
         }
 
-        foreach (var child in GUINodeUtils.GetImmediateChildNodes(node) ?? [])
+        using var children = GUINodeUtils.BorrowImmediateChildNodes(node);
+        for (var idx = 0; idx < children.Count; idx++)
         {
-            CollectVisibleTextNodes(child, output);
+            CollectVisibleTextNodes(children[idx], output);
         }
     }
 
-    private unsafe List<string> GetUIDescriptionRules(AtkResNode*[]? level0)
+    private unsafe List<string> GetUIDescriptionRules(in GUINodeUtils.BorrowedNodes level0)
     {
         var listRuleDesc = new List<string>();
 
         var nodeRule0 = GUINodeUtils.PickNode(level0, 4, 12);
-        var nodeArrRule = GUINodeUtils.GetImmediateChildNodes(nodeRule0);
-        if (nodeArrRule != null && nodeArrRule.Length == 5)
+        using var nodeArrRule = GUINodeUtils.BorrowImmediateChildNodes(nodeRule0);
+        if (nodeArrRule.Count == 5)
         {
             for (var idx = 0; idx < 4; idx++)
             {
@@ -225,11 +227,11 @@ public class UIReaderTriadGame : IUIReader
                 }
             }
         }
-        else if (nodeArrRule != null)
+        else
         {
-            foreach (var node in nodeArrRule)
+            for (var nodeIdx = 0; nodeIdx < nodeArrRule.Count; nodeIdx++)
             {
-                var text = GUINodeUtils.GetNodeText(node);
+                var text = GUINodeUtils.GetNodeText(nodeArrRule[nodeIdx]);
                 if (!string.IsNullOrEmpty(text))
                 {
                     listRuleDesc.Add(text);
@@ -240,7 +242,7 @@ public class UIReaderTriadGame : IUIReader
         return listRuleDesc;
     }
 
-    private unsafe bool GetUIStatePvP(AtkResNode*[]? level0)
+    private unsafe bool GetUIStatePvP(in GUINodeUtils.BorrowedNodes level0)
     {
         var nodePvPButton = GUINodeUtils.PickNode(level0, 11, 12);
         return nodePvPButton != null && nodePvPButton->IsVisible();
