@@ -4,6 +4,13 @@ namespace Saucy.TripleTriad.GameLogic;
 
 internal static class TriadOptimizedDeckCacheValidator
 {
+    // 兩個 id 集合在呼叫間重用：每次都先逐筆比對來源，來源不同才清空重建，所以集合永遠等於這一次的來源。
+    private static readonly object IdSetLock = new();
+    private static readonly List<int> ownedIdsSource = [];
+    private static readonly HashSet<int> ownedIdSet = [];
+    private static readonly List<int> snapshotIdsSource = [];
+    private static readonly HashSet<int> snapshotIdSet = [];
+
     public static int[] CaptureOwnedCardSnapshot()
     {
         GameCardDB.Get().Refresh();
@@ -31,21 +38,23 @@ internal static class TriadOptimizedDeckCacheValidator
             return 0;
         }
 
-        var ownedIds = new HashSet<int>(owned.Select(card => card.Id));
-        return CountNewOwnedCards(ownedAtBuild, ownedIds);
+        lock (IdSetLock)
+        {
+            return CountNewOwnedCards(ownedAtBuild, OwnedIdSetLocked(owned));
+        }
     }
 
     public static bool ShouldRebuildDeckForNewCards(string sessionKey, int npcId) =>
         CountNewOwnedCardsSinceBuild(sessionKey, npcId) >= TriadOptimizedDeckCacheStore.RebuildAfterNewCardCount;
 
-    private static int CountNewOwnedCards(int[] ownedAtBuild, IReadOnlySet<int> currentOwnedIds)
+    private static int CountNewOwnedCards(int[] ownedAtBuild, HashSet<int> currentOwnedIds)
     {
         if (ownedAtBuild == null || ownedAtBuild.Length == 0)
         {
             return 0;
         }
 
-        var snapshot = new HashSet<int>(ownedAtBuild);
+        var snapshot = SnapshotIdSetLocked(ownedAtBuild);
         var count = 0;
         foreach (var id in currentOwnedIds)
         {
@@ -80,14 +89,16 @@ internal static class TriadOptimizedDeckCacheValidator
             return false;
         }
 
-        var ownedIds = new HashSet<int>(owned.Select(card => card.Id));
-        foreach (var cardId in cached.CardIds)
+        bool allOwned;
+        lock (IdSetLock)
         {
-            if (!ownedIds.Contains(cardId))
-            {
-                TriadOptimizedDeckCacheStore.Remove(sessionKey);
-                return false;
-            }
+            allOwned = AllOwnedLocked(cached.CardIds, OwnedIdSetLocked(owned));
+        }
+
+        if (!allOwned)
+        {
+            TriadOptimizedDeckCacheStore.Remove(sessionKey);
+            return false;
         }
 
         if (!TryBuildSolverDeck(cached.CardIds, out var _))
@@ -98,6 +109,63 @@ internal static class TriadOptimizedDeckCacheValidator
 
         entry = cached;
         return true;
+    }
+
+    private static bool AllOwnedLocked(ushort[] cardIds, HashSet<int> ownedIds)
+    {
+        foreach (var cardId in cardIds)
+        {
+            if (!ownedIds.Contains(cardId))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static HashSet<int> OwnedIdSetLocked(List<TriadCard> owned)
+    {
+        var same = ownedIdsSource.Count == owned.Count;
+        for (var idx = 0; idx < owned.Count && same; idx++)
+        {
+            same = ownedIdsSource[idx] == owned[idx].Id;
+        }
+
+        if (!same)
+        {
+            ownedIdsSource.Clear();
+            ownedIdSet.Clear();
+            foreach (var card in owned)
+            {
+                ownedIdsSource.Add(card.Id);
+                ownedIdSet.Add(card.Id);
+            }
+        }
+
+        return ownedIdSet;
+    }
+
+    private static HashSet<int> SnapshotIdSetLocked(int[] ids)
+    {
+        var same = snapshotIdsSource.Count == ids.Length;
+        for (var idx = 0; idx < ids.Length && same; idx++)
+        {
+            same = snapshotIdsSource[idx] == ids[idx];
+        }
+
+        if (!same)
+        {
+            snapshotIdsSource.Clear();
+            snapshotIdSet.Clear();
+            foreach (var id in ids)
+            {
+                snapshotIdsSource.Add(id);
+                snapshotIdSet.Add(id);
+            }
+        }
+
+        return snapshotIdSet;
     }
 
     private static bool HasValidCardIds(ushort[] cardIds)
