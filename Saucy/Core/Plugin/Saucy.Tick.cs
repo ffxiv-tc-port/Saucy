@@ -22,6 +22,7 @@ public sealed partial class Saucy
             global::Saucy.JumboCactpot.JumboCactpotAutoTalk.Tick();
             UpdateGateAutoOpen();
             GateScheduleAutomation.Tick();
+            GateSlotLedger.Tick();
             TriadOptimizedDeckCacheStore.TickCharacter();
             TriadMapNavigation.Tick();
 

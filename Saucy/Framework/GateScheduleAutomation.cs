@@ -375,6 +375,7 @@ internal static unsafe partial class GateScheduleAutomation
     public static void MarkJoined(Module.GateType gate)
     {
         lastJoinedUtc[gate] = DateTime.UtcNow;
+        GateSlotLedger.NoteJoinInteract();
         if (ReturnsAfterJoin(gate))
         {
             afterJoinArmedAt = Environment.TickCount64;

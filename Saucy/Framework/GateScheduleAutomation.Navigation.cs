@@ -167,6 +167,7 @@ internal static unsafe partial class GateScheduleAutomation
         {
             if ((DateTime.UtcNow - joinSearchStartUtc.Value).TotalSeconds >= SearchTimeoutSeconds)
             {
+                GateSlotLedger.Note($"報名時 {NpcSearchRadius:0} 米內找不到有開自動報名、已錄的報名 NPC");
                 ReleaseJoinNavigation();
             }
 
@@ -197,6 +198,7 @@ internal static unsafe partial class GateScheduleAutomation
             case ManualSteerYield.Result.Hold:
                 return;
             case ManualSteerYield.Result.GaveUp:
+                GateSlotLedger.Note("走去報名途中你一直自己移動，讓位給手動");
                 joinNavOwned = false;
                 ReleaseJoinNavigation();
                 MarkJoinHandled();
