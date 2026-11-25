@@ -1,8 +1,8 @@
 {
   "Author": "Taurenkey, Kagekazu",
   "Name": "Saucy",
-  "Punchline": "當賺取 MGP 太費工夫的時候。",
-  "Description": "自動化部分金碟遊樂園小遊戲。",
+  "Punchline": "自動化金碟遊樂園的小遊戲與九宮幻卡。",
+  "Description": "金碟遊樂園多款小遊戲的自動化與輔助。\n- 九宮幻卡：自動對戰、出牌與重賽，追蹤缺卡與 NPC 解鎖狀態，可自動出售重複的卡片\n- 仙人微彩自動翻格並選出最佳的線；仙人仙彩自動填入號碼，扣款確認仍由你自己按\n- G.A.T.E.：暴風倖存者、空軍裝甲駕駛員、搶救小雛鳥大作戰等小遊戲自動化，可依時段走去報名（各有開關）\n- 金碟遊樂園導航：選擇活動地點自動前往；需搭配 vnavmesh，沒裝時改在地圖上標出目的地\n- 金碟幣收益統計；/saucy stop 一次停下所有自動化\n- 指令 /saucy 開啟主視窗",
   "InternalName": "Saucy",
   "IconUrl": "https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/icons/Saucy.png",
   "RepoUrl": "https://github.com/ffxiv-tc-port/Saucy",
